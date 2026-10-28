@@ -23,8 +23,6 @@ error errors.ts:65:31: This object has key obfuscation enabled and must be acces
 error errors.ts:71:2: Attempted to assign method where non-method was expected.
 error errors.ts:80:2: Attempted to assign method where non-method was expected.
 error errors.ts:90:3: Attempted to assign method where non-method was expected.
-error errors.ts:100:2: Getters and Setters are not supported!
-More information: https://github.com/roblox-ts/roblox-ts/issues/457
 error TS1117 errors.ts:110:37: An object literal cannot have multiple properties with the same name.
 error TS1117 errors.ts:118:37: An object literal cannot have multiple properties with the same name.
 error TS1117 errors.ts:124:51: An object literal cannot have multiple properties with the same name.

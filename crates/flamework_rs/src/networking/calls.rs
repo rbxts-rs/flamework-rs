@@ -550,14 +550,7 @@ fn chain_function(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &Built
     };
     // A chain bound to a local (`const target = a?.b`): roblox-ts names the chain's temporary after the local.
     let compile_named = |cx: &mut Cx<'_>, node: P<Node>, name: &str, statements: &mut Vec<Stmt>| -> PResult<Expr> {
-        let (mut value, mut prereqs) = cx.capture(|cx| cx.compile_expr(node))?;
-        if let Expr::TemporaryIdentifier(temp) = &value
-            && temp.name == "result"
-            && tsrs_ast::is_optional_chain(node)
-        {
-            let id = temp.id;
-            crate::guards::names::rename_temporary(&mut prereqs, &mut value, id, name);
-        }
+        let (value, prereqs) = cx.capture(|cx| cx.compile_expr_named(node, name))?;
         statements.extend(prereqs);
         Ok(value)
     };

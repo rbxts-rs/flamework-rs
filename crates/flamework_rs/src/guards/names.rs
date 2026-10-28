@@ -200,28 +200,6 @@ pub(crate) fn ts_globals_in(expr: &Expr) -> Vec<&'static str> {
     found
 }
 
-/// Renames the temporary `id` to `name` in `statements` and `expr` (it renders `_<name>`): roblox-ts names the
-/// temporary of an optional chain after the variable the chain initializes (`local _target = …`), which a value
-/// compiled on its own does not know.
-pub(crate) fn rename_temporary(statements: &mut [Stmt], expr: &mut Expr, id: u32, name: &str) {
-    let mut on_expr = |e: &mut Expr| {
-        if let Expr::TemporaryIdentifier(temp) = e
-            && temp.id == id
-        {
-            temp.name = name.to_owned();
-        }
-    };
-    let mut on_id = |declared: &mut AnyIdentifier| {
-        if let AnyIdentifier::Temporary(temp) = declared
-            && temp.id == id
-        {
-            temp.name = name.to_owned();
-        }
-    };
-    walk_block(statements, &mut on_expr, &mut on_id);
-    walk_expr(expr, &mut on_expr, &mut on_id);
-}
-
 // --- the walker: every expression and declared identifier, in render order ---
 
 fn walk_stmt(statement: &mut Stmt, on_expr: &mut impl FnMut(&mut Expr), on_id: &mut impl FnMut(&mut AnyIdentifier)) {

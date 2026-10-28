@@ -9,21 +9,19 @@
 //!
 //! The TS rebuilt the object with `links` and then `attributes` moved to the end, and roblox-ts evaluated the fields
 //! in that order. Here, without a written `attributes`, the written literal is compiled with [`ObjectEdits`] and the
-//! generated fields appended (roblox-ts's own lowering). With one, the table is built in the TS's emitted order
-//! ([`emitted_order`]): the other written fields, then `links`, then `attributes`, lowered as roblox-ts lowered the
-//! TS's literal (inline until a field needs statements, then filled by assignments), so the fields are evaluated in
-//! the TS's order. (A written `attributes` already last, with no `links` and a value that needs no statements, keeps
-//! `compile_object_literal`'s lowering.) A method in the literal (or in a written `attributes` object) is refused as
-//! roblox-ts refused it in the TS's rebuilt literal, whether or not a field moves; an accessor among moved fields is
-//! refused with roblox-ts's message (a spread is refused by the TS's checks before).
+//! generated fields appended (roblox-ts's own lowering). With one, the written member is dropped and the literal
+//! compiled in the TS's emitted order ([`FieldOrder::Emitted`]): the other written fields, then `links`, then
+//! `attributes` (a deferred value, built at its place, so its statements run after the fields before it), then the
+//! instance's field. A method in the literal (or in a written `attributes` object) is refused as roblox-ts refused it
+//! in the TS's rebuilt literal, whether or not a field moves; the compiler refuses an accessor that stays (a spread is
+//! refused by the TS's checks before).
 
-use rbxts_luau::{Expr, Stmt, create};
+use rbxts_luau::{Expr, create};
 use rbxts_plugin::ts::{Kind, Node, P, Symbol, Type};
-use rbxts_plugin::{Cx, LuauExpr, ObjectEdits, PResult, PluginDiagnostic, synthesized_string};
+use rbxts_plugin::{Cx, FieldOrder, LuauExpr, ObjectEdits, PResult, PluginDiagnostic, synthesized_string};
 use tsrs_ast::SymbolFlags;
 use tsrs_checker::{LiteralValue, TypeFlags};
 
-use super::literal::MapPointer;
 use super::shape::build_instance_shape;
 use crate::guards::types::is_instance_type;
 use crate::metadata::get_symbol;
@@ -89,7 +87,6 @@ pub(crate) fn component_config(
     let attributes = config.attribute_guards(cx, literal)?;
     let instance = config.instance_guard(cx, literal)?;
 
-    let has_links = links.is_some();
     // The written `attributes` field the TS moves after `links`, and the value it gets.
     let mut moved: Option<P<Node>> = None;
     let attributes = attributes.map(|attributes| {
@@ -150,131 +147,41 @@ pub(crate) fn component_config(
     let attributes = attributes.expect("a moved field has a value");
     let properties = literal.properties();
 
-    // Already where the TS puts it (the last written field, no `links` to go before it), a field (not an accessor the
-    // TS drops) and its value needs no statements, so it is evaluated last at its place: roblox-ts's own lowering.
-    let field = matches!(moved.kind(), Kind::PropertyAssignment | Kind::ShorthandPropertyAssignment);
-    if properties.last() == Some(&moved) && !has_links && field {
-        let (value, statements) = cx.capture(|cx| attributes.compile(cx))?;
-        if statements.is_empty() {
-            edits.replace.push((written_key(moved), value));
-            edits.append.extend(instance.map(|(name, value)| (synthesized_string(name), value)));
-            return cx.compile_object_literal(literal, edits);
-        }
-        return emitted_order(cx, literal, moved, None, Compiled::Now { value, statements }, instance);
-    }
-    let attributes = attributes.compiled_later();
-    emitted_order(cx, literal, moved, links, attributes, instance)
-}
-
-/// `attributes`' value, compiled (with the statements it needs, not emitted yet) or still to compile.
-enum Compiled {
-    Later(AttributesValue),
-    Now { value: LuauExpr, statements: Vec<Stmt> },
-}
-
-impl Compiled {
-    fn finish(self, cx: &mut Cx<'_>) -> PResult<(LuauExpr, Vec<Stmt>)> {
-        match self {
-            Compiled::Later(attributes) => cx.capture(|cx| attributes.compile(cx)),
-            Compiled::Now { value, statements } => Ok((value, statements)),
-        }
-    }
-}
-
-impl AttributesValue {
-    fn compiled_later(self) -> Compiled {
-        Compiled::Later(self)
-    }
-}
-
-/// A written field of the emitted table, but `attributes`.
-enum Written {
-    /// A name roblox-ts makes a string of, and the value.
-    Named(&'static str, P<Node>),
-    /// A name roblox-ts compiles (a string or numeric literal, a computed name's expression), and the value.
-    Keyed(P<Node>, P<Node>),
-}
-
-/// The config literal in the TS's emitted order, which is the order its fields are evaluated in: the written fields
-/// but `attributes`, `links`, `attributes`, the instance's field. The table is built here the way roblox-ts lowered the
-/// literal the TS emitted ([`MapPointer`]): inline until a field's key or value needs statements, then
-/// `local _object = {...}`, the key in `_left` and `_object[_left] = value` for that field and every later one.
-/// `compile_object_literal` cannot do this, as its reordering keeps the written evaluation order (API gap 4).
-fn emitted_order(
-    cx: &mut Cx<'_>,
-    literal: P<Node>,
-    moved: P<Node>,
-    links: Option<LuauExpr>,
-    attributes: Compiled,
-    instance: Option<(&'static str, LuauExpr)>,
-) -> PResult<LuauExpr> {
-    let mut fields: Vec<Written> = Vec::new();
-    let mut abort = None;
-    for &property in literal.properties() {
-        if property == moved {
-            continue;
-        }
-        let field = match property.kind() {
-            Kind::PropertyAssignment | Kind::ShorthandPropertyAssignment => {
-                let name = property.name().expect("a property assignment has a name");
-                let value = match property.kind() {
-                    Kind::PropertyAssignment => {
-                        property.initializer().expect("a property assignment has an initializer")
-                    }
-                    _ => name,
-                };
-                match name.kind() {
-                    Kind::Identifier => Written::Named(name.text(), value),
-                    Kind::ComputedPropertyName => {
-                        Written::Keyed(name.expression().expect("a computed name has an expression"), value)
-                    }
-                    _ => Written::Keyed(name, value),
-                }
-            }
-            // An accessor (methods were refused before, and the TS refuses a spread): `errors.noGetterSetter`.
-            _ => {
-                let message = concat!(
-                    "Getters and Setters are not supported!\n",
-                    "More information: https://github.com/roblox-ts/roblox-ts/issues/457",
-                );
-                abort = abort.or(cx.report(PluginDiagnostic::error(property, message).with_source("roblox-ts")));
-                continue;
-            }
-        };
-        fields.push(field);
-    }
-    if let Some(abort) = abort {
-        return Err(abort);
-    }
-
-    let mut table = MapPointer::default();
-    for field in fields {
-        let (key, value) = match field {
-            Written::Named(text, value) => ((create::string(text), Vec::new()), value),
-            Written::Keyed(key, value) => (cx.capture(|cx| cx.compile_expr(key))?, value),
-        };
-        let value = cx.capture(|cx| cx.compile_expr(value))?;
-        table.field(cx, key, value);
-    }
-    if let Some(links) = links {
-        table.field(cx, (synthesized_string("links"), Vec::new()), (links, Vec::new()));
-    }
-
     // The moved field keeps its written name (`f.update.propertyAssignmentDeclaration(..., attributes.name)`); one that
     // was not an object literal is rebuilt as `attributes`.
-    let merged = matches!(attributes, Compiled::Later(AttributesValue::Merged { .. }))
-        || object_initializer(Some(moved)).is_some();
-    let attributes_key = match moved.name() {
-        Some(name) if merged && name.kind() == Kind::StringLiteral => cx.capture(|cx| cx.compile_expr(name))?,
-        Some(name) if merged && name.kind() == Kind::Identifier => (create::string(name.text()), Vec::new()),
-        _ => (synthesized_string("attributes"), Vec::new()),
+    let key = match moved.name() {
+        Some(name) if matches!(attributes, AttributesValue::Merged { .. }) && name.kind() == Kind::StringLiteral => {
+            cx.compile_expr(name)?
+        }
+        Some(name) if matches!(attributes, AttributesValue::Merged { .. }) && name.kind() == Kind::Identifier => {
+            create::string(name.text())
+        }
+        _ => synthesized_string("attributes"),
     };
-    let value = attributes.finish(cx)?;
-    table.field(cx, attributes_key, value);
-    if let Some((name, value)) = instance {
-        table.field(cx, (synthesized_string(name), Vec::new()), (value, Vec::new()));
+    // The TS's emitted order: the written members but the moved one, `links`, `attributes`, the instance's field.
+    let written = u32::try_from(properties.len()).expect("a literal's member count fits in u32");
+    let mut order: Vec<u32> = (0..written).filter(|&i| properties[i as usize] != moved).collect();
+    edits.drop.push(moved);
+    // The list is the written members, then `append` (`links`, the instance's field), then `append_deferred`.
+    let mut next = written;
+    if let Some(links) = links {
+        edits.append.push((synthesized_string("links"), links));
+        order.push(next);
+        next += 1;
     }
-    Ok(table.value)
+    let instance_index = instance.map(|(name, value)| {
+        edits.append.push((synthesized_string(name), value));
+        next += 1;
+        next - 1
+    });
+    order.push(next);
+    order.extend(instance_index);
+    edits.append_deferred.push((key, 0));
+    edits.order = FieldOrder::Emitted(order);
+    let mut attributes = Some(attributes);
+    cx.compile_object_literal_with(literal, edits, |cx, _| {
+        attributes.take().expect("one deferred value, built once").compile(cx)
+    })
 }
 
 /// The methods of a config literal: roblox-ts refused each in the literal the TS rebuilt (`validateMethodAssignment`),
@@ -329,11 +236,6 @@ fn effective_name(cx: &mut Cx<'_>, name: P<Node>) -> Option<String> {
         Some(LiteralValue::Number(n)) => Some(rbxts_luau::js_number_to_string(n.0)),
         _ => None,
     }
-}
-
-/// The key `ObjectEdits` names a written field by: its written name's text.
-fn written_key(field: P<Node>) -> String {
-    field.name().filter(|n| n.kind() != Kind::ComputedPropertyName).map(|n| n.text().to_owned()).unwrap_or_default()
 }
 
 /// The value of `attributes`, compiled where the TS emits it.

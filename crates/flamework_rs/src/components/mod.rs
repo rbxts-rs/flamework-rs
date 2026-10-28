@@ -11,7 +11,6 @@
 //! TS's order: after the ids of the written config argument.
 
 pub(crate) mod config;
-mod literal;
 pub(crate) mod obfuscation;
 pub(crate) mod setter;
 pub mod shape;

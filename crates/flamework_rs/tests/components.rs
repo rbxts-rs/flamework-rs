@@ -162,7 +162,8 @@ fn position(d: P<Diagnostic>) -> String {
 }
 
 /// The refused component types and keys: the TS transformer's messages, at its nodes, with its notes (checked against
-/// a TS5 build of the same sources).
+/// a TS5 build of the same sources). The accessor of `AccessorConfig` (kept in the rebuilt literal) is roblox-ts's own
+/// error, which the compiler leaves out of a file with Flamework errors, as TS5 does; alone in a file it is reported.
 #[test]
 fn component_errors_are_reported() {
     let Some(project) = Project::new("component_errors", "errors") else { return };
