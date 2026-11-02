@@ -12,14 +12,15 @@
 //                      without it those files count as "only ours".
 //   --save-out DIR     copy the build's out folder to DIR (replacing it).
 //   --report FILE      write every difference's first differing line (tools/compare.cjs --report).
+//   --normalize        compare Luau files with their locals' names normalised (tools/compare.cjs --normalize).
 //   --diff N           print the first N differing files around their first difference.
 //   --timeout SECONDS  the build's time limit (default 600).
 //   --tsconfig FILE    the project's tsconfig to build, relative to the project (default: its tsconfig.json), such as a
 //                      TypeScript 7 variant beside a TypeScript 5 project's own.
 //   --keep             keep <work dir>.
 //   -- ARGS            extra arguments for `rbxtsc-fw build -p <project>`.
-// Prints `build exit N`, then `identical A, differing B, only ours C, only ref D`. Exits 0 when the build exited 0,
-// 1 when it failed (the comparison still runs), 2 on a usage error.
+// Prints `build exit N`, then `identical A, differing B, only ours C, only ref D` (with --normalize, then
+// `, names only E`). Exits 0 when the build exited 0, 1 when it failed (the comparison still runs), 2 on a usage error.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -30,7 +31,7 @@ const argv = process.argv.slice(2);
 const dash = argv.indexOf("--");
 const args = dash >= 0 ? argv.slice(0, dash) : argv;
 const buildArgs = dash >= 0 ? argv.slice(dash + 1) : [];
-const flags = new Set(["--keep"]);
+const flags = new Set(["--keep", "--normalize"]);
 const options = {};
 const positional = [];
 for (let i = 0; i < args.length; i++) {
@@ -124,7 +125,7 @@ if (build.status !== 0) {
 	console.log(output.slice(0, 40).join("\n"));
 }
 
-const result = compare(proj, ref, { diff: Number(options["--diff"] ?? 0), report: options["--report"] });
+const result = compare(proj, ref, { normalize: Boolean(options["--normalize"]), diff: Number(options["--diff"] ?? 0), report: options["--report"] });
 console.log(result.summary);
 
 if (options["--save-out"]) {

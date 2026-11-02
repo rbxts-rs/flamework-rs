@@ -113,6 +113,15 @@ It copies the project into the work dir (without its `out`, `include` and build 
 builds it, and prints `build exit N` and `identical A, differing B, only ours C, only ref D` (`tools/compare.cjs`, also
 usable on its own). The options are described at the top of `tools/parity.cjs`.
 
+With `--normalize` (both tools), Luau files are compared with their locals renamed to canonical names
+(`tools/normalize.cjs`, also usable on its own: `node tools/normalize.cjs <file>`). The generated locals are named
+differently from TS5's (Known limitations), so this is the comparison to make against a TS5 reference; it also
+checks that a change touched names only. Every identifier other than a keyword, a field name or a table
+constructor's key becomes `<class>#<n>`: its class is its name without a trailing number (`buf_2` is `buf`), and `n`
+counts the class's names in the order they first occur in the file. Two files normalise alike exactly when one is the
+other with names consistently swapped within their classes: a changed constant, a different order, or a use that
+reads another local still differs.
+
 ## Known limitations
 
 Where flamework-rs's output may differ from Flamework's TS transformer (TypeScript 5) in ways it cannot detect:
