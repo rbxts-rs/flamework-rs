@@ -1,6 +1,7 @@
 //! Expected outputs: compared byte for byte, or written with `UPDATE_EXPECTED=1`; and TS5 references, compared with
-//! the generated locals' names normalised.
+//! the generated locals' names normalised (a port of `tools/normalize.cjs`: keep the two alike).
 
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// Whether this run writes the expected outputs (`UPDATE_EXPECTED=1`) instead of comparing them.
@@ -38,62 +39,115 @@ pub fn first_difference(name: &str, got: &str, want: &str) -> Option<String> {
     ))
 }
 
-/// A Luau file with its locals renamed to canonical names, as `tools/normalize.cjs` renames them (see there): every
-/// identifier but a keyword, a field name or a table constructor's key becomes `<class>#<n>`, its class being its name
-/// without a trailing number and `n` the order in which the class's names first occur; the `_` class becomes `_`.
-/// Strings and comments are kept. For comparing with a TS5 reference, whose generated locals are named differently.
-pub fn normalize(text: &str) -> String {
+/// A Luau file with its generated locals renamed to canonical names, as `tools/normalize.cjs` renames them (see
+/// there): a name the file declares (`local`, a `for` variable, a parameter, `local function`) that is not in `keep`
+/// (the identifiers of the file's TS source, [`source_identifiers`]) becomes `<class>#<n>` wherever it stands as a name
+/// (not a field name, not a table constructor's key; never in a string or a comment), its class being its name
+/// without a trailing number and `n` the order in which the class's renamed names first occur; a `_`-class name that
+/// is never used, only declared, becomes `_#`. Keywords, globals and the names in `keep` stay as written. For
+/// comparing with a TS5 reference, whose generated locals are named differently.
+pub fn normalize(text: &str, keep: &HashSet<String>) -> String {
     let tokens = tokenize(text);
-    let significant: Vec<usize> = (0..tokens.len()).filter(|&i| tokens[i].0 != Token::Space).collect();
-    let mut stack: Vec<&str> = Vec::new();
-    let mut classes: std::collections::HashMap<String, Vec<String>> = Default::default();
+    let marks = marks(&tokens, keep);
+    // `_`-class names used somewhere other than where they are declared
+    let used: HashSet<&str> = (0..tokens.len())
+        .filter(|&i| marks[i].renamed && !marks[i].declaration && class_of(tokens[i].1) == "_")
+        .map(|i| tokens[i].1)
+        .collect();
+    let mut classes: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut out = String::with_capacity(text.len());
-    for (s, &index) in significant.iter().enumerate() {
-        // whitespace and comments before this token, as they are
-        let start = if s == 0 { 0 } else { significant[s - 1] + 1 };
-        for t in &tokens[start..index] {
-            out.push_str(t.1);
-        }
-        let (kind, token) = tokens[index];
-        let previous = s.checked_sub(1).map(|p| tokens[significant[p]]);
-        let next = significant.get(s + 1).map(|&n| tokens[n]);
-        match (kind, token) {
-            (Token::Op, "{" | "(" | "[") => stack.push(token),
-            (Token::Op, "}" | ")" | "]") | (Token::Id, "end" | "until") => {
-                stack.pop();
-            }
-            (Token::Id, "function" | "if" | "do" | "repeat") => stack.push(token),
-            _ => {}
-        }
-        let op = |t: Option<(Token, &str)>, texts: &[&str]| matches!(t, Some((Token::Op, x)) if texts.contains(&x));
-        let local = kind == Token::Id
-            && !KEYWORDS.contains(&token)
-            && !op(previous, &[".", ":"])
-            && !(stack.last() == Some(&"{") && op(next, &["="]) && op(previous, &["{", ",", ";"]));
-        if !local {
+    for (i, &(_, token)) in tokens.iter().enumerate() {
+        if !marks[i].renamed {
             out.push_str(token);
             continue;
         }
-        let class = token.trim_end_matches(|c: char| c.is_ascii_digit());
-        let class = if class.len() < token.len() { class.strip_suffix('_').unwrap_or(class) } else { class };
-        let class = if class.is_empty() { "_" } else { class };
-        if class == "_" {
-            out.push('_');
+        let class = class_of(token);
+        if class == "_" && !used.contains(token) {
+            out.push_str("_#");
             continue;
         }
-        let names = classes.entry(class.to_owned()).or_default();
-        let n = names.iter().position(|name| name == token).unwrap_or_else(|| {
-            names.push(token.to_owned());
+        let names = classes.entry(class).or_default();
+        let n = names.iter().position(|&name| name == token).unwrap_or_else(|| {
+            names.push(token);
             names.len() - 1
         });
         out.push_str(&format!("{class}#{n}"));
     }
-    if let Some(&last) = significant.last() {
-        for t in &tokens[last + 1..] {
-            out.push_str(t.1);
+    out
+}
+
+/// A name's class: the name without a trailing number (and the `_` before it), `_` when nothing is left.
+fn class_of(name: &str) -> &str {
+    let class = name.trim_end_matches(|c: char| c.is_ascii_digit());
+    let class = if class.len() < name.len() { class.strip_suffix('_').unwrap_or(class) } else { class };
+    if class.is_empty() { "_" } else { class }
+}
+
+/// The identifiers of a TS source file (its words outside comments, strings and template text): the `keep` set of the
+/// Luau compiled from it (`tools/normalize.cjs`'s `sourceIdentifiers`).
+pub fn source_identifiers(text: &str) -> HashSet<String> {
+    let bytes = text.as_bytes();
+    let n = bytes.len();
+    let mut out = HashSet::new();
+    // the `{` depth at which each open template's `${` started
+    let mut templates: Vec<i64> = Vec::new();
+    let mut braces = 0i64;
+    // From inside a template's text: to just after its closing "`" (popping it) or its next `${` (keeping it open).
+    let template_text = |from: usize, templates: &mut Vec<i64>| -> usize {
+        let mut j = from;
+        while j < n {
+            if bytes[j] == b'\\' {
+                j += 2;
+            } else if bytes[j] == b'`' {
+                templates.pop();
+                return j + 1;
+            } else if bytes[j] == b'$' && bytes.get(j + 1) == Some(&b'{') {
+                return j + 2;
+            } else {
+                j += 1;
+            }
         }
-    } else {
-        out.push_str(text);
+        templates.pop();
+        n
+    };
+    let mut i = 0;
+    while i < n {
+        let c = bytes[i];
+        if bytes[i..].starts_with(b"//") {
+            i = text[i..].find('\n').map_or(n, |j| i + j);
+        } else if bytes[i..].starts_with(b"/*") {
+            i = text[i + 2..].find("*/").map_or(n, |j| i + 2 + j + 2);
+        } else if c == b'"' || c == b'\'' {
+            let mut j = i + 1;
+            while j < n && bytes[j] != c && bytes[j] != b'\n' {
+                j += if bytes[j] == b'\\' { 2 } else { 1 };
+            }
+            i = (j + 1).min(n);
+        } else if c == b'`' {
+            templates.push(braces);
+            i = template_text(i + 1, &mut templates);
+        } else if c == b'}' && templates.last() == Some(&braces) {
+            i = template_text(i + 1, &mut templates);
+        } else if c.is_ascii_alphabetic() || c == b'_' || c == b'$' {
+            let start = i;
+            i += 1;
+            while i < n && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'$') {
+                i += 1;
+            }
+            out.insert(text[start..i].to_owned());
+        } else if c.is_ascii_digit() {
+            i += 1;
+            while i < n && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b'_' | b'$' | b'.')) {
+                i += 1;
+            }
+        } else {
+            match c {
+                b'{' => braces += 1,
+                b'}' => braces -= 1,
+                _ => {}
+            }
+            i += 1;
+        }
     }
     out
 }
@@ -102,6 +156,161 @@ const KEYWORDS: [&str; 25] = [
     "and", "break", "continue", "do", "else", "elseif", "end", "export", "false", "for", "function", "if", "in", "local",
     "nil", "not", "or", "repeat", "return", "then", "true", "type", "typeof", "until", "while",
 ];
+
+/// The tokens after which `if` starts an if-expression, not an if-statement (with the `then` and `else` of an
+/// if-expression).
+const EXPRESSION_BEFORE: [&str; 31] = [
+    "=", "(", ",", "{", "[", "+", "-", "*", "/", "//", "%", "^", "..", "==", "~=", "<", "<=", ">", ">=", "+=", "-=",
+    "*=", "/=", "//=", "%=", "^=", "..=", "return", "and", "or", "not",
+];
+
+/// What `normalize` knows of a token: whether it stands as a name (an identifier, not a keyword, a field name or a
+/// table constructor's key), whether the file declares it there, and whether `normalize` renames it.
+#[derive(Clone, Copy, Default)]
+struct Mark {
+    name: bool,
+    declaration: bool,
+    renamed: bool,
+}
+
+/// Each token's [`Mark`] (`tools/normalize.cjs`'s `locals`).
+fn marks(tokens: &[(Token, &str)], keep: &HashSet<String>) -> Vec<Mark> {
+    let at: Vec<usize> = (0..tokens.len()).filter(|&i| tokens[i].0 != Token::Space).collect();
+    let mut marks = vec![Mark::default(); tokens.len()];
+    // the `then` and `else` of an if-expression
+    let mut part = vec![false; tokens.len()];
+    // open brackets, and blocks (`function`, `if`, `do`, `repeat`) up to their `end` / `until`
+    let mut stack: Vec<&str> = Vec::new();
+    // open if-expressions: the stack depth they are at, and whether a `then` is due
+    let mut ifs: Vec<(usize, bool)> = Vec::new();
+    let op = |t: Option<(Token, &str)>, texts: &[&str]| matches!(t, Some((Token::Op, x)) if texts.contains(&x));
+    for s in 0..at.len() {
+        let i = at[s];
+        let (kind, token) = tokens[i];
+        let previous = s.checked_sub(1).map(|p| at[p]);
+        let next = at.get(s + 1).map(|&n| tokens[n]);
+        let open = ifs.last().copied().filter(|&(depth, _)| depth == stack.len());
+        match (kind, token) {
+            (Token::Op, "{" | "(" | "[") => stack.push(token),
+            (Token::Op, "}" | ")" | "]") | (Token::Id, "end" | "until") => {
+                stack.pop();
+            }
+            (Token::Id, "if") => {
+                let expression = previous.is_some_and(|p| {
+                    part[p]
+                        || (matches!(tokens[p].0, Token::Op | Token::Id)
+                            && EXPRESSION_BEFORE.contains(&tokens[p].1))
+                });
+                if expression {
+                    ifs.push((stack.len(), true));
+                } else {
+                    stack.push(token);
+                }
+            }
+            (Token::Id, "then") if open.is_some_and(|(_, then)| then) => {
+                ifs.last_mut().unwrap().1 = false;
+                part[i] = true;
+            }
+            (Token::Id, "elseif") if open.is_some_and(|(_, then)| !then) => ifs.last_mut().unwrap().1 = true,
+            (Token::Id, "else") if open.is_some_and(|(_, then)| !then) => {
+                ifs.pop();
+                part[i] = true;
+            }
+            (Token::Id, "function" | "do" | "repeat") => stack.push(token),
+            _ => {}
+        }
+        if kind != Token::Id || KEYWORDS.contains(&token) {
+            continue;
+        }
+        let previous = previous.map(|p| tokens[p]);
+        marks[i].name = !op(previous, &[".", ":"])
+            && !(stack.last() == Some(&"{") && op(next, &["="]) && op(previous, &["{", ",", ";"]));
+    }
+
+    // Declarations: `local a, b`, `local function f`, `for a, b`, and every function's parameters.
+    let text = |s: usize| at.get(s).map(|&i| tokens[i]);
+    let is_op = |s: usize, x: &str| op(text(s), &[x]);
+    let mut declare = |s: usize| {
+        if let Some(&i) = at.get(s)
+            && marks[i].name
+        {
+            marks[i].declaration = true;
+        }
+    };
+    // From a `:` after a declared name: past its type, to the `,` or `=` (or `in`, or the line's end) that ends it.
+    let skip_type = |mut s: usize| -> usize {
+        let mut depth = 0i64;
+        s += 1;
+        while s < at.len() {
+            let (kind, t) = tokens[at[s]];
+            if kind == Token::Op && matches!(t, "(" | "{" | "[") {
+                depth += 1;
+            } else if kind == Token::Op && matches!(t, ")" | "}" | "]") {
+                depth -= 1;
+            } else if depth == 0 && matches!((kind, t), (Token::Op, "," | "=") | (Token::Id, "in")) {
+                return s;
+            }
+            // A new line at depth 0 after a complete type ends it.
+            let gap = tokens.get(at[s] + 1);
+            if depth == 0
+                && gap.is_some_and(|&(kind, gap)| kind == Token::Space && gap.contains('\n'))
+                && !matches!(t, "|" | "&" | "->" | "?" | ":" | ",")
+            {
+                return s + 1;
+            }
+            s += 1;
+        }
+        s
+    };
+    for s in 0..at.len() {
+        let (kind, token) = tokens[at[s]];
+        if kind != Token::Id {
+            continue;
+        }
+        if (token == "local" && text(s + 1).map(|t| t.1) != Some("function")) || token == "for" {
+            let mut j = s + 1;
+            while j < at.len() {
+                declare(j);
+                j += 1;
+                if is_op(j, ":") {
+                    j = skip_type(j);
+                }
+                if !is_op(j, ",") {
+                    break;
+                }
+                j += 1;
+            }
+        } else if token == "function" {
+            if s > 0 && text(s - 1).map(|t| t.1) == Some("local") {
+                declare(s + 1);
+            }
+            let mut j = s + 1;
+            while j < at.len() && !is_op(j, "(") {
+                j += 1;
+            }
+            let mut depth = 0i64;
+            while j < at.len() {
+                let (kind, t) = tokens[at[j]];
+                if kind == Token::Op && matches!(t, "(" | "{" | "[" | "<") {
+                    depth += 1;
+                } else if kind == Token::Op && matches!(t, ")" | "}" | "]" | ">") {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                } else if depth == 1 && (is_op(j - 1, "(") || is_op(j - 1, ",")) {
+                    declare(j);
+                }
+                j += 1;
+            }
+        }
+    }
+    let declared: HashSet<&str> = (0..tokens.len()).filter(|&i| marks[i].declaration).map(|i| tokens[i].1).collect();
+    for (i, mark) in marks.iter_mut().enumerate() {
+        mark.renamed = mark.name && declared.contains(tokens[i].1) && !keep.contains(tokens[i].1);
+    }
+    marks
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Token {

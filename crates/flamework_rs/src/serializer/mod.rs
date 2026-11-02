@@ -2,7 +2,8 @@
 //!
 //! The TS generator built TypeScript that roblox-ts compiled; here it builds the same TypeScript as [`ir`] and
 //! [`lower`] compiles it the way roblox-ts did, so the Luau is the TS5 pipeline's but for the generated locals' names
-//! (see `lower` for what the round trip through the printer leaves in the output). The wire format, every order on
+//! and, within a class, the order of the hoisted helpers (README, Known limitations; see `lower` for what the round
+//! trip through the printer leaves in the output). The wire format, every order on
 //! it, the layout text and its hash are the TS generator's: see the TS file's header, which this port keeps as the
 //! reference.
 //!

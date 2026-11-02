@@ -113,14 +113,22 @@ It copies the project into the work dir (without its `out`, `include` and build 
 builds it, and prints `build exit N` and `identical A, differing B, only ours C, only ref D` (`tools/compare.cjs`, also
 usable on its own). The options are described at the top of `tools/parity.cjs`.
 
-With `--normalize` (both tools), Luau files are compared with their locals renamed to canonical names
-(`tools/normalize.cjs`, also usable on its own: `node tools/normalize.cjs <file>`). The generated locals are named
-differently from TS5's (Known limitations), so this is the comparison to make against a TS5 reference; it also
-checks that a change touched names only. Every identifier other than a keyword, a field name or a table
-constructor's key becomes `<class>#<n>`: its class is its name without a trailing number (`buf_2` is `buf`), and `n`
-counts the class's names in the order they first occur in the file (the `_` class, names that are never read, is
-kept as `_`). Two files normalise alike exactly when one is the other with names consistently swapped within their
-classes: a changed constant, a different order, or a use that reads another local still differs.
+With `--normalize` (both tools), Luau files are compared with their generated locals renamed to canonical names
+(`tools/normalize.cjs`, also usable on its own: `node tools/normalize.cjs <file.luau> [<source.ts>]`). The generated
+locals are named differently from TS5's (Known limitations), so this is the comparison to make against a TS5
+reference; it also checks that a change touched generated names only. What is renamed: a name the file declares
+(`local`, a `for` variable, a parameter, `local function`) that is not an identifier of the file's source
+(`parity.cjs` finds the sources under the project's `src`, `--src` to change it; `compare.cjs` takes `--src DIR`),
+wherever it stands as a name. The compiler never names a generated local after an identifier of the source, so the
+user's own locals keep their names. Keywords, field names, table constructors' keys, globals (names the file never
+declares, such as `Vector3`), strings and comments stay as written. A renamed name becomes `<class>#<n>`: its class is
+its name without a trailing number (`buf_2` is `buf`), and `n` counts the class's renamed names in the order they
+first occur in the file; a renamed `_`-class name (`_`, `_1`, …) that is only declared, never used, becomes `_#`.
+Two files normalise alike exactly when one is the other with renamed names consistently swapped within their classes
+(and never-used `_`-class names swapped freely): a changed constant, a different order, a global, a renamed user
+local, or a use that reads another local still differs. The whole file is one scope, which is stricter than Luau's.
+Without a source (`compare.cjs` without `--src`, a file no source maps to), every declared name is renamed, so a
+user's local renamed consistently goes unnoticed.
 
 ## Known limitations
 
@@ -144,7 +152,12 @@ Where it differs from TS5's output in shape only, with the same behaviour:
 
 - **The names of Flamework's generated locals** (`buf`, `value_2`, a guard's `v_Tree`, …): each is named when it is
   built, as the compiler approves it (never a name the file uses), where TS5's printer named them in print order over
-  the whole file, so the numbers after a name differ. Names only: compare with TS5 with `--normalize` (Parity).
+  the whole file, so the numbers after a name differ. Compare with TS5 with `--normalize` (Parity), which hides
+  these names and nothing else.
+- **The order of a class's hoisted serializer helpers** (the codecs, `createSerializer` locals and helpers that the
+  members of one class hoist), and the order in which its networking calls claim the file's budget of locals: they
+  follow roblox-ts's compile order of the members (instance properties, constructor, methods, statics), where TS5
+  followed source order. Each helper is still defined before the code that uses it; only the order differs.
 - **The order of a network's members.** The keys of a mapped type over `keyof T` (`incomingIds`, `outgoingIds`,
   `namespaceIds`, and the decoders built for them) are listed by a key of each, where TS5 lists them in the order its
   checker first made their literal types, which `keyof` does not fix (it shifts with unrelated edits). The arrays hold

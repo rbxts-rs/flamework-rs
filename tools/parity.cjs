@@ -12,7 +12,9 @@
 //                      without it those files count as "only ours".
 //   --save-out DIR     copy the build's out folder to DIR (replacing it).
 //   --report FILE      write every difference's first differing line (tools/compare.cjs --report).
-//   --normalize        compare Luau files with their locals' names normalised (tools/compare.cjs --normalize).
+//   --normalize        compare Luau files with their generated locals' names normalised (tools/compare.cjs
+//                      --normalize), the names of each file's TS source kept (--src).
+//   --src DIR          the project's source folder, relative to the project (default: src).
 //   --diff N           print the first N differing files around their first difference.
 //   --timeout SECONDS  the build's time limit (default 600).
 //   --tsconfig FILE    the project's tsconfig to build, relative to the project (default: its tsconfig.json), such as a
@@ -125,7 +127,7 @@ if (build.status !== 0) {
 	console.log(output.slice(0, 40).join("\n"));
 }
 
-const result = compare(proj, ref, { normalize: Boolean(options["--normalize"]), diff: Number(options["--diff"] ?? 0), report: options["--report"] });
+const result = compare(proj, ref, { normalize: Boolean(options["--normalize"]), src: path.join(proj, options["--src"] ?? "src"), diff: Number(options["--diff"] ?? 0), report: options["--report"] });
 console.log(result.summary);
 
 if (options["--save-out"]) {
