@@ -9,7 +9,8 @@ export const controls = Flamework.createGuard<"\v\f\b\0">();
 export const keys = Flamework.createGuard<{ naïve: number; 日本: string; 'a"b': boolean }>();
 export const childNames = Flamework.createGuard<Model & { Ünï: Part }>();
 
-// Properties in TypeScript 5's order: a derived interface's own members first, then the inherited ones.
+// Properties in TypeScript 7.1's order: a derived interface's own members first, then the inherited ones; a mapped
+// type over it and a spread follow the declarations.
 interface Base {
 	base: string;
 	shared: number;

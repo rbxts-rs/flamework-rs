@@ -785,7 +785,7 @@ impl<'g, 'x> Generator<'g, 'x> {
             }
         };
         let mut children = Vec::new();
-        for property in self.cx.ts5_properties_of_type(ty) {
+        for property in self.cx.properties_of_type(ty) {
             let property_type = type_of_named_property(self.cx, ty, property);
             let on_class = self.cx.checker().get_property_of_type_exported(instance_type, property.name()).is_some();
             if let Some(property_type) = property_type
@@ -983,7 +983,7 @@ impl<'g, 'x> Generator<'g, 'x> {
         }
 
         let mut guards = Vec::new();
-        for property in self.cx.ts5_properties_of_type(ty) {
+        for property in self.cx.properties_of_type(ty) {
             let property_declaration = property.value_declaration();
             let Some(property_type) = type_of_named_property(self.cx, ty, property)
             else {
@@ -1078,8 +1078,8 @@ fn types_requiring_dedup(cx: &mut Cx<'_>, ty: P<Type>, limit: u32) -> HashSet<P<
                 recurse(cx, walk, member, modifier)?;
             }
         } else if ty.flags().intersects(TypeFlags::Object) && !is_instance_type(cx, ty) {
-            // In TS5's order: it decides which of two types met equally often is declared first.
-            for property in cx.ts5_properties_of_type(ty) {
+            // In property order (TypeScript 7.1's): it decides which of two types met equally often is declared first.
+            for property in cx.properties_of_type(ty) {
                 let Some(property_type) = type_of_named_property(cx, ty, property) else {
                     continue;
                 };

@@ -12,9 +12,10 @@ compiled in, the binary a Flamework project builds with.
 
 **Status:** a personal port, provided as is; fork it if it is useful to you. Every part of the TS transformer is ported,
 networking included. It follows TypeScript 7.1 (through tsrs) and its own build order rather than reproducing the TS
-transformer's output: what a build does at run time (evaluation order, what is reflected, guards, the serializer's wire
-format and layouts) is the TS transformer's, except for the items marked On purpose below, while generated text and the
-order of some artefacts differ, see [Differences from the TS transformer](#differences-from-the-ts-transformer).
+transformer's output: what a build does at run time (evaluation order, what is reflected, what guards accept) is the TS
+transformer's, except for the items marked On purpose below, while generated text, the order of some artefacts and
+property order (TypeScript 7.1's, which can reach a serializer's field order and layout) differ, see
+[Differences from the TS transformer](#differences-from-the-ts-transformer).
 
 **Licence:** MIT (`LICENSE`). Parts are ports of Flamework, hashids, uuid, glob, minimatch and brace-expansion; their
 notices are in `THIRD-PARTY-NOTICES.md`.
@@ -60,10 +61,10 @@ message. The file says how a case is written, marked or left to another test.
 ## Install
 
 `rbxtsc-fw` is installed with Cargo from a pinned commit, one folder per Flamework version (the paths below are
-examples; `<url>` stands for this repository's git URL):
+examples):
 
 ```sh
-cargo install --locked --git <url> --rev <hash> rbxtsc_fw --root E:\Tools\rbxts\fw-2.0.0-beta.0
+cargo install --locked --git https://github.com/rbxts-rs/flamework-rs --rev <hash> rbxtsc_fw --root E:\Tools\rbxts\fw-2.0.0-beta.0
 ```
 
 `--locked` makes Cargo use the repository's `Cargo.lock`; without it, `cargo install` ignores the lock and resolves
@@ -89,7 +90,7 @@ To build against a local rbxts-rs checkout instead of the pinned rev, override t
 in an uncommitted `.cargo/config.toml` (git-ignored), one line per rbxts-rs crate in `Cargo.lock`:
 
 ```toml
-[patch."file:///E:/Projects/TS/Flamework/rbxts-rs"]
+[patch."https://github.com/rbxts-rs/rbxts-rs"]
 rbxts_cli = { path = "<rbxts-rs>/crates/rbxts_cli" }
 rbxts_luau = { path = "<rbxts-rs>/crates/rbxts_luau" }
 rbxts_luau_check = { path = "<rbxts-rs>/crates/rbxts_luau_check" }
@@ -153,10 +154,16 @@ Text and order:
   call, so a module's `.registerProvidersGlob` calls come in source order, and a class's metadata after its members),
   not the TS transformer's walk. Files still come in program order, so the output is the same for any checker count;
   `full` ids are paths and do not move, and a clean build's new salt changes `short` ids anyway.
-- **Guard key order of a mapped type over a union of keys** (`Pick<T, "b" | "a">`, `Omit`, `Record`, a key-remapping
-  `as` clause, and a rest or spread of one): the TS transformer lists the keys in the order its checker first made
-  the keys' literal types (it shifts with unrelated edits). The guard checks the same keys. Serializers of these
-  types order their fields by the mapped type itself and are exact.
+- **Property order is TypeScript 7.1's** (`Cx::properties_of_type`): a class's or interface's own members first, then
+  the inherited ones, each group in declaration order, and keys without a declaration (a mapped type's over a union of
+  literal keys: `Pick<T, "b" | "a">`, `Omit`, `Record`) after them by name. The TS transformer has TypeScript 5's
+  order (its checker's, which for mapped keys follows the order it first made their literal types and shifts with
+  unrelated edits). So the key order of guards (`t.interface`, a component's `attributes` guard) and the order of a
+  macro type's `getFields` differ, checking and listing the same keys; and for some type shapes (interfaces extending
+  others, redeclared members, spreads, object rests, late-bound keys) so do a serializer's field order and its layout
+  hash, so a buffer written by one compiler's build is not read by the other's. Two TypeScript 7.1 quirks: a `Record`
+  over a numeric enum lists its keys in code-unit order (`1, 10, 2`); and a class extending a generic base declared in
+  another file can list inherited members among its own, where an unrelated edit can move them.
 - **Guard text of a union** (`t.union(...)`, a literal union): the members are listed in the order TypeScript 7 gives
   a union's constituents.
 - **The order of a class's hoisted serializer helpers** (the codecs, `createSerializer` locals and helpers that the

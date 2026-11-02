@@ -8,7 +8,8 @@
 //! `simplifyUnion` stay here: the serializer needs their values as its own expressions ([`ir::E`]), which it ranks,
 //! prints in layout texts and compares, where F3's are Luau.
 //!
-//! Every property listing the serializer's layout depends on goes through [`properties_in_ts_order`].
+//! Every property listing the serializer's layout depends on comes from [`Cx::properties_of_type`]: TypeScript 7.1's
+//! order (a class's or interface's own members, then the inherited ones, each in declaration order).
 
 use rbxts_plugin::Cx;
 use rbxts_plugin::ts::{Kind as SyntaxKind, P, Symbol, Type};
@@ -24,16 +25,10 @@ pub enum TableKey {
     Num(f64),
 }
 
-/// The properties of a type in the order TypeScript 5 lists them (`getPropertiesOfType`), from the compiler
-/// (`Cx::ts5_properties_of_type`): tsrs lists some inherited properties elsewhere than TS5 for interfaces that extend
-/// others. Every property listing the serializer's layout depends on goes through here.
-pub fn properties_in_ts_order(cx: &mut Cx<'_>, ty: P<Type>) -> Vec<P<Symbol>> {
-    cx.ts5_properties_of_type(ty)
-}
-
 pub(crate) use crate::guards::names::local_name;
 pub(crate) use crate::guards::types::{
-    alias_symbol, extract_types, global as resolve_global, is_instance_type, ts5_property_name, type_of_named_property,
+    alias_symbol, escaped_property_name, extract_types, global as resolve_global, is_instance_type,
+    type_of_named_property,
 };
 
 /// `type.aliasTypeArguments` (`None` when there are none).

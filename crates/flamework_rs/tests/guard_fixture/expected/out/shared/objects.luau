@@ -73,7 +73,7 @@ local optionalObject = Flamework.createGuard(t.optional(t.interface({
 	x = t.number,
 	y = t.number,
 })))
--- Inherited properties: TS5 lists the interface's own properties, then the inherited ones it does not redeclare.
+-- Inherited properties: the interface's own properties, then the inherited ones it does not redeclare.
 local potions = Flamework.createGuard(t.map(t.string, t.interface({
 	Type = t.string,
 	Duration = t.string,

@@ -205,15 +205,15 @@ local spreadOmit = Flamework.createSerializer({
 		local length_3 = #(v_2.alpha)
 		local buf_6 = buffer.create(vsize(length_3) + length_3 + 2 + 5)
 		buffer.writeu8(buf_6, 0, 3)
-		buffer.writeu32(buf_6, 1, 1936833468)
+		buffer.writeu32(buf_6, 1, 3546260729)
 		local o_5 = 5
-		buffer.writeu8(buf_6, o_5, v_2.extra)
 		local text_2 = v_2.alpha
 		local length_4 = #text_2
-		o_5 = vwrite(buf_6, o_5 + 1, length_4)
+		o_5 = vwrite(buf_6, o_5, length_4)
 		buffer.writestring(buf_6, o_5, text_2)
 		o_5 += length_4
 		buffer.writeu8(buf_6, o_5, v_2.zeta)
+		buffer.writeu8(buf_6, o_5 + 1, v_2.extra)
 		return buf_6
 	end,
 	deserialize = function(buf_7)
@@ -223,21 +223,21 @@ local spreadOmit = Flamework.createSerializer({
 		if buffer.readu8(buf_7, 0) ~= 3 then
 			error(`[Flamework] this buffer is version {buffer.readu8(buf_7, 0)}, and this serializer of SpreadOmit reads version 3: read each version with its own serializer (Serialization.versionOf tells which), and a buffer written without a version with one without`)
 		end
-		if buffer.readu32(buf_7, 1) ~= 1936833468 then
+		if buffer.readu32(buf_7, 1) ~= 3546260729 then
 			error("[Flamework] SpreadOmit's layout changed since this buffer was written as version 3; bump the version and keep a reader for the old one")
 		end
 		local o_6 = 5
-		local extra_1 = buffer.readu8(buf_7, o_6)
-		local length_5, o_7 = vread(buf_7, o_6 + 1)
+		local length_5, o_7 = vread(buf_7, o_6)
 		local text_3 = buffer.readstring(buf_7, o_7, length_5)
 		o_6 = o_7 + length_5
 		local zeta_2 = buffer.readu8(buf_7, o_6)
+		local extra_1 = buffer.readu8(buf_7, o_6 + 1)
 		local value_2 = {
-			extra = extra_1,
 			alpha = text_3,
 			zeta = zeta_2,
+			extra = extra_1,
 		}
-		o_6 += 1
+		o_6 += 2
 		if o_6 ~= buffer.len(buf_7) then
 			error("malformed payload")
 		end
@@ -258,12 +258,11 @@ local spreadChain = Flamework.createSerializer({
 		local v_5 = v_3.zeta
 		local buf_8 = buffer.create(size + (if v_5 ~= nil then 2 else 1) + 1 + 5)
 		buffer.writeu8(buf_8, 0, 4)
-		buffer.writeu32(buf_8, 1, 1269905189)
+		buffer.writeu32(buf_8, 1, 994114310)
 		local o_8 = 5
-		buffer.writeu8(buf_8, o_8, v_3.n)
 		local v_6 = v_3.alpha
-		buffer.writeu8(buf_8, o_8 + 1, if v_6 ~= nil then 1 else 0)
-		o_8 += 2
+		buffer.writeu8(buf_8, o_8, if v_6 ~= nil then 1 else 0)
+		o_8 += 1
 		if v_6 ~= nil then
 			local length_7 = #v_6
 			o_8 = vwrite(buf_8, o_8, length_7)
@@ -277,6 +276,7 @@ local spreadChain = Flamework.createSerializer({
 			buffer.writeu8(buf_8, o_8, v_7)
 			o_8 += 1
 		end
+		buffer.writeu8(buf_8, o_8, v_3.n)
 		return buf_8
 	end,
 	deserialize = function(buf_9)
@@ -286,14 +286,13 @@ local spreadChain = Flamework.createSerializer({
 		if buffer.readu8(buf_9, 0) ~= 4 then
 			error(`[Flamework] this buffer is version {buffer.readu8(buf_9, 0)}, and this serializer of SpreadChain reads version 4: read each version with its own serializer (Serialization.versionOf tells which), and a buffer written without a version with one without`)
 		end
-		if buffer.readu32(buf_9, 1) ~= 1269905189 then
+		if buffer.readu32(buf_9, 1) ~= 994114310 then
 			error("[Flamework] SpreadChain's layout changed since this buffer was written as version 4; bump the version and keep a reader for the old one")
 		end
 		local o_9 = 5
-		local n_4 = buffer.readu8(buf_9, o_9)
-		local present = buffer.readu8(buf_9, o_9 + 1) ~= 0
+		local present = buffer.readu8(buf_9, o_9) ~= 0
 		local value_3
-		o_9 += 2
+		o_9 += 1
 		if present then
 			local length_8, o_10 = vread(buf_9, o_9)
 			local text_4 = buffer.readstring(buf_9, o_10, length_8)
@@ -307,11 +306,13 @@ local spreadChain = Flamework.createSerializer({
 			value_4 = buffer.readu8(buf_9, o_9)
 			o_9 += 1
 		end
+		local n_4 = buffer.readu8(buf_9, o_9)
 		local value_5 = {
-			n = n_4,
 			alpha = value_3,
 			zeta = value_4,
+			n = n_4,
 		}
+		o_9 += 1
 		if o_9 ~= buffer.len(buf_9) then
 			error("malformed payload")
 		end
@@ -326,7 +327,7 @@ local twoRuns = Flamework.createSerializer({
 		local length_9 = #(v_8.alpha)
 		local buf_10 = buffer.create(vsize(length_9) + length_9 + 5 + 5)
 		buffer.writeu8(buf_10, 0, 5)
-		buffer.writeu32(buf_10, 1, 368901255)
+		buffer.writeu32(buf_10, 1, 3975425654)
 		local o_11 = 5
 		local text_5 = v_8.alpha
 		local length_10 = #text_5
@@ -334,10 +335,10 @@ local twoRuns = Flamework.createSerializer({
 		buffer.writestring(buf_10, o_11, text_5)
 		o_11 += length_10
 		buffer.writeu8(buf_10, o_11, v_8.zeta)
-		buffer.writeu8(buf_10, o_11 + 1, if v_8.z9 then 1 else 0)
-		buffer.writeu8(buf_10, o_11 + 2, v_8.c)
-		buffer.writeu8(buf_10, o_11 + 3, v_8.q)
-		buffer.writeu8(buf_10, o_11 + 4, v_8.a1)
+		buffer.writeu8(buf_10, o_11 + 1, v_8.a1)
+		buffer.writeu8(buf_10, o_11 + 2, if v_8.z9 then 1 else 0)
+		buffer.writeu8(buf_10, o_11 + 3, v_8.c)
+		buffer.writeu8(buf_10, o_11 + 4, v_8.q)
 		return buf_10
 	end,
 	deserialize = function(buf_11)
@@ -347,7 +348,7 @@ local twoRuns = Flamework.createSerializer({
 		if buffer.readu8(buf_11, 0) ~= 5 then
 			error(`[Flamework] this buffer is version {buffer.readu8(buf_11, 0)}, and this serializer of TwoRuns reads version 5: read each version with its own serializer (Serialization.versionOf tells which), and a buffer written without a version with one without`)
 		end
-		if buffer.readu32(buf_11, 1) ~= 368901255 then
+		if buffer.readu32(buf_11, 1) ~= 3975425654 then
 			error("[Flamework] TwoRuns's layout changed since this buffer was written as version 5; bump the version and keep a reader for the old one")
 		end
 		local o_12 = 5
@@ -355,17 +356,17 @@ local twoRuns = Flamework.createSerializer({
 		local text_6 = buffer.readstring(buf_11, o_13, length_11)
 		o_12 = o_13 + length_11
 		local zeta_3 = buffer.readu8(buf_11, o_12)
-		local z9_1 = buffer.readu8(buf_11, o_12 + 1) ~= 0
-		local c = buffer.readu8(buf_11, o_12 + 2)
-		local q = buffer.readu8(buf_11, o_12 + 3)
-		local a1_1 = buffer.readu8(buf_11, o_12 + 4)
+		local a1_1 = buffer.readu8(buf_11, o_12 + 1)
+		local z9_1 = buffer.readu8(buf_11, o_12 + 2) ~= 0
+		local c_1 = buffer.readu8(buf_11, o_12 + 3)
+		local q_1 = buffer.readu8(buf_11, o_12 + 4)
 		local value_6 = {
 			alpha = text_6,
 			zeta = zeta_3,
-			z9 = z9_1,
-			c = c,
-			q = q,
 			a1 = a1_1,
+			z9 = z9_1,
+			c = c_1,
+			q = q_1,
 		}
 		o_12 += 5
 		if o_12 ~= buffer.len(buf_11) then
@@ -415,11 +416,11 @@ local spreadExtended = Flamework.createSerializer({
 	serialize = function(v_10)
 		local buf_14 = buffer.create(11)
 		buffer.writeu8(buf_14, 0, 7)
-		buffer.writeu32(buf_14, 1, 3443026417)
-		buffer.writeu8(buf_14, 5, v_10.z)
-		buffer.writeu8(buf_14, 6, v_10.own)
-		buffer.writeu8(buf_14, 7, if v_10.mid then 1 else 0)
-		buffer.writeu8(buf_14, 8, v_10.zeta)
+		buffer.writeu32(buf_14, 1, 3074865978)
+		buffer.writeu8(buf_14, 5, if v_10.mid then 1 else 0)
+		buffer.writeu8(buf_14, 6, v_10.zeta)
+		buffer.writeu8(buf_14, 7, v_10.own)
+		buffer.writeu8(buf_14, 8, v_10.z)
 		buffer.writeu8(buf_14, 9, v_10.b)
 		buffer.writeu8(buf_14, 10, v_10.y)
 		return buf_14
@@ -431,14 +432,14 @@ local spreadExtended = Flamework.createSerializer({
 		if buffer.readu8(buf_15, 0) ~= 7 then
 			error(`[Flamework] this buffer is version {buffer.readu8(buf_15, 0)}, and this serializer of SpreadExtended reads version 7: read each version with its own serializer (Serialization.versionOf tells which), and a buffer written without a version with one without`)
 		end
-		if buffer.readu32(buf_15, 1) ~= 3443026417 then
+		if buffer.readu32(buf_15, 1) ~= 3074865978 then
 			error("[Flamework] SpreadExtended's layout changed since this buffer was written as version 7; bump the version and keep a reader for the old one")
 		end
 		local value_8 = {
-			z = buffer.readu8(buf_15, 5),
-			own = buffer.readu8(buf_15, 6),
-			mid = buffer.readu8(buf_15, 7) ~= 0,
-			zeta = buffer.readu8(buf_15, 8),
+			mid = buffer.readu8(buf_15, 5) ~= 0,
+			zeta = buffer.readu8(buf_15, 6),
+			own = buffer.readu8(buf_15, 7),
+			z = buffer.readu8(buf_15, 8),
 			b = buffer.readu8(buf_15, 9),
 			y = buffer.readu8(buf_15, 10),
 		}
@@ -588,28 +589,28 @@ codec.s_SpreadOmit = function(v_20)
 	return vsize(length_15) + length_15 + 2
 end
 codec.w_SpreadOmit = function(buf_21, o_17, v_20)
-	buffer.writeu8(buf_21, o_17, v_20.extra)
 	local text_8 = v_20.alpha
 	local length_16 = #text_8
-	o_17 = vwrite(buf_21, o_17 + 1, length_16)
+	o_17 = vwrite(buf_21, o_17, length_16)
 	buffer.writestring(buf_21, o_17, text_8)
 	o_17 += length_16
 	buffer.writeu8(buf_21, o_17, v_20.zeta)
-	o_17 += 1
+	buffer.writeu8(buf_21, o_17 + 1, v_20.extra)
+	o_17 += 2
 	return o_17
 end
 codec.r_SpreadOmit = function(buf_21, o_17)
-	local extra_2 = buffer.readu8(buf_21, o_17)
-	local length_17, o_18 = vread(buf_21, o_17 + 1)
+	local length_17, o_18 = vread(buf_21, o_17)
 	local text_9 = buffer.readstring(buf_21, o_18, length_17)
 	o_17 = o_18 + length_17
 	local zeta_4 = buffer.readu8(buf_21, o_17)
+	local extra_2 = buffer.readu8(buf_21, o_17 + 1)
 	local value_15 = {
-		extra = extra_2,
 		alpha = text_9,
 		zeta = zeta_4,
+		extra = extra_2,
 	}
-	o_17 += 1
+	o_17 += 2
 	return value_15, o_17
 end
 local inArray = Flamework.createSerializer({
@@ -638,7 +639,7 @@ local inArray = Flamework.createSerializer({
 		size_3 += vsize(n_6)
 		local buf_22 = buffer.create(size_2 + size_3 + 5)
 		buffer.writeu8(buf_22, 0, 10)
-		buffer.writeu32(buf_22, 1, 3026222472)
+		buffer.writeu32(buf_22, 1, 601137068)
 		local o_19 = 5
 		local array_1 = v_21.list
 		o_19 = vwrite(buf_22, o_19, #array_1)
@@ -674,7 +675,7 @@ local inArray = Flamework.createSerializer({
 		if buffer.readu8(buf_23, 0) ~= 10 then
 			error(`[Flamework] this buffer is version {buffer.readu8(buf_23, 0)}, and this serializer of \{ list: SpreadOmit[]; map: Map<string, SpreadRec> \} reads version 10: read each version with its own serializer (Serialization.versionOf tells which), and a buffer written without a version with one without`)
 		end
-		if buffer.readu32(buf_23, 1) ~= 3026222472 then
+		if buffer.readu32(buf_23, 1) ~= 601137068 then
 			error("[Flamework] { list: SpreadOmit[]; map: Map<string, SpreadRec> }'s layout changed since this buffer was written as version 10; bump the version and keep a reader for the old one")
 		end
 		local o_20 = 5
@@ -700,12 +701,12 @@ local inArray = Flamework.createSerializer({
 			local text_10 = buffer.readstring(buf_23, o_24, length_20)
 			o_20 = o_24 + length_20
 			local k_1 = buffer.readu8(buf_23, o_20) ~= 0
-			local aa = buffer.readu8(buf_23, o_20 + 1)
-			local zz = buffer.readu8(buf_23, o_20 + 2)
+			local aa_1 = buffer.readu8(buf_23, o_20 + 1)
+			local zz_1 = buffer.readu8(buf_23, o_20 + 2)
 			local entry_2 = {
 				k = k_1,
-				aa = aa,
-				zz = zz,
+				aa = aa_1,
+				zz = zz_1,
 			}
 			map_3[text_10] = entry_2
 			o_20 += 3
@@ -769,12 +770,12 @@ local fromRest = Flamework.createSerializer({
 	serialize = function(v_23)
 		local buf_26 = buffer.create(10)
 		buffer.writeu8(buf_26, 0, 12)
-		buffer.writeu32(buf_26, 1, 2379290606)
-		buffer.writeu8(buf_26, 5, v_23.z)
-		buffer.writeu8(buf_26, 6, v_23.a)
-		buffer.writeu8(buf_26, 7, v_23.c)
-		buffer.writeu8(buf_26, 8, v_23.d)
-		buffer.writeu8(buf_26, 9, if v_23.k then 1 else 0)
+		buffer.writeu32(buf_26, 1, 1954398951)
+		buffer.writeu8(buf_26, 5, if v_23.k then 1 else 0)
+		buffer.writeu8(buf_26, 6, v_23.z)
+		buffer.writeu8(buf_26, 7, v_23.a)
+		buffer.writeu8(buf_26, 8, v_23.c)
+		buffer.writeu8(buf_26, 9, v_23.d)
 		return buf_26
 	end,
 	deserialize = function(buf_27)
@@ -784,15 +785,15 @@ local fromRest = Flamework.createSerializer({
 		if buffer.readu8(buf_27, 0) ~= 12 then
 			error(`[Flamework] this buffer is version {buffer.readu8(buf_27, 0)}, and this serializer of FromRest reads version 12: read each version with its own serializer (Serialization.versionOf tells which), and a buffer written without a version with one without`)
 		end
-		if buffer.readu32(buf_27, 1) ~= 2379290606 then
+		if buffer.readu32(buf_27, 1) ~= 1954398951 then
 			error("[Flamework] FromRest's layout changed since this buffer was written as version 12; bump the version and keep a reader for the old one")
 		end
 		local value_19 = {
-			z = buffer.readu8(buf_27, 5),
-			a = buffer.readu8(buf_27, 6),
-			c = buffer.readu8(buf_27, 7),
-			d = buffer.readu8(buf_27, 8),
-			k = buffer.readu8(buf_27, 9) ~= 0,
+			k = buffer.readu8(buf_27, 5) ~= 0,
+			z = buffer.readu8(buf_27, 6),
+			a = buffer.readu8(buf_27, 7),
+			c = buffer.readu8(buf_27, 8),
+			d = buffer.readu8(buf_27, 9),
 		}
 		if buffer.len(buf_27) ~= 10 then
 			error("malformed payload")

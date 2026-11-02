@@ -473,16 +473,16 @@ impl Gen<'_, '_, '_> {
         }
         if ty.flags().intersects(TypeFlags::Object) {
             let mut parts = Vec::new();
-            for property in typeinfo::properties_in_ts_order(self.cx, ty) {
+            for property in self.cx.properties_of_type(ty) {
                 let optional = if property.flags().intersects(SymbolFlags::Optional) { "?" } else { "" };
                 let property_type = typeinfo::type_of_named_property(self.cx, ty, property);
                 let key = match property_type {
                     Some(t) => self.type_key(t, seen),
                     None => "unknown".into(),
                 };
-                // Spelled as TS5 spells it: a symbol key's `__@sym@12` sorts before letters, where tsrs's internal
-                // `\u{7f}@sym@12` would sort after them (see `ts5_property_name` for two symbols of one text).
-                let name = typeinfo::ts5_property_name(self.cx, property);
+                // Escaped: a symbol key's `__@sym@12` sorts before letters, where the internal
+                // `\u{7f}@sym@12` would sort after them (see `escaped_property_name` for two symbols of one text).
+                let name = typeinfo::escaped_property_name(self.cx, property);
                 parts.push(format!("{name}{optional}: {key}"));
             }
             let infos = self.cx.checker().get_index_infos_of_type_exported(ty).to_vec();
@@ -613,7 +613,7 @@ impl Gen<'_, '_, '_> {
 
     /// `propertyOrder(type, seen)`.
     fn property_order(&mut self, ty: P<Type>, seen: &mut HashSet<P<Type>>) -> Vec<String> {
-        let properties = typeinfo::properties_in_ts_order(self.cx, ty);
+        let properties = self.cx.properties_of_type(ty);
         let by_name = || {
             let mut names: Vec<String> = properties.iter().map(|p| p.name().to_owned()).collect();
             names.sort_by(|a, b| utf16_cmp(a, b));
@@ -686,7 +686,7 @@ impl Gen<'_, '_, '_> {
 
     /// `mappedOrder(type, seen)`.
     fn mapped_order(&mut self, ty: P<Type>, seen: &mut HashSet<P<Type>>) -> Vec<String> {
-        let properties = typeinfo::properties_in_ts_order(self.cx, ty);
+        let properties = self.cx.properties_of_type(ty);
         let mapped = ty.as_mapped_type();
         let homomorphic = mapped
             .declaration

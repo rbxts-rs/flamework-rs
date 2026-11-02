@@ -21,10 +21,10 @@ local vread = function(buf_1, o_1)
 	local n_2 = 0
 	local scale = 1
 	while true do
-		local b = buffer.readu8(buf_1, o_1)
+		local b_1 = buffer.readu8(buf_1, o_1)
 		o_1 += 1
-		n_2 += b % 128 * scale
-		if b < 128 then
+		n_2 += b_1 % 128 * scale
+		if b_1 < 128 then
 			return n_2, o_1
 		end
 		scale *= 128
@@ -336,36 +336,36 @@ codec.s_ExtGenericDeep = function(v_17)
 end
 codec.w_ExtGenericDeep = function(buf_16, o_13, v_17)
 	buffer.writeu8(buf_16, o_13, v_17.x)
-	buffer.writeu8(buf_16, o_13 + 1, v_17.own)
 	local text_5 = v_17.alpha
 	local length_10 = #text_5
-	o_13 = vwrite(buf_16, o_13 + 2, length_10)
+	o_13 = vwrite(buf_16, o_13 + 1, length_10)
 	buffer.writestring(buf_16, o_13, text_5)
 	o_13 += length_10
 	buffer.writeu8(buf_16, o_13, v_17.zeta)
-	buffer.writeu8(buf_16, o_13 + 1, v_17.b)
-	buffer.writeu8(buf_16, o_13 + 2, v_17.q)
-	o_13 += 3
+	buffer.writeu8(buf_16, o_13 + 1, v_17.own)
+	buffer.writeu8(buf_16, o_13 + 2, v_17.b)
+	buffer.writeu8(buf_16, o_13 + 3, v_17.q)
+	o_13 += 4
 	return o_13
 end
 codec.r_ExtGenericDeep = function(buf_16, o_13)
 	local x_1 = buffer.readu8(buf_16, o_13)
-	local own_2 = buffer.readu8(buf_16, o_13 + 1)
-	local length_11, o_14 = vread(buf_16, o_13 + 2)
+	local length_11, o_14 = vread(buf_16, o_13 + 1)
 	local text_6 = buffer.readstring(buf_16, o_14, length_11)
 	o_13 = o_14 + length_11
 	local zeta_4 = buffer.readu8(buf_16, o_13)
-	local b_1 = buffer.readu8(buf_16, o_13 + 1)
-	local q = buffer.readu8(buf_16, o_13 + 2)
+	local own_2 = buffer.readu8(buf_16, o_13 + 1)
+	local b_2 = buffer.readu8(buf_16, o_13 + 2)
+	local q_1 = buffer.readu8(buf_16, o_13 + 3)
 	local value_13 = {
 		x = x_1,
-		own = own_2,
 		alpha = text_6,
 		zeta = zeta_4,
-		b = b_1,
-		q = q,
+		own = own_2,
+		b = b_2,
+		q = q_1,
 	}
-	o_13 += 3
+	o_13 += 4
 	return value_13, o_13
 end
 local extGeneric = Flamework.createSerializer({
@@ -375,7 +375,7 @@ local extGeneric = Flamework.createSerializer({
 	serialize = function(v_18)
 		local buf_17 = buffer.create(codec.s_ExtGenericDeep(v_18) + 5)
 		buffer.writeu8(buf_17, 0, 6)
-		buffer.writeu32(buf_17, 1, 1731124592)
+		buffer.writeu32(buf_17, 1, 61248167)
 		codec.w_ExtGenericDeep(buf_17, 5, v_18)
 		return buf_17
 	end,
@@ -386,7 +386,7 @@ local extGeneric = Flamework.createSerializer({
 		if buffer.readu8(buf_18, 0) ~= 6 then
 			error(`[Flamework] this buffer is version {buffer.readu8(buf_18, 0)}, and this serializer of ExtGenericDeep<Base> reads version 6: read each version with its own serializer (Serialization.versionOf tells which), and a buffer written without a version with one without`)
 		end
-		if buffer.readu32(buf_18, 1) ~= 1731124592 then
+		if buffer.readu32(buf_18, 1) ~= 61248167 then
 			error("[Flamework] ExtGenericDeep<Base>'s layout changed since this buffer was written as version 6; bump the version and keep a reader for the old one")
 		end
 		local value_14, o_15 = codec.r_ExtGenericDeep(buf_18, 5)

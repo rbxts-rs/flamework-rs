@@ -299,7 +299,7 @@ impl Config<'_> {
 
         let mut links = Vec::new();
         if let Some(attributes_type) = attributes_type {
-            for property in cx.ts5_properties_of_type(attributes_type) {
+            for property in cx.properties_of_type(attributes_type) {
                 let Some(declared) = cx.checker().get_type_of_symbol_at_location(property, Some(self.class)) else {
                     continue;
                 };
@@ -380,7 +380,7 @@ impl Config<'_> {
             Err(at) => return Err(super::shape::nominal_intersection(cx, at)),
         };
         let mut children = Vec::new();
-        for property in cx.ts5_properties_of_type(ty) {
+        for property in cx.properties_of_type(ty) {
             if cx.checker().get_property_of_type_exported(instance_type, property.name()).is_some() {
                 continue;
             }

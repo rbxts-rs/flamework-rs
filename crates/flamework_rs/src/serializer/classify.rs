@@ -311,7 +311,7 @@ impl Gen<'_, '_, '_> {
 
     /// `hasNominalMarker`: a `_nominal_` property.
     pub(crate) fn has_nominal_marker(&mut self, ty: P<Type>) -> bool {
-        typeinfo::properties_in_ts_order(self.cx, ty).iter().any(|p| p.name().starts_with("_nominal_"))
+        self.cx.properties_of_type(ty).iter().any(|p| p.name().starts_with("_nominal_"))
     }
 
     /// `isTypeofName`.
@@ -464,7 +464,7 @@ impl Gen<'_, '_, '_> {
             if !member.flags().intersects(TypeFlags::Object) {
                 continue;
             }
-            for property in typeinfo::properties_in_ts_order(self.cx, member) {
+            for property in self.cx.properties_of_type(member) {
                 let optional = property.flags().intersects(SymbolFlags::Optional);
                 let mut property_type = typeinfo::type_of_named_property(self.cx, member, property);
                 if let Some(t) = property_type
@@ -511,7 +511,7 @@ impl Gen<'_, '_, '_> {
     fn classify_object(&mut self, ty: P<Type>) -> GResult<Rc<Kind>> {
         let index_infos = self.cx.checker().get_index_infos_of_type_exported(ty).to_vec();
         let mut properties = Vec::new();
-        for property in typeinfo::properties_in_ts_order(self.cx, ty) {
+        for property in self.cx.properties_of_type(ty) {
             let property_type = typeinfo::type_of_named_property(self.cx, ty, property);
             if let Some(t) = property_type
                 && !t.flags().intersects(TypeFlags::Never | TypeFlags::UniqueESSymbol)

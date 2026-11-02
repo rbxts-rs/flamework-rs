@@ -7,7 +7,8 @@ export const typeText = textOf<'say "hi" – ünï'>();
 export const callerText = where(/* "é" */);
 export const emitted = emit<{ naïve: "ünï"; plain: 'a"b'; controls: "\t\v" }>();
 
-// Properties in TypeScript 5's order: a derived interface's own members first, then the inherited ones.
+// Properties in TypeScript 7.1's order: a derived interface's own members first, then the inherited ones; a mapped
+// type over it follows the declarations.
 interface Base {
 	base: 1;
 	shared: 2;

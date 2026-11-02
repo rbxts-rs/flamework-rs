@@ -653,8 +653,8 @@ impl Analysis<'_> {
             return Ok(UserMacro::Many(macros));
         }
         if is_object_type(target) {
-            // Keyed as the type declares its properties, in TS5's order.
-            let properties = cx.ts5_properties_of_type(target);
+            // Keyed as the type declares its properties, in TypeScript 7.1's order.
+            let properties = cx.properties_of_type(target);
             let mut entries = Vec::with_capacity(properties.len());
             for member in properties {
                 // A symbol key or a private name is not reflected: the member is left out.

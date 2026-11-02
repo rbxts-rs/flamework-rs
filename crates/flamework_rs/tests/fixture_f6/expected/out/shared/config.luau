@@ -276,8 +276,8 @@ do
 	NarrowComponent = Component({
 		tag = "F6Narrow",
 		attributes = {
-			extra = t.boolean,
 			level = t.number,
+			extra = t.boolean,
 		},
 	})(NarrowComponent) or NarrowComponent
 end

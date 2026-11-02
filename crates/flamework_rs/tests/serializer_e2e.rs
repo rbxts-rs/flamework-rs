@@ -9,7 +9,9 @@
 //!
 //! `tests/fixture_f4/expected` holds rbxtsc-fw's output for every file, each compared whole (`UPDATE_EXPECTED=1`
 //! writes it). It is the TS5 pipeline's output (roblox-ts master with the published 2.0.0-beta.0 transformer) but for
-//! the generated locals' names (checked with `tools/normalize.cjs`). `unions.luau` has union members told apart by
+//! the generated locals' names (checked with `tools/normalize.cjs`) and, where TypeScript 7.1's property order differs
+//! from TS5's, field orders and layout hashes (`spreads.luau`: spreads of mapped types and of rests, a generic
+//! interface's instantiated bases; `mapped.luau`: `ExtGenericDeep`). `unions.luau` has union members told apart by
 //! F3's guards, named with the serializer's code (`crate::serializer::ir::Guard`).
 //!
 //! The project is copied to a temporary directory with a `node_modules` as an install has it (`support::project`);
@@ -26,7 +28,7 @@ const FIXTURE: &str = "fixture_f4";
 
 /// Every file builds, and the files in `expected` equal its output byte for byte.
 #[test]
-fn every_kind_builds_and_matches_ts5() {
+fn every_kind_builds_and_matches_expected() {
     let Some(project) = Project::new(FIXTURE, "kinds") else { return };
     let report = project.build_with(Flamework::new());
     assert_clean(&report);
@@ -92,9 +94,10 @@ fn many_lists_a_union_in_written_order() {
 /// The field orders that follow a mapped property's links (`links.mappedType`, `links.keyType`), built on their own:
 /// properties a spread or an object rest copied out of a mapped type and a generic interface's instantiated mapped
 /// bases (`fixture_f4/src/spreads.ts`), and `as` clauses that rename keys, a true branch's narrowed `K`, an `infer K`
-/// shadowing it and several keys naming one field among them (`remaps.ts`). Both equal TS5's bytes.
+/// shadowing it and several keys naming one field among them (`remaps.ts`). `remaps.luau` equals TS5's bytes but for
+/// names; `spreads.luau` has TypeScript 7.1's property order where it differs from TS5's (the module docs).
 #[test]
-fn mapped_links_match_ts5() {
+fn mapped_links_build() {
     let Some(project) = Project::new(FIXTURE, "links") else { return };
     for entry in std::fs::read_dir(project.root.join("src")).unwrap() {
         let path = entry.unwrap().path();
@@ -112,10 +115,9 @@ fn mapped_links_match_ts5() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// Object rests of every kind build: rbxts-rs lists a rest's properties in TypeScript 5's order (the order of the type
-/// it was taken from), and so every type built from one (a spread of it, an interface extending it, a homomorphic
-/// mapped type over that, nested in a container). Their bytes equal TS5's (`fixture_f4/src/spreads.ts`; the fwapi
-/// round compared the pin-bump rounds' rest, derived-type and 171-shape projects with TS5 byte for byte).
+/// Object rests of every kind build: rbxts-rs lists a rest's properties in TypeScript 7.1's order (the order of the
+/// type it was taken from), and so every type built from one (a spread of it, an interface extending it, a homomorphic
+/// mapped type over that, nested in a container).
 #[test]
 fn object_rests_build() {
     let Some(project) = Project::new(FIXTURE, "rest") else { return };

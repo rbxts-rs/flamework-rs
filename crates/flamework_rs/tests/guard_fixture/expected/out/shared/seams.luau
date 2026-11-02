@@ -16,7 +16,8 @@ local keys = Flamework.createGuard(t.interface({
 local childNames = Flamework.createGuard(t.intersection(t.instanceIsA("Model"), t.children({
 	["\u{00DC}n\u{00EF}"] = t.instanceIsA("Part"),
 })))
--- Properties in TypeScript 5's order: a derived interface's own members first, then the inherited ones.
+-- Properties in TypeScript 7.1's order: a derived interface's own members first, then the inherited ones; a mapped
+-- type over it and a spread follow the declarations.
 local inherited = Flamework.createGuard(t.interface({
 	own = t.boolean,
 	shared = t.number,
@@ -27,9 +28,9 @@ local inheritedChildren = Flamework.createGuard(t.intersection(t.instanceIsA("Mo
 	Zeta = t.instanceIsA("Folder"),
 })))
 local mapped = Flamework.createGuard(t.interface({
+	base = t.optional(t.string),
 	own = t.optional(t.boolean),
 	shared = t.optional(t.number),
-	base = t.optional(t.string),
 }))
 local _object = table.clone({
 	q = 1,
@@ -40,14 +41,14 @@ _object.a = true
 _object.q = 2
 local spreadSource = _object
 local spread = Flamework.createGuard(t.interface({
+	p = t.string,
 	a = t.boolean,
 	q = t.number,
-	p = t.string,
 }))
 local Readonly_1 = t.interface({
+	base = t.string,
 	own = t.boolean,
 	shared = t.number,
-	base = t.string,
 })
 local dedupKeys = Flamework.createGuard(t.interface({
 	z = Readonly_1,

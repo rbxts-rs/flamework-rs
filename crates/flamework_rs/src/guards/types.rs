@@ -63,11 +63,11 @@ pub(crate) fn is_internal_property(cx: &mut Cx<'_>, property: P<Symbol>) -> bool
             .is_some_and(|name_type| name_type.flags().intersects(TypeFlags::UniqueESSymbol))
 }
 
-/// `property.name` as TS5 gives it: an internal name escaped as TS5 spells it (`__@sym@12`; a private name is `#x`,
-/// as `symbolName` gives it), any other name as it is. A symbol's id differs between the compilers, so two keys whose
-/// texts agree up to the id (two unique symbols of one name, a user key `"__@zeta@1"` against a real `[zeta]`) may
-/// order otherwise than in TS5, whose own order there follows its global symbol counter (README, "Differences").
-pub(crate) fn ts5_property_name(cx: &mut Cx<'_>, property: P<Symbol>) -> std::borrow::Cow<'static, str> {
+/// A property's name with an internal name escaped (`__@sym@12`; a private name is `#x`, as `symbolName` gives it),
+/// any other name as it is: the text of layout and sort keys. A unique symbol's internal name embeds the checker's
+/// symbol id, so two keys whose texts agree up to the id (two unique symbols of one name, a user key `"__@zeta@1"`
+/// against a real `[zeta]`) may order otherwise than in the TS transformer (README, "Differences").
+pub(crate) fn escaped_property_name(cx: &mut Cx<'_>, property: P<Symbol>) -> std::borrow::Cow<'static, str> {
     if is_internal_property(cx, property) {
         std::borrow::Cow::Owned(tsrs_ast::escape_internal_symbol_name(tsrs_ast::symbol_name(property)))
     } else {

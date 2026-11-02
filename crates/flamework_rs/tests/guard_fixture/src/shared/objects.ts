@@ -30,7 +30,7 @@ export const extended = Flamework.createGuard<Labeled>();
 export const readonlyObject = Flamework.createGuard<Readonly<Point>>();
 export const optionalObject = Flamework.createGuard<Point | undefined>();
 
-// Inherited properties: TS5 lists the interface's own properties, then the inherited ones it does not redeclare.
+// Inherited properties: the interface's own properties, then the inherited ones it does not redeclare.
 namespace Shop {
 	export interface Display {
 		readonly DisplayName: string;

@@ -3,8 +3,9 @@
 //!
 //! `tests/guard_fixture/expected` is rbxts-rs's output, checked against a TS5 build of the same sources (roblox-ts
 //! master with the monorepo transformer at 1a72fa1, the source 2.0.0-beta.0 ships): every guard is TS5's text but
-//! for the order of union members, which follows TS7 (DESIGN §10.4), and the differences listed in `crate::guards`'
-//! docs.
+//! for the order of union members, which follows TS7 (DESIGN §10.4), the order of properties, which is TypeScript
+//! 7.1's (`seams.luau`: a mapped type over an interface, an object spread), and the differences listed in
+//! `crate::guards`' docs.
 //!
 //! The `Flamework` plugin builds them: `createGuard<T>()` calls as user macros (`Modding.Generic<T, "guard">`), class
 //! metadata guards (`metadata.ts`) through the class hook. The project is built once and shared by the tests, in a
@@ -236,9 +237,9 @@ fn class_metadata_guards() {
     check("metadata");
 }
 
-/// Synthesized strings (`\u{…}` escapes, quotes and control characters by name) and TS5's property order.
+/// Synthesized strings (`\u{…}` escapes, quotes and control characters by name) and TypeScript 7.1's property order.
 #[test]
-fn synthesized_strings_and_ts5_property_order() {
+fn synthesized_strings_and_property_order() {
     check("seams");
 }
 

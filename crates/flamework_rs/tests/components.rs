@@ -5,7 +5,9 @@
 //! fixture's `components.ts`, `shared/recursiveLink.luau` its `RecursiveLink`. Every file and `flamework.build` equal
 //! TS5's but for:
 //! - the order of union members, which follows TS7 (DESIGN §10.4): `isA = { "Decal", "Texture" }` in an instance
-//!   shape, the members of `t.union` / `t.literal` in guards (`components.luau`, `config.luau`).
+//!   shape, the members of `t.union` / `t.literal` in guards (`components.luau`, `config.luau`);
+//! - the order of properties, which is TypeScript 7.1's: `config.luau`'s `F6Narrow` attributes guard (the base's
+//!   `A & { level: number }` with `A` the subclass's `{ extra: boolean }`).
 //!
 //! The project is built in a temporary copy with a `node_modules` made as `e2e.rs` makes it. Without a monorepo the
 //! tests are skipped, saying so.

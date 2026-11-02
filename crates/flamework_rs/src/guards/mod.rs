@@ -16,8 +16,8 @@
 //! of union members and the locals' names: TS7 orders a union's constituents its own way (deterministically), and the
 //! guard follows it (DESIGN §10.4, behaviour-neutral); locals are named in the guard's render order with the
 //! compiler's approval ([`names`]), not by TypeScript's printer over the whole file. Strings are the builder's
-//! synthesized literals ([`rbxts_plugin::synthesized_string`]); properties come in TS5's order
-//! ([`rbxts_plugin::Cx::ts5_properties_of_type`]).
+//! synthesized literals ([`rbxts_plugin::synthesized_string`]); properties come in TypeScript 7.1's
+//! order ([`rbxts_plugin::Cx::properties_of_type`]), not TS5's (README, "Differences").
 //!
 //! **Not the TS's.**
 //! - The Luau-limits budget: the TS lets Flamework's code claim 16 locals in a file's main chunk and 64 in a

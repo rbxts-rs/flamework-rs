@@ -53,10 +53,10 @@ local vread = function(buf_3, o_1)
 	local n_2 = 0
 	local scale = 1
 	while true do
-		local b = buffer.readu8(buf_3, o_1)
+		local b_1 = buffer.readu8(buf_3, o_1)
 		o_1 += 1
-		n_2 += b % 128 * scale
-		if b < 128 then
+		n_2 += b_1 % 128 * scale
+		if b_1 < 128 then
 			return n_2, o_1
 		end
 		scale *= 128

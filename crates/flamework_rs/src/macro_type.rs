@@ -134,7 +134,7 @@ pub enum Constituents {
     Intersection(Vec<P<Type>>),
 }
 
-/// A property of an object type ([`MacroCx::fields`]), in TypeScript 5's order.
+/// A property of an object type ([`MacroCx::fields`]), in TypeScript 7.1's order.
 #[derive(Clone, Debug)]
 pub struct Field {
     /// The property's name.
@@ -267,13 +267,13 @@ impl<'c, 'a> MacroCx<'c, 'a> {
         t.flags().intersects(TypeFlags::Object)
     }
 
-    /// `getFields`: the properties of an object type, in TypeScript 5's order; `None` when it is not object-like.
+    /// `getFields`: the properties of an object type, in TypeScript 7.1's order; `None` when it is not object-like.
     pub fn fields(&mut self, t: P<Type>) -> Option<Vec<Field>> {
         if !self.is_object_like(t) {
             return None;
         }
         let mut fields = Vec::new();
-        for property in self.cx.ts5_properties_of_type(t) {
+        for property in self.cx.properties_of_type(t) {
             let name = property.name();
             // A symbol key or a private name is not reflected: the field is left out.
             let Some(ty) = crate::guards::types::type_of_named_property(self.cx, t, property) else { continue };

@@ -82,7 +82,7 @@ fn read_shape(
         }
 
         let mut declared: Vec<(String, InstanceShape)> = Vec::new();
-        for property in cx.ts5_properties_of_type(member) {
+        for property in cx.properties_of_type(member) {
             let name = property.name();
             if cx.checker().get_property_of_type_exported(instance_type, name).is_some() {
                 continue;
