@@ -14,8 +14,10 @@
 //   --report FILE      write every difference's first differing line (tools/compare.cjs --report).
 //   --diff N           print the first N differing files around their first difference.
 //   --timeout SECONDS  the build's time limit (default 600).
+//   --tsconfig FILE    the project's tsconfig to build, relative to the project (default: its tsconfig.json), such as a
+//                      TypeScript 7 variant beside a TypeScript 5 project's own.
 //   --keep             keep <work dir>.
-//   -- ARGS            extra arguments for `rbxtsc-fw build -p .`.
+//   -- ARGS            extra arguments for `rbxtsc-fw build -p <project>`.
 // Prints `build exit N`, then `identical A, differing B, only ours C, only ref D`. Exits 0 when the build exited 0,
 // 1 when it failed (the comparison still runs), 2 on a usage error.
 "use strict";
@@ -114,7 +116,7 @@ if (options["--ref-extras"]) {
 }
 
 const timeout = Number(options["--timeout"] ?? 600) * 1000;
-const build = cp.spawnSync(path.resolve(exe), ["build", "-p", ".", ...buildArgs], { cwd: proj, encoding: "utf8", timeout, maxBuffer: 1 << 28 });
+const build = cp.spawnSync(path.resolve(exe), ["build", "-p", options["--tsconfig"] ?? ".", ...buildArgs], { cwd: proj, encoding: "utf8", timeout, maxBuffer: 1 << 28 });
 if (build.error) console.log(`build error: ${build.error.message}`);
 console.log(`build exit ${build.status}`);
 if (build.status !== 0) {
