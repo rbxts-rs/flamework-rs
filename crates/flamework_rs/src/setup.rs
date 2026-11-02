@@ -292,17 +292,25 @@ pub fn setup(cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<FwShared, Fata
     let mut build_info_reused = read_from_disk && cx.build_kind() == BuildKind::Incremental;
     let mut build_info = previous.unwrap_or_else(|| BuildInfo::new(&build_info_path));
 
-    // The package build infos above the program's files, once per directory.
+    // The package build infos above the program's files, once per directory, looked for in the program's package
+    // directories only (`CandidateScan`).
     {
         let mut directories: Vec<String> = Vec::new();
+        let mut packages: Vec<&str> = Vec::new();
         for file in program.source_files() {
-            let directory = node_path::dirname(file.get().file_name());
+            let file = file.get();
+            let directory = node_path::dirname(file.file_name());
             if directories.last() != Some(&directory) {
                 directories.push(directory);
+            }
+            let package = program.get_source_file_meta_data(file.path()).package_json_directory.as_str();
+            if !package.is_empty() && packages.last() != Some(&package) {
+                packages.push(package);
             }
         }
         let mut inputs = SetupInputs { cx };
         let mut scan = CandidateScan::new();
+        scan.look_only_in_packages(packages);
         let candidates = scan.candidates_with(
             &mut inputs,
             directories.iter().map(String::as_str),

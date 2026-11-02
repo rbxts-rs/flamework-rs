@@ -158,6 +158,9 @@ Where it differs on purpose:
   written and the send reaches no remote.
 - **`middleware` written as a shorthand property, a method or an accessor** (`createServer({ middleware })`): a build
   error, as for any value that is not an object literal. TS5 fails an internal assertion.
+- **A package's `flamework.build` is looked for only in the package's directory** (beside the `package.json` of the
+  program's files), where TS5 looks in every directory up to four above each file. One in a package's subfolder is
+  not read; every look is a build input the watcher watches.
 
 What flamework-rs refuses that TS5 builds:
 

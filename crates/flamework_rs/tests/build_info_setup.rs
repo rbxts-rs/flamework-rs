@@ -179,20 +179,23 @@ fn the_project_version_check_names_both_versions() {
     );
 }
 
+/// Every path the scan reads, with forward slashes.
+struct Recorded(Vec<String>);
+
+impl flamework_rs::inputs::Inputs for Recorded {
+    fn read(&mut self, path: &str) -> Option<String> {
+        self.0.push(path.replace('\\', "/"));
+        std::fs::read_to_string(path).ok()
+    }
+    fn env(&mut self, _: &str) -> Option<String> {
+        None
+    }
+}
+
 /// The scan takes the project's own `flamework.build` as there without reading it (it is the plugin's state file,
 /// which setup may not depend on), so it stops at the project directory whether the file exists or not.
 #[test]
 fn the_scan_never_reads_the_projects_own_build_info() {
-    struct Recorded(Vec<String>);
-    impl flamework_rs::inputs::Inputs for Recorded {
-        fn read(&mut self, path: &str) -> Option<String> {
-            self.0.push(path.replace('\\', "/"));
-            std::fs::read_to_string(path).ok()
-        }
-        fn env(&mut self, _: &str) -> Option<String> {
-            None
-        }
-    }
     let t = Tree::new("own");
     // One above the game, within the scan's reach from `game/src`: a first build (no own file) would find it in TS.
     t.write("flamework.build", &build_info_text(VERSION, "above"));
@@ -205,10 +208,74 @@ fn the_scan_never_reads_the_projects_own_build_info() {
         }
         let mut inputs = Recorded(Vec::new());
         let mut scan = CandidateScan::with_ceiling(&owned);
-        let candidates = scan.candidates_with(&mut inputs, [t.path("game/src").as_str()], &own);
+        let packages = [t.path("game"), t.path("game/node_modules/@s/p")];
+        scan.look_only_in_packages(packages.iter().map(String::as_str));
+        let starts = [t.path("game/src"), t.path("game/node_modules/@s/p/out")];
+        let candidates = scan.candidates_with(&mut inputs, starts.iter().map(String::as_str), &own);
         assert_eq!(candidates, Vec::<String>::new(), "exists: {exists}");
-        assert_eq!(inputs.0, [t.path("game/src/flamework.build").replace('\\', "/")], "exists: {exists}");
+        // The package's directory; the project's own is taken as there.
+        assert_eq!(
+            inputs.0,
+            [t.path("game/node_modules/@s/p/flamework.build").replace('\\', "/")],
+            "exists: {exists}"
+        );
     }
+}
+
+/// Given the program's package directories, the scan looks only in those: where a package's build writes its
+/// `flamework.build`, beside its `package.json`, wherever the package is (below `node_modules`, linked from outside,
+/// or a folder of the project's sources with a `package.json`, as the TS transformer's tests make one).
+#[test]
+fn the_scan_looks_only_in_package_directories() {
+    let t = Tree::new("where");
+    t.write("game/package.json", r#"{"name":"game"}"#);
+    // Outside a package directory: the TS transformer would find these first.
+    t.write("game/src/flamework.build", &build_info_text(VERSION, "sources"));
+    t.write("game/node_modules/@s/lib/out/flamework.build", &build_info_text(VERSION, "subfolder"));
+    t.write("game/src/vendored/flamework.build", &build_info_text(VERSION, "vendored"));
+    t.write("game/node_modules/@s/lib/flamework.build", &build_info_text(VERSION, "@s/lib"));
+    t.write("linked/core/flamework.build", &build_info_text(VERSION, "core"));
+    let own = t.path("game/flamework.build");
+    let owned = t.ceiling();
+    let mut inputs = Recorded(Vec::new());
+    let mut scan = CandidateScan::with_ceiling(&owned);
+    let packages = [
+        t.path("game"),
+        t.path("game/src/vendored"),
+        t.path("game/node_modules/@s/lib"),
+        t.path("game/node_modules/a"),
+        t.path("game/node_modules/a/node_modules/@b/c"),
+        t.path("linked/core"),
+    ];
+    scan.look_only_in_packages(packages.iter().map(String::as_str));
+    let starts = [
+        t.path("game/src/server/deep"),
+        t.path("game/src/vendored"),
+        t.path("game/node_modules/@s/lib/out/sub"),
+        t.path("game/node_modules/a/node_modules/@b/c/out"),
+        t.path("linked/core/out"),
+    ];
+    let candidates = scan.candidates_with(&mut inputs, starts.iter().map(String::as_str), &own);
+    assert_eq!(
+        candidates,
+        [
+            t.path("game/src/vendored/flamework.build"),
+            t.path("game/node_modules/@s/lib/flamework.build"),
+            t.path("linked/core/flamework.build"),
+        ]
+    );
+    // A nested package's directory, then its parent package's: the scan goes on above a package without one.
+    let read: Vec<String> = [
+        "game/src/vendored",
+        "game/node_modules/@s/lib",
+        "game/node_modules/a/node_modules/@b/c",
+        "game/node_modules/a",
+        "linked/core",
+    ]
+    .iter()
+    .map(|dir| t.path(&format!("{dir}/flamework.build")).replace('\\', "/"))
+    .collect();
+    assert_eq!(inputs.0, read);
 }
 
 /// Per file, the variables `Flamework.env` inlined there and their values.

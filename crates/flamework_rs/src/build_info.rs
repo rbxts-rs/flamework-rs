@@ -5,7 +5,7 @@
 //! The build info is kept as the JSON object itself, so a file read and written back keeps every byte, field order
 //! included. A fresh build info gets its fields in the order the TS transformer adds them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::inputs::{FsInputs, Inputs};
 use crate::json::{self, JsObject, JsValue};
@@ -716,11 +716,23 @@ pub fn package_name_of_with(
 /// recorded read of it would make the build after the one that first writes it run setup and transform every file
 /// again. It is there in every build but a project's first (and one after it was deleted), where TS's
 /// `fs.existsSync` lets the scan go on above the project directory.
+///
+/// With the program's package directories ([`CandidateScan::look_only_in_packages`]), the scan looks only in those
+/// (TS looks in every directory on the way; each look is a recorded input of setup, and a directory the watcher
+/// watches). A package's build writes its `flamework.build` beside its `package.json` (`currentDirectory`), and the
+/// build info is the package's (`packageNameOf` names it from the nearest `package.json`), so a package directory is
+/// where one can be: the candidates are TS's but for a `flamework.build` in a package's subfolder.
 #[derive(Debug, Default)]
 pub struct CandidateScan {
     cache: HashMap<String, Option<String>>,
     ceiling: Option<String>,
     own: Option<String>,
+    packages: Option<HashSet<String>>,
+}
+
+/// A directory as [`are_paths_equal`] compares it.
+fn path_key(path: &str) -> String {
+    if cfg!(windows) { node_path::normalize(&path.to_lowercase()) } else { node_path::normalize(path) }
 }
 
 impl CandidateScan {
@@ -735,10 +747,18 @@ impl CandidateScan {
             cache: HashMap::new(),
             ceiling: Some(ceiling.to_owned()),
             own: None,
+            packages: None,
         }
     }
 
-    /// The first `flamework.build` in `start` or up to `depth` parents of it.
+    /// Makes the scan look only in these directories: the package directories of the program's files (each file's
+    /// nearest `package.json`, which the compiler finds as it loads the program). Without it, every directory.
+    pub fn look_only_in_packages<'a>(&mut self, package_directories: impl IntoIterator<Item = &'a str>) {
+        self.packages = Some(package_directories.into_iter().map(path_key).collect());
+    }
+
+    /// The first `flamework.build` in `start` or up to `depth` parents of it, among the directories the scan looks in
+    /// ([`CandidateScan::look_only_in_packages`]).
     pub fn find_upper(&mut self, start: &str, depth: u32) -> Option<String> {
         self.find_upper_with(&mut FsInputs, start, depth)
     }
@@ -755,7 +775,8 @@ impl CandidateScan {
             None => {
                 let candidate = node_path::join(&[start, BUILD_INFO_NAME]);
                 let own = self.own.as_deref().is_some_and(|own| are_paths_equal(&candidate, own));
-                let found = (own || inputs.exists(&candidate)).then_some(candidate);
+                let looked_in = self.packages.as_ref().is_none_or(|packages| packages.contains(&path_key(start)));
+                let found = (own || (looked_in && inputs.exists(&candidate))).then_some(candidate);
                 self.cache.insert(start.to_owned(), found.clone());
                 found
             }
@@ -803,11 +824,7 @@ impl CandidateScan {
 
 /// `arePathsEqual`: normalised, and without case on Windows.
 pub fn are_paths_equal(a: &str, b: &str) -> bool {
-    if cfg!(windows) {
-        node_path::normalize(&a.to_lowercase()) == node_path::normalize(&b.to_lowercase())
-    } else {
-        node_path::normalize(a) == node_path::normalize(b)
-    }
+    path_key(a) == path_key(b)
 }
 
 /// What to do when a package's `flamework.build` cannot be used.
