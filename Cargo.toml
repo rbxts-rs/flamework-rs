@@ -15,16 +15,16 @@ license = "MIT"
 # To work against a local rbxts-rs checkout, see the README ("Developing against a local rbxts-rs").
 # Cargo.lock started as a copy of rbxts-rs's lock file, so the transitive versions match what rbxts-rs tests with.
 [workspace.dependencies]
-rbxts_plugin = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "c05cb88194c3562c154bc6c01b5021bf0cc1a076" }
-rbxts_luau = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "c05cb88194c3562c154bc6c01b5021bf0cc1a076" }
-rbxts_project = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "c05cb88194c3562c154bc6c01b5021bf0cc1a076" }
-rbxts_transform = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "c05cb88194c3562c154bc6c01b5021bf0cc1a076" }
-rbxts_cli = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "c05cb88194c3562c154bc6c01b5021bf0cc1a076" }
-tsrs_core = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "77c97efa2c7005a248d2c6010b395eacfdbabd89" }
-tsrs_ast = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "77c97efa2c7005a248d2c6010b395eacfdbabd89" }
-tsrs_checker = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "77c97efa2c7005a248d2c6010b395eacfdbabd89" }
-tsrs_compiler = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "77c97efa2c7005a248d2c6010b395eacfdbabd89" }
-tsrs_diagnostics = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "77c97efa2c7005a248d2c6010b395eacfdbabd89" }
+rbxts_plugin = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "3ba87d450eef8168abadbd77e822313d68718f25" }
+rbxts_luau = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "3ba87d450eef8168abadbd77e822313d68718f25" }
+rbxts_project = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "3ba87d450eef8168abadbd77e822313d68718f25" }
+rbxts_transform = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "3ba87d450eef8168abadbd77e822313d68718f25" }
+rbxts_cli = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "3ba87d450eef8168abadbd77e822313d68718f25" }
+tsrs_core = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
+tsrs_ast = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
+tsrs_checker = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
+tsrs_compiler = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
+tsrs_diagnostics = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
 flamework_rs = { path = "crates/flamework_rs" }
 mimalloc-safe = { version = "0.1.67", features = ["v3", "no_thp"] }
 # preserve_order: Rojo trees iterate children in file order, as JavaScript objects do.

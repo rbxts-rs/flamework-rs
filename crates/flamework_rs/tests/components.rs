@@ -22,7 +22,7 @@ use rbxts_plugin::ts::{Diagnostic, P};
 use rbxts_project::{ProjectOptionLayer, STACK_SIZE};
 use rbxts_transform::{CompileOptions, CompileReport, PluginOptions, compile_project_with};
 use support::project::{Project, assert_clean, compare_expected, fixture_dir, luau};
-use tsrs_compiler::diagnosticwriter::flatten_diagnostic_message;
+use rbxts_project::flatten_diagnostic_message;
 use tsrs_diagnostics::Category;
 
 const FIXTURE: &str = "fixture_f6";

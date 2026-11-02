@@ -668,10 +668,10 @@ impl Gen<'_, '_, '_> {
         for (i, &raw) in types.iter().enumerate() {
             let Some(info) = infos.get(i) else { break };
             let element = self.unwrap_promise(raw);
-            let flags = info.tuple_element_flags();
+            let flags = info.flags;
             let is_rest = flags.intersects(ElementFlags::Rest);
             let written = match node {
-                Some(n) => tuple_element_node(n.as_tuple_type_node().elements.nodes().get(i).copied()),
+                Some(n) => tuple_element_node(n.as_tuple_type_node().elements().nodes().get(i).copied()),
                 None => declared_type_node(info.labeled_declaration()),
             };
             let shape = self.spell_element(written, element, is_rest)?;

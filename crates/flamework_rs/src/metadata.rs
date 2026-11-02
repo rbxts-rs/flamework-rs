@@ -82,7 +82,7 @@ impl NodeMetadata {
             let text: String = parts
                 .iter()
                 .filter(|p| p.kind() == Kind::JSDocText)
-                .map(|p| p.as_jsdoc_text().text().concat())
+                .map(|p| p.text().to_owned())
                 .collect();
             self.parse_text(&text);
             return;
@@ -90,7 +90,7 @@ impl NodeMetadata {
         let mut link_index = 0;
         for &part in parts {
             match part.kind() {
-                Kind::JSDocText => self.parse_text(&part.as_jsdoc_text().text().concat()),
+                Kind::JSDocText => self.parse_text(part.text()),
                 Kind::JSDocLink | Kind::JSDocLinkCode | Kind::JSDocLinkPlain => {
                     let (name, text) = match part.kind() {
                         Kind::JSDocLink => {

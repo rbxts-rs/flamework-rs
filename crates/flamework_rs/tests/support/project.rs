@@ -9,7 +9,7 @@ use flamework_rs::Flamework;
 use rbxts_plugin::erased::{DynPlugin, erase};
 use rbxts_project::{ProjectOptionLayer, STACK_SIZE};
 use rbxts_transform::{CompileOptions, CompileReport, PluginOptions, compile_project_with};
-use tsrs_compiler::diagnosticwriter::flatten_diagnostic_message;
+use rbxts_project::flatten_diagnostic_message;
 use tsrs_diagnostics::Category;
 
 const RBXTS_PACKAGES: [&str; 3] = ["compiler-types", "t", "types"];

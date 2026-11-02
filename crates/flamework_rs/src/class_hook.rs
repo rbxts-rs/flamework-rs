@@ -194,7 +194,7 @@ fn class_fields(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, metadata: &Node
 
     let symbol = crate::metadata::get_symbol(cx, node).expect("checked by the hook");
     let constructor_type = cx.checker().get_type_of_symbol(symbol);
-    let first = cx.checker().get_construct_signatures(constructor_type).first().copied();
+    let first = cx.checker().get_signatures_of_type(constructor_type, tsrs_checker::SignatureKind::Construct).first().copied();
     if let Some(signature) = first {
         let trace_default = node.name().unwrap_or(node);
         let mut parameters = Vec::new();

@@ -371,7 +371,7 @@ impl<'c, 'a> MacroCx<'c, 'a> {
                         .and_then(|d| d.name())
                         .filter(|n| n.kind() == tsrs_ast::Kind::Identifier)
                         .map(|n| n.text().to_owned());
-                    let flags = info.map(|i| i.tuple_element_flags()).unwrap_or(ElementFlags::Required);
+                    let flags = info.map(|i| i.flags).unwrap_or(ElementFlags::Required);
                     TupleElement {
                         name,
                         ty,

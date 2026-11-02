@@ -188,7 +188,7 @@ pub fn tuple_guards(cx: &mut Cx<'_>, config: GuardConfig<'_>, node: P<Node>, ty:
     for (index, &element) in arguments.iter().enumerate() {
         let info = infos.get(index).copied().unwrap_or_default();
         let guard = guard_for(cx, config, info.labeled_declaration().unwrap_or(node), element)?;
-        if info.tuple_element_flags().intersects(ElementFlags::Rest) {
+        if info.flags.intersects(ElementFlags::Rest) {
             rest = Some(guard);
         } else if rest.is_some() {
             after.push(guard);

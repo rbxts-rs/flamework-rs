@@ -218,7 +218,7 @@ impl<'g, 'x> Generator<'g, 'x> {
     /// builds a type's guard, and the compiler reports identical diagnostics once.
     fn library_warning(&mut self) {
         if let Some(warning) = self.library_warning {
-            let end = self.cx.file().source.get().end_of_file_token();
+            let end = self.cx.file().source.get().end_of_file_token;
             self.cx.warning(end, warning);
         }
     }

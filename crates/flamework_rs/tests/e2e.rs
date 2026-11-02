@@ -21,7 +21,7 @@ use flamework_rs::json::{self, JsValue};
 use rbxts_plugin::erased::{DynPlugin, erase};
 use rbxts_project::{ProjectOptionLayer, STACK_SIZE};
 use rbxts_transform::{CompileOptions, CompileReport, PluginOptions, compile_project_with};
-use tsrs_compiler::diagnosticwriter::flatten_diagnostic_message;
+use rbxts_project::flatten_diagnostic_message;
 use tsrs_diagnostics::Category;
 
 /// The `@rbxts` packages the fixture needs.

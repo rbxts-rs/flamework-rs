@@ -20,7 +20,7 @@ use rbxts_plugin::erased::{DynPlugin, erase};
 use rbxts_plugin::ts::{Diagnostic, P};
 use rbxts_project::{ProjectOptionLayer, STACK_SIZE};
 use rbxts_transform::{CompileOptions, PluginOptions, compile_project_with};
-use tsrs_compiler::diagnosticwriter::flatten_diagnostic_message;
+use rbxts_project::flatten_diagnostic_message;
 use tsrs_diagnostics::Category;
 
 fn position(d: P<Diagnostic>) -> String {

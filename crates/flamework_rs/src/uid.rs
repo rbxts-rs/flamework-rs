@@ -229,7 +229,7 @@ fn is_defined_type(cx: &mut Cx<'_>, ty: P<Type>) -> bool {
     ty.flags() == TypeFlags::Object
         && checker.get_properties_of_type_exported(ty).is_empty()
         && checker.get_call_signatures(ty).is_empty()
-        && checker.get_construct_signatures(ty).is_empty()
+        && checker.get_signatures_of_type(ty, tsrs_checker::SignatureKind::Construct).is_empty()
         && checker.get_number_index_type(ty).is_none()
         && checker.get_string_index_type(ty).is_none()
 }
