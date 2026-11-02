@@ -3,7 +3,7 @@ import { Events } from "./client";
 declare function compute(): number;
 
 // A returned send past the function's budget of locals: TS5 puts the return statement in a do block with its packing,
-// flamework-rs packs it in a function (README, Known limitations).
+// flamework-rs packs it in a function (README, Differences from the TS transformer).
 export function scopedReturn(value: number) {
 	Events.bravo.fire(`n${value + 0}`, compute());
 	Events.bravo.fire(`n${value + 1}`, compute());

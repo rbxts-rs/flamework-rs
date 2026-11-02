@@ -10,11 +10,11 @@ compiled in, the binary a Flamework project builds with.
   Flamework is on for a project whose tsconfig lists `@flamework-experimental/transformer` in
   `compilerOptions.plugins`.
 
-**Status:** a personal port, provided as is; fork it if it is useful to you. Every part of the TS transformer is
-ported, networking included. It follows TypeScript 7.1 (through tsrs) and its own build order rather than reproducing
-the TS transformer's output: what a build does at run time (evaluation order, what is reflected, guards, the
-serializer's wire format and layouts) is the TS transformer's, while generated text and the order of some artefacts
-differ, see [Differences from the TS transformer](#differences-from-the-ts-transformer).
+**Status:** a personal port, provided as is; fork it if it is useful to you. Every part of the TS transformer is ported,
+networking included. It follows TypeScript 7.1 (through tsrs) and its own build order rather than reproducing the TS
+transformer's output: what a build does at run time (evaluation order, what is reflected, guards, the serializer's wire
+format and layouts) is the TS transformer's, except for the items marked On purpose below, while generated text and the
+order of some artefacts differ, see [Differences from the TS transformer](#differences-from-the-ts-transformer).
 
 **Licence:** MIT (`LICENSE`). Parts are ports of Flamework, hashids, uuid, glob, minimatch and brace-expansion; their
 notices are in `THIRD-PARTY-NOTICES.md`.
@@ -147,12 +147,12 @@ Text and order:
   built, as the compiler approves it (never a name the file uses), so the numbers after a name differ from the TS
   printer's. `--normalize` (above) hides these names and nothing else.
 - **The order things are recorded in within a file:** a file's new ids (`flamework.build`'s `identifiers` and the
-  counters of `short` / `tiny` / `obfuscated` ids), its `Flamework.env` inputs and its glob and path uses (their
-  entries in `flamework.build` and `include/flamework/globs.json`, and the order of their warnings) follow the order
-  the compiler's hooks run in (roblox-ts lowers a call chain from its innermost call, so a module's
-  `.registerProvidersGlob` calls come in source order, and a class's metadata after its members), not the TS
-  transformer's walk. Files still come in program order, so the output is the same for any checker count; `full` ids
-  are paths and do not move, and a clean build's new salt changes `short` ids anyway.
+  counters of `short` / `tiny` / `obfuscated` ids), its `Flamework.env` inputs and its glob and path uses (their entries
+  in `flamework.build` and `include/flamework/globs.json`, and the order of the glob warnings; path warnings stay in
+  source position order) follow the order the compiler's hooks run in (roblox-ts lowers a call chain from its innermost
+  call, so a module's `.registerProvidersGlob` calls come in source order, and a class's metadata after its members),
+  not the TS transformer's walk. Files still come in program order, so the output is the same for any checker count;
+  `full` ids are paths and do not move, and a clean build's new salt changes `short` ids anyway.
 - **Guard key order of a mapped type over a union of keys** (`Pick<T, "b" | "a">`, `Omit`, `Record`, a key-remapping
   `as` clause, and a rest or spread of one): the TS transformer lists the keys in the order its checker first made
   the keys' literal types (it shifts with unrelated edits). The guard checks the same keys. Serializers of these
