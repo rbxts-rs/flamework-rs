@@ -9,10 +9,10 @@
 // What is renamed: a name the file declares (`local`, a `for` variable, a function's parameter, `local function`)
 // that is not in `keep`, wherever it occurs as a name (not a field name after `.` or `:`, not a table constructor's
 // key `{ key = ... }`, never inside a string or a comment). Everything else stays as written: keywords, names the file
-// never declares (globals such as `Vector3`, `buffer`), and the names in `keep`. `keep` should be the identifiers of
-// the file's TS source (`sourceIdentifiers`): the compiler names generated locals so that they are none of those, so
-// the user's own locals (`player`) keep their names and a renamed one (`player` / `player_1`) is still reported.
-// Without a source, `keep` is empty and every declared name is renamed.
+// never declares (globals such as `Vector3`, `buffer`), `self`, and the names in `keep`. `keep` should be the
+// identifiers of the file's TS source (`sourceIdentifiers`): the compiler names generated locals so that they are
+// none of those, so the user's own locals (`player`) keep their names and a renamed one (`player` / `player_1`) is
+// still reported. Without a source, `keep` is empty and every declared name is renamed.
 //
 // How: a renamed name's class is its name without a trailing number (`buf_12` and `buf` are `buf`, `_exp2` is
 // `_exp`), and it becomes `<class>#<n>`, where n counts the distinct renamed names of that class in the order they
@@ -163,7 +163,9 @@ function locals(text, keep = new Set()) {
 			if (token.text === "if") {
 				const expression =
 					previous !== undefined &&
-					(previous.ifExpressionPart || ((previous.kind === "op" || previous.kind === "id") && EXPRESSION_BEFORE.has(previous.text)));
+					(previous.ifExpressionPart ||
+						(previous.kind === "str" && previous.text.endsWith("{")) ||
+						((previous.kind === "op" || previous.kind === "id") && EXPRESSION_BEFORE.has(previous.text)));
 				if (expression) ifExpressions.push({ depth: stack.length, then: true });
 				else stack.push("if");
 			} else if (token.text === "then" && atOpen && open.then) {
@@ -234,7 +236,7 @@ function locals(text, keep = new Set()) {
 		}
 	}
 	const declared = new Set(sig.filter((t) => t.declaration).map((t) => t.text));
-	for (const t of sig) if (t.name && declared.has(t.text) && !keep.has(t.text)) t.renamed = true;
+	for (const t of sig) if (t.name && declared.has(t.text) && !keep.has(t.text) && t.text !== "self") t.renamed = true;
 	return tokens;
 }
 

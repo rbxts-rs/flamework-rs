@@ -198,6 +198,7 @@ fn marks(tokens: &[(Token, &str)], keep: &HashSet<String>) -> Vec<Mark> {
             (Token::Id, "if") => {
                 let expression = previous.is_some_and(|p| {
                     part[p]
+                        || (tokens[p].0 == Token::Str && tokens[p].1.ends_with('{'))
                         || (matches!(tokens[p].0, Token::Op | Token::Id)
                             && EXPRESSION_BEFORE.contains(&tokens[p].1))
                 });
@@ -307,7 +308,8 @@ fn marks(tokens: &[(Token, &str)], keep: &HashSet<String>) -> Vec<Mark> {
     }
     let declared: HashSet<&str> = (0..tokens.len()).filter(|&i| marks[i].declaration).map(|i| tokens[i].1).collect();
     for (i, mark) in marks.iter_mut().enumerate() {
-        mark.renamed = mark.name && declared.contains(tokens[i].1) && !keep.contains(tokens[i].1);
+        mark.renamed = mark.name && declared.contains(tokens[i].1) && !keep.contains(tokens[i].1)
+            && tokens[i].1 != "self";
     }
     marks
 }

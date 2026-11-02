@@ -120,10 +120,10 @@ reference; it also checks that a change touched generated names only. What is re
 (`local`, a `for` variable, a parameter, `local function`) that is not an identifier of the file's source
 (`parity.cjs` finds the sources under the project's `src`, `--src` to change it; `compare.cjs` takes `--src DIR`),
 wherever it stands as a name. The compiler never names a generated local after an identifier of the source, so the
-user's own locals keep their names. Keywords, field names, table constructors' keys, globals (names the file never
-declares, such as `Vector3`), strings and comments stay as written. A renamed name becomes `<class>#<n>`: its class is
-its name without a trailing number (`buf_2` is `buf`), and `n` counts the class's renamed names in the order they
-first occur in the file; a renamed `_`-class name (`_`, `_1`, …) that is only declared, never used, becomes `_#`.
+user's own locals keep their names. Keywords, field names, table constructors' keys, `self`, globals (names the file
+never declares, such as `Vector3`), strings and comments stay as written. A renamed name becomes `<class>#<n>`: its
+class is its name without a trailing number (`buf_2` is `buf`), and `n` counts the class's renamed names in the order
+they first occur in the file; a renamed `_`-class name (`_`, `_1`, …) that is only declared, never used, becomes `_#`.
 Two files normalise alike exactly when one is the other with renamed names consistently swapped within their classes
 (and never-used `_`-class names swapped freely): a changed constant, a different order, a global, a renamed user
 local, or a use that reads another local still differs. The whole file is one scope, which is stricter than Luau's.
