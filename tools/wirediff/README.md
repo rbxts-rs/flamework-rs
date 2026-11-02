@@ -15,7 +15,9 @@ cargo build -p rbxtsc_fw --features wire-harvest
 FLAMEWORK_RS_WIRE_DIR=/tmp/harvest-new rbxtsc-fw build -p <project>
 ```
 
-The project's own output is the same as without the feature. Each file with a site writes
+The project's own output is the same as without the feature. A build with errors still harvests what it got through
+(the crate's `tests/fixture_calls` needs the tests' macro plugin, so a CLI build of it fails), which may not be the
+whole project: compare harvests of builds that pass. Each file with a site writes
 `<dir>/<file id>/<ordinal>.luau` (`<file id>` the source's path from the root directory, ordinals in source order, so
 two builds pair up): the file's hoisted statements, then `return { kind, layout, key, ... }`:
 
@@ -51,10 +53,20 @@ path, every literal and enum item) and 200 random ones (back-references followed
 - **W5** versioned serializers: the version byte leads the buffer; a changed version or hash byte, and a buffer too
   short for the header, are refused with the same message.
 
-W0 counts pairs that cannot be compared: one module loads and the other does not, or their kind, layout, arity or
-literal arguments differ. Messages are compared without Luau's `chunk:line:` prefix, and the warnings a call makes are
-part of its result. The summary gives pairs, values, and per check the failures with their first examples (`--redact`:
-counts only). Exit 0 means no failure.
+W0 counts pairs that cannot be compared: one module loads and the other does not, their kind, layout, arity or
+literal arguments differ, or a pair did not run to the end (status `crashed`, `load`, `unparsed`, `nothing
+generated`; a non-ok status always fails the run). Messages are compared without Luau's `chunk:line:` prefix, and
+the warnings a call makes are part of its result. The summary gives pairs, statuses, values, and per check the failures
+with their first examples (`--redact`: counts and statuses only). Exit 0 means no failure: every pair ran to the end
+and no check failed, no module is on one side only and no worker died.
+
+Collections and rest lists also get a 128-element value (a count past a varint's first byte), map and set keys
+distinct; strings and buffers are tried at 127/128 and 16383/16384 bytes (the length varint's steps) as well, and the
+`whole` path and `f64` at 2^32 - 1, 2^32, 2^35 - 1, 2^35 and -2^35.
+
+**Not covered here:** where a call site's statements go (ahead of the statement, in a `do` block, in a function) and
+the send itself (`_fire` / `_invoke` and their leading arguments): a harvested site is its packing alone. The
+mixed-layout round trips of F5's `rt.luau` (an old server with a new client and the reverse) cover those.
 
 The Roblox side (`env.luau`) is Lune's `@lune/roblox` datatypes and Instances, `Enum` items kept per item, `t`
 (`vendor/t.lua`, @rbxts/t 3.2.1, MIT), `game:GetService("RunService")` for the `--realm`, and `warn` recorded.

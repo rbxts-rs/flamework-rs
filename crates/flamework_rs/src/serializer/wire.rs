@@ -6,6 +6,16 @@
 //! module needs besides (a call site's decoder, a decoder's encoder, every layout text) comes from a second generator
 //! of the file's own, the companion, which never names through the compiler, warns nothing and builds
 //! `__fwguard(<key>)` in place of a guard, so the build's output is the same with the feature on.
+//!
+//! **What B2 (direct Luau emission) must rewrite here.** The companion's lowering ([`Namer`] through
+//! [`super::lower::LowerCx`]), [`relower`] and `networking::calls::harvest` work on the IR (`ir.rs`, `lower.rs`), which
+//! B2 deletes. On the Luau builders they become:
+//! - a site's packing: the build's own emitted statements, its argument placeholders bound to `__fwargs[i]` (instead
+//!   of lowering the encoding again with `ExtValue`s swapped);
+//! - the companion's names: a namer through the new shared `Names` that never asks the compiler (as [`Namer`] does);
+//! - [`guard`]: `__fwguard("<key>")` built as an `rbxts_luau` call;
+//! - the module contract unchanged (`kind`, `layout`, `key`, `serializer` / `deserialize` / `encode` / `pack`,
+//!   `fixed`, `arity`; ordinals in source order), so that harvests of builds before and after B2 still pair up.
 
 use rbxts_luau::{LateStrings, TempIds, TemporaryIdentifier, create, render_ast, render_expr};
 use rbxts_plugin::ts::{Node, P, Type};

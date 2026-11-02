@@ -160,6 +160,8 @@ local function message(e: any): string
 	while true do
 		local stripped = string.gsub(s, '^%[string "[^"]*"%]:%d+: ', "", 1)
 		stripped = string.gsub(stripped, "^[^\n]-%.luau:%d+: ", "", 1)
+		-- the harness's own frames (Lune names a script without its extension)
+		stripped = string.gsub(stripped, "^[^\n]-[/\\]wirediff:%d+: ", "", 1)
 		if stripped == s then
 			return s
 		end
@@ -510,7 +512,7 @@ for i, pair in job.pairs do
 	print(`pair {i}/{#job.pairs} {pair.path}`)
 	local ok, result = pcall(runPair, pair)
 	if not ok then
-		result = { path = pair.path, status = "crashed", reason = show(tostring(result)), failures = {}, examples = {} }
+		result = { path = pair.path, status = "crashed", reason = show(message(result), 0, 300), failures = {}, examples = {} }
 	end
 	table.insert(results, result)
 end

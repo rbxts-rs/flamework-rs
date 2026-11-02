@@ -374,7 +374,10 @@ local function numberEdges(width: string): { number }
 	if width == "f32" then
 		return { 0, -0, 1.5, -2.25, 3.4028234663852886e38, -3.4028234663852886e38, 1.401298464324817e-45, math.huge, -math.huge, 0 / 0 }
 	elseif width == "f64" then
-		return { 0, -0, 0.1, 1.7976931348623157e308, 5e-324, math.huge, -math.huge, 0 / 0, 2 ^ 53, -(2 ^ 31) }
+		return {
+			0, -0, 0.1, 1.7976931348623157e308, 5e-324, math.huge, -math.huge, 0 / 0, 2 ^ 53, -(2 ^ 31),
+			4294967295, 4294967296, 34359738367, 34359738368, -34359738368,
+		}
 	elseif width == "u64" then
 		return { 0, 1, 2 ^ 32 - 1, 2 ^ 32, 2 ^ 40 + 5, 2 ^ 53 }
 	elseif width == "i64" then
@@ -396,8 +399,55 @@ end
 
 local VARINT_EDGES = { 0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, 4294967295, 34359738367 }
 
+--- Empty, short, past each varint length step (127/128, 16383/16384) and each length prefix (255/256, 65536).
 local function stringEdges(): { string }
-	return { "", "a", "\0", "\xff\0é", bigString(255, 120), bigString(256, 121), bigString(65536, 122) }
+	return {
+		"", "a", "\0", "\xff\0é", bigString(127, 119), bigString(128, 120), bigString(255, 120), bigString(256, 121),
+		bigString(16383, 118), bigString(16384, 117), bigString(65536, 122),
+	}
+end
+
+--- A large count (a varint's second byte) for collections and rest lists.
+local LARGE = 128
+
+--- About how much a value weighs (elements, and bytes / 64): a large collection is made of light values only, so that
+--- nested ones stay small.
+local function weight(v: any): number
+	local t = type(v)
+	if t == "string" then
+		return 1 + #v // 64
+	elseif t == "buffer" then
+		return 1 + buffer.len(v) // 64
+	elseif t == "table" then
+		local total = 1
+		for k, x in v do
+			total += weight(k) + weight(x)
+			if total > 64 then
+				return total
+			end
+		end
+		return total
+	end
+	return 1
+end
+
+--- The values of `list` light enough to repeat `LARGE` times (at least one: the lightest).
+local function light(list: { any }): { any }
+	local result = {}
+	local lightest, least = nil, math.huge
+	for _, v in list do
+		local w = weight(v)
+		if w <= 64 then
+			table.insert(result, v)
+		end
+		if w < least then
+			lightest, least = v, w
+		end
+	end
+	if #result == 0 and lightest ~= nil then
+		table.insert(result, lightest)
+	end
+	return result
 end
 
 local DATATYPE_EDGES = {
@@ -596,6 +646,48 @@ local function capped(list: { any }): { any }
 end
 
 local edges
+local random
+
+--- Up to `n` distinct keys of a node, in a fixed order: `0 .. n-1` for numbers, `"k1" ..` for strings, else the
+--- node's edge values and then random ones, without repeats.
+local function distinctKeys(ctx: any, node: any, stack: { any }, n: number): { any }
+	local t = node.t
+	local result = {}
+	if t == "num" or t == "varint" then
+		for i = 0, n - 1 do
+			table.insert(result, i)
+		end
+		return result
+	elseif t == "string" then
+		for i = 1, n do
+			table.insert(result, "k" .. i)
+		end
+		return result
+	end
+	local seen = {}
+	local function add(k: any)
+		if #result < n and usableKey(k) and k ~= NIL and not seen[k] then
+			seen[k] = true
+			table.insert(result, k)
+		end
+	end
+	local ok, list = pcall(edges, ctx, node, stack)
+	if ok then
+		for _, k in list do
+			add(k)
+		end
+	end
+	for _ = 1, 4 * n do
+		if #result >= n then
+			break
+		end
+		local made, k = pcall(random, ctx, node, stack, 0)
+		if made then
+			add(k)
+		end
+	end
+	return result
+end
 
 --- Each child varied through its edges while the others keep their first (`build(index, value)` makes a value with
 --- child `index` set to `value`).
@@ -671,6 +763,12 @@ function edges(ctx: any, node: any, stack: { any }): { any }
 		if #values >= 2 then
 			table.insert(result, { unbox(values[1]), unbox(values[2]), unbox(values[#values]) })
 		end
+		local cycle = light(values)
+		local large = {}
+		for i = 1, LARGE do
+			large[i] = unbox(cycle[(i - 1) % #cycle + 1])
+		end
+		table.insert(result, large)
 		return capped(result)
 	elseif t == "set" then
 		local result = { {} }
@@ -682,6 +780,11 @@ function edges(ctx: any, node: any, stack: { any }): { any }
 			end
 		end
 		table.insert(result, all)
+		local large = {}
+		for _, k in distinctKeys(ctx, node.inner, inner, LARGE) do
+			large[k] = true
+		end
+		table.insert(result, large)
 		return capped(result)
 	elseif t == "map" then
 		local keys = edges(ctx, node.key, inner)
@@ -693,6 +796,12 @@ function edges(ctx: any, node: any, stack: { any }): { any }
 				table.insert(result, { [k] = unbox(values[(i - 1) % math.max(#values, 1) + 1]) })
 			end
 		end
+		local cycle = light(values)
+		local large = {}
+		for i, k in distinctKeys(ctx, node.key, inner, LARGE) do
+			large[k] = unbox(cycle[(i - 1) % #cycle + 1])
+		end
+		table.insert(result, large)
 		return capped(result)
 	elseif t == "list" then
 		local parts = {}
@@ -733,6 +842,12 @@ function edges(ctx: any, node: any, stack: { any }): { any }
 			if #restEdges >= 2 then
 				table.insert(result, make({ restEdges[1], restEdges[2] }))
 			end
+			local cycle = light(restEdges)
+			local large = {}
+			for i = 1, LARGE do
+				large[i] = cycle[(i - 1) % #cycle + 1]
+			end
+			table.insert(result, make(large))
 		end
 		return capped(result)
 	elseif t == "object" then
@@ -758,7 +873,7 @@ function edges(ctx: any, node: any, stack: { any }): { any }
 				end
 			end
 			if i == node.whole then
-				for _, v in { 1, -1, 127, 128, 2 ^ 31, -(2 ^ 32), 2 ^ 53, 1e20, 0.5 } do
+				for _, v in { 1, -1, 127, 128, 2 ^ 31, -(2 ^ 32), 2 ^ 53, 1e20, 0.5, 4294967295, 4294967296, 34359738367, 34359738368, -34359738368 } do
 					table.insert(result, v)
 				end
 			end
@@ -770,8 +885,6 @@ function edges(ctx: any, node: any, stack: { any }): { any }
 	end
 	error(`no edges for {t}`)
 end
-
-local random
 
 local function randomString(r: any): string
 	local n = if r.chance(0.05) then r.int(33, 300) else r.int(0, 32)
@@ -976,8 +1089,22 @@ local function points(node: any, value: any, stack: { any }, set: (any) -> (), o
 			end, out, depth)
 		end
 	elseif node.t == "map" then
-		for k, v in value do
-			points(node.value, v, inner, function(x)
+		-- In a fixed order (keys by reference iterate as their addresses fall): primitive keys only, sorted.
+		local keys = {}
+		for k in value do
+			local kind = type(k)
+			if kind == "number" or kind == "string" or kind == "boolean" then
+				table.insert(keys, k)
+			end
+		end
+		table.sort(keys, function(a, b)
+			if type(a) ~= type(b) then
+				return type(a) < type(b)
+			end
+			return tostring(a) < tostring(b)
+		end)
+		for _, k in keys do
+			points(node.value, value[k], inner, function(x)
 				value[k] = x
 			end, out, depth)
 		end

@@ -16,7 +16,9 @@
 //   --json FILE       write every pair's result there.
 //   --lune PATH       the lune executable (default: lune on PATH).
 // Prints the pairs (and modules only one side has), values, and per check the failures with the first examples.
-// Exits 0 with no failure, 1 with failures (or a pair only one side has, or a worker that died), 2 on a usage error.
+// Exits 0 with no failure; 1 with any failure, which includes a pair that did not run to the end (status crashed,
+// load, mismatch, unparsed or nothing generated: counted under W0), a module only one side has and a worker that
+// died; 2 on a usage error.
 "use strict";
 const fs = require("fs");
 const os = require("os");
@@ -154,6 +156,14 @@ Promise.all(runs).then((done) => {
 		for (const e of Array.isArray(r.examples) ? r.examples : []) {
 			if (failures[e.check].examples.length < shown) failures[e.check].examples.push({ path: r.path, ...e });
 		}
+		// A pair that did not run to the end (crashed, failed to load, unparsed, nothing generated) is a W0 failure.
+		if (r.status !== "ok" && !((r.failures || {}).W0 > 0)) {
+			failures.W0.pairs++;
+			failures.W0.cases++;
+			if (failures.W0.examples.length < shown) {
+				failures.W0.examples.push({ path: r.path, what: `status ${r.status}${r.reason ? `: ${r.reason}` : ""}` });
+			}
+		}
 	}
 	const list = (o) => Object.entries(o).map(([k, v]) => `${k} ${v}`).join(", ");
 	console.log(`pairs ${pairs.length} (${list(kinds)}), only old ${onlyOld.length}, only new ${onlyNew.length}; ${seconds} s, ${chunks.length} workers`);
@@ -174,8 +184,6 @@ Promise.all(runs).then((done) => {
 	if (!redact) {
 		for (const m of onlyOld.slice(0, shown)) console.log(`only old: ${m}`);
 		for (const m of onlyNew.slice(0, shown)) console.log(`only new: ${m}`);
-		const odd = results.filter((r) => r.status !== "ok");
-		for (const r of odd.slice(0, shown)) console.log(`${r.status}: ${r.path}${r.reason ? ` (${r.reason})` : ""}`);
 	}
 	if (options["--json"]) fs.writeFileSync(options["--json"], JSON.stringify(results, null, "\t"));
 	fs.rmSync(work, { recursive: true, force: true });
