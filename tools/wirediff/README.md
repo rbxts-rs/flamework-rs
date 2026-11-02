@@ -17,7 +17,8 @@ FLAMEWORK_RS_WIRE_DIR=/tmp/harvest-new rbxtsc-fw build -p <project>
 
 The project's own output is the same as without the feature. A build with errors still harvests what it got through
 (the crate's `tests/fixture_calls` needs the tests' macro plugin, so a CLI build of it fails), which may not be the
-whole project: compare harvests of builds that pass. Each file with a site writes
+whole project: compare harvests of builds that pass. Under `transformer.obfuscation` every clean build gets fresh ids,
+which reorder a network's members and so its sites: build both sides with the same `FLAMEWORK_RS_FIXED_SEED` (a uuid). Each file with a site writes
 `<dir>/<file id>/<ordinal>.luau` (`<file id>` the source's path from the root directory, ordinals in source order, so
 two builds pair up): the file's hoisted statements, then `return { kind, layout, key, ... }`:
 
