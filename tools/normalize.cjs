@@ -12,6 +12,8 @@
 // the other with names consistently swapped for names of the same class: a constant, a call, the order of the code,
 // or which local a use reads (`buf` where the other reads `buf_1`) still differ. The whole file is one scope, which is
 // stricter than Luau's scoping: a name reused in two functions of one build and kept apart in the other differs.
+// One exception: the names of the `_` class (`_`, `_1`, ...) all become `_`. They name what is never read (a loop's
+// counter, a skipped value), and the compiler's own `_` may share its name with a generated one in one build only.
 "use strict";
 
 const KEYWORDS = new Set([
@@ -123,7 +125,7 @@ function tokenize(text) {
 function locals(text) {
 	const tokens = tokenize(text);
 	const significant = tokens.map((t, index) => index).filter((index) => tokens[index].kind !== "space");
-	const stack = []; // open brackets
+	const stack = []; // open brackets, and blocks (`function`, `if`, `do`, `repeat`) up to their `end` / `until`
 	let s = 0; // position in `significant`
 	for (let index = 0; index < tokens.length; index++) {
 		const token = tokens[index];
@@ -134,6 +136,10 @@ function locals(text) {
 		if (token.kind === "op") {
 			if (token.text === "{" || token.text === "(" || token.text === "[") stack.push(token.text);
 			else if (token.text === "}" || token.text === ")" || token.text === "]") stack.pop();
+		}
+		if (token.kind === "id") {
+			if (["function", "if", "do", "repeat"].includes(token.text)) stack.push(token.text);
+			else if (token.text === "end" || token.text === "until") stack.pop();
 		}
 		if (token.kind !== "id" || KEYWORDS.has(token.text)) continue;
 		const field = previous && previous.kind === "op" && (previous.text === "." || previous.text === ":");
@@ -157,6 +163,10 @@ function normalize(text) {
 		}
 		const name = token.text;
 		const cls = name.replace(/_?[0-9]+$/, "") || "_";
+		if (cls === "_") {
+			out.push("_");
+			continue;
+		}
 		let names = classes.get(cls);
 		if (!names) classes.set(cls, (names = new Map()));
 		if (!names.has(name)) names.set(name, names.size);
