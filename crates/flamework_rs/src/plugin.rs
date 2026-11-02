@@ -30,7 +30,6 @@ use crate::build_info::{GlobUse, PathUse};
 use crate::ids::NewId;
 use crate::macro_type::{MacroType, MacroTypes};
 use crate::metadata::NodeMetadata;
-use crate::order::OrderKey;
 pub use crate::setup::{FwShared, FwState};
 
 /// The tag of a call whose callee is a user macro (`@metadata macro`).
@@ -87,9 +86,9 @@ pub struct FwFilePart {
     pub(crate) new_ids: Vec<NewId>,
     /// The late keys the file used (internal ids), for the late-string contract.
     pub(crate) late_keys: Vec<String>,
-    /// The glob and path uses, in the order the transform met them.
+    /// The glob and path uses, in the order the hooks met them.
     pub(crate) events: Vec<PathEvent>,
-    /// The variables `Flamework.env` inlined, in the TS transformer's order: `(name, hash of the value)`
+    /// The variables `Flamework.env` inlined, in the order the hooks read them: `(name, hash of the value)`
     /// (`inputs.env` in `flamework.build`).
     pub(crate) env_inputs: Vec<(String, String)>,
 }
@@ -100,28 +99,12 @@ pub struct FwFilePart {
 pub(crate) struct FileState {
     pub part: FwFilePart,
     pub late: HashSet<String>,
-    /// Every new id asked for, with the TS transformer's order of the request and the request's sequence number;
-    /// sorted and deduplicated into `part.new_ids` by `end_file`.
-    pub id_requests: Vec<(OrderKey, usize, NewId)>,
-    /// Glob and path uses, likewise sorted into `part.events`.
-    pub events: Vec<(OrderKey, usize, PathEvent)>,
-    /// `Flamework.env` reads, likewise sorted into `part.env_inputs`.
-    pub env_inputs: Vec<(OrderKey, usize, (String, String))>,
+    /// Every new id asked for, in request order; deduplicated into `part.new_ids` by `end_file`.
+    pub id_requests: Vec<NewId>,
     /// Macro type results of this file, by `(id, type)` (`executeMacroType`'s per-file cache).
     pub macro_cache: HashMap<(String, P<rbxts_plugin::ts::Type>), LuauExpr>,
-    /// The order key of whatever is asking for ids now (the class hook's class).
-    pub current_key: OrderKey,
     /// How many shuffles each macro call made (`crate::macros::shuffle`).
     pub shuffles: HashMap<P<Node>, usize>,
-    pub seq: usize,
-}
-
-impl FileState {
-    /// The next sequence number.
-    pub(crate) fn next(&mut self) -> usize {
-        self.seq += 1;
-        self.seq
-    }
 }
 
 /// One checker's instance.
@@ -244,8 +227,8 @@ impl PluginInstance for FwInstance {
 
     fn interest(&self, interest: &mut Interest) {
         interest.calls_by_symbol();
-        // An optional chain's outermost call, before the chain is compiled: TS5 replaced that call node (inlined and
-        // rewritten macros, packed sends through `?.`).
+        // An optional chain's outermost call, before the chain is compiled: inlined and rewritten macros take the
+        // chain's place, and packed sends through `?.` get nil checks of their own.
         interest.calls_chain_outer();
         // Metadata is decided by JSDoc, not by a decorator, so every class is offered.
         interest.classes(ClassFilter::All);
@@ -317,17 +300,12 @@ impl PluginInstance for FwInstance {
     fn end_file(&self, cx: &mut Cx<'_>) -> PResult<FwFilePart> {
         crate::serializer::check_output(self, cx);
         let mut file = std::mem::take(&mut *self.file.borrow_mut());
-        file.id_requests.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
         let mut seen = HashSet::new();
-        for (_, _, new) in file.id_requests {
+        for new in file.id_requests {
             if seen.insert(new.internal_id.clone()) {
                 file.part.new_ids.push(new);
             }
         }
-        file.events.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
-        file.part.events = file.events.into_iter().map(|(_, _, event)| event).collect();
-        file.env_inputs.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
-        file.part.env_inputs = file.env_inputs.into_iter().map(|(_, _, input)| input).collect();
         Ok(file.part)
     }
 }

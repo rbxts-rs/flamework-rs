@@ -32,23 +32,22 @@ pub fn is_instance_type(cx: &mut Cx<'_>, ty: P<Type>) -> bool {
     cx.checker().get_property_of_type_exported(ty, "_nominal_Instance").is_some()
 }
 
-/// `checker.getTypeOfPropertyOfType(type, property.name)` as TypeScript 5 answers it for one of the type's own
-/// properties: nothing for a property TS5's name lookup cannot find again ([`is_internal_property`]).
-pub(crate) fn ts5_type_of_property(cx: &mut Cx<'_>, ty: P<Type>, property: P<Symbol>) -> Option<P<Type>> {
+/// The type of one of `ty`'s own properties, or nothing for a property Flamework does not reflect: one keyed by a
+/// unique symbol or a private name ([`is_internal_property`]). Guards, attribute guards, serializers, `Many` objects
+/// and `getFields` leave such a property out.
+pub(crate) fn type_of_named_property(cx: &mut Cx<'_>, ty: P<Type>, property: P<Symbol>) -> Option<P<Type>> {
     if is_internal_property(cx, property) {
         return None;
     }
     cx.checker().get_type_of_property_of_type_exported(ty, property.name())
 }
 
-/// Whether a property has an internal name, which TS5's name lookup cannot find again: a unique-symbol key and a
-/// private name. TS5 spells them `__@sym@12` and `__#3@#x`; `property.name` gives back `__@sym@12` (or `#x`), and
-/// `getTypeOfPropertyOfType` escapes that to `___@sym@12` (`#x`), which names no property. tsrs spells both with its
-/// internal-name prefix (U+007F: `\u{7f}@sym@12`, `\u{7f}#3@#x`), but a user's string key may start with U+007F too
-/// (`"\u007fab"`, found in both compilers), so the prefix only rules the rest out: the property is internal when a
-/// declaration names it with a private identifier, or its name type (a computed key's, a mapped or copied
-/// property's) is a unique symbol. A user name with leading underscores (`__x`) keeps its plain spelling in tsrs and
-/// is found, as in TS5.
+/// Whether a property is keyed by a unique symbol or a private name, which Flamework does not reflect
+/// ([`type_of_named_property`]). tsrs spells both with its internal-name prefix (U+007F: `\u{7f}@sym@12`,
+/// `\u{7f}#3@#x`), but a user's string key may start with U+007F too (`"\u007fab"`), so the prefix only rules the
+/// rest out: the property is internal when a declaration names it with a private identifier, or its name type (a
+/// computed key's, a mapped or copied property's) is a unique symbol. A user name with leading underscores (`__x`)
+/// is a plain name and is reflected.
 pub(crate) fn is_internal_property(cx: &mut Cx<'_>, property: P<Symbol>) -> bool {
     if !property.name().starts_with(tsrs_ast::INTERNAL_SYMBOL_NAME_PREFIX) {
         return false;
@@ -67,7 +66,7 @@ pub(crate) fn is_internal_property(cx: &mut Cx<'_>, property: P<Symbol>) -> bool
 /// `property.name` as TS5 gives it: an internal name escaped as TS5 spells it (`__@sym@12`; a private name is `#x`,
 /// as `symbolName` gives it), any other name as it is. A symbol's id differs between the compilers, so two keys whose
 /// texts agree up to the id (two unique symbols of one name, a user key `"__@zeta@1"` against a real `[zeta]`) may
-/// order otherwise than in TS5, whose own order there follows its global symbol counter (README, "Known limitations").
+/// order otherwise than in TS5, whose own order there follows its global symbol counter (README, "Differences").
 pub(crate) fn ts5_property_name(cx: &mut Cx<'_>, property: P<Symbol>) -> std::borrow::Cow<'static, str> {
     if is_internal_property(cx, property) {
         std::borrow::Cow::Owned(tsrs_ast::escape_internal_symbol_name(tsrs_ast::symbol_name(property)))

@@ -37,37 +37,37 @@
 		},
 		"globs": {
 			"paths": {
-				"src/server/services/hub/*.ts": [
-					"out/server/services/hub/init.lua"
-				],
 				"src/server/services/**/*.ts": [
 					"out/server/services/alpha.lua",
 					"out/server/services/beta.lua",
+					"out/server/services/hub/init.lua"
+				],
+				"src/server/services/hub/*.ts": [
 					"out/server/services/hub/init.lua"
 				],
 				"src/server/nothing/*.ts": []
 			},
 			"origins": {
 				"src/server/main.server.ts": [
-					"src/server/services/hub/*.ts",
 					"src/server/services/**/*.ts",
+					"src/server/services/hub/*.ts",
 					"src/server/nothing/*.ts"
 				]
 			},
 			"uses": {
 				"src/server/main.server.ts": [
 					{
-						"glob": "src/server/services/hub/*.ts",
-						"text": "./services/hub/*.ts",
-						"macro": "registerProvidersGlob",
-						"line": 8,
-						"column": 3
-					},
-					{
 						"glob": "src/server/services/**/*.ts",
 						"text": "src/server/services/**/*.ts",
 						"macro": "registerProvidersGlob",
 						"line": 7,
+						"column": 3
+					},
+					{
+						"glob": "src/server/services/hub/*.ts",
+						"text": "./services/hub/*.ts",
+						"macro": "registerProvidersGlob",
+						"line": 8,
 						"column": 3
 					},
 					{

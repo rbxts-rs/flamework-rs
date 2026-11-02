@@ -466,7 +466,7 @@ impl Gen<'_, '_, '_> {
             }
             for property in typeinfo::properties_in_ts_order(self.cx, member) {
                 let optional = property.flags().intersects(SymbolFlags::Optional);
-                let mut property_type = typeinfo::ts5_type_of_property(self.cx, member, property);
+                let mut property_type = typeinfo::type_of_named_property(self.cx, member, property);
                 if let Some(t) = property_type
                     && optional
                 {
@@ -512,7 +512,7 @@ impl Gen<'_, '_, '_> {
         let index_infos = self.cx.checker().get_index_infos_of_type_exported(ty).to_vec();
         let mut properties = Vec::new();
         for property in typeinfo::properties_in_ts_order(self.cx, ty) {
-            let property_type = typeinfo::ts5_type_of_property(self.cx, ty, property);
+            let property_type = typeinfo::type_of_named_property(self.cx, ty, property);
             if let Some(t) = property_type
                 && !t.flags().intersects(TypeFlags::Never | TypeFlags::UniqueESSymbol)
             {
@@ -536,7 +536,7 @@ impl Gen<'_, '_, '_> {
         let ordered = self.field_order(ty, properties);
         let mut fields = Vec::new();
         for property in ordered {
-            let property_type = typeinfo::ts5_type_of_property(self.cx, ty, property).unwrap();
+            let property_type = typeinfo::type_of_named_property(self.cx, ty, property).unwrap();
             if !self.cx.checker().get_signatures_of_type(property_type, SignatureKind::Call).is_empty() {
                 return Err(self.fail(&format!("property '{}' is a function", property.name())));
             }

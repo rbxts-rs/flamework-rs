@@ -12,7 +12,7 @@
 //! `SYMBOL_ATTRIBUTE_SETTER` is imported from components' `out/baseComponent`. The call is the one roblox-ts makes of
 //! the TS's `x[SETTER](name, value)` (`transformElementCallExpressionInner`, `ensureTransformOrder`,
 //! `createOrderedPropertyCall`: [`Cx::ordered_element_call`]), with roblox-ts's effect analysis deciding what goes in
-//! `_exp`, `_self` and `_fn` locals, so it evaluates (and reads) as TS 5's.
+//! `_exp`, `_self` and `_fn` locals: the operands evaluate (and are read) in the TS transformer's order.
 
 use rbxts_luau::{BinaryOperator, create};
 use rbxts_plugin::ts::{Kind, Node, P};

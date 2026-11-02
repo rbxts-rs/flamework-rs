@@ -10,8 +10,11 @@ compiled in, the binary a Flamework project builds with.
   Flamework is on for a project whose tsconfig lists `@flamework-experimental/transformer` in
   `compilerOptions.plugins`.
 
-**Status:** work in progress, provided as is. Every part of the TS transformer is ported, networking included; where
-the output may still differ, see [Known limitations](#known-limitations).
+**Status:** a personal port, provided as is; fork it if it is useful to you. Every part of the TS transformer is
+ported, networking included. It follows TypeScript 7.1 (through tsrs) and its own build order rather than reproducing
+the TS transformer's output: what a build does at run time (evaluation order, what is reflected, guards, the
+serializer's wire format and layouts) is the TS transformer's, while generated text and the order of some artefacts
+differ, see [Differences from the TS transformer](#differences-from-the-ts-transformer).
 
 **Licence:** MIT (`LICENSE`). Parts are ports of Flamework, hashids, uuid, glob, minimatch and brace-expansion; their
 notices are in `THIRD-PARTY-NOTICES.md`.
@@ -51,8 +54,8 @@ FLAMEWORK_RS_RBXTS = "<project>/node_modules/@rbxts"
 ```
 
 `diagnostics` is the TS transformer tests' failure assertions as one table (`tests/diagnostics/cases.json`, built on
-the TS tests' own fixture in `tests/diagnostics/fixture`): each case's build must fail with TS5's message. The file
-says how a case is written, marked or left to another test.
+the TS tests' own fixture in `tests/diagnostics/fixture`): each case's build must fail with the TS transformer's
+message. The file says how a case is written, marked or left to another test.
 
 ## Install
 
@@ -100,10 +103,13 @@ While it is on, Cargo rewrites `Cargo.lock` for the path sources, so `--locked` 
 workspace (`tools/check-deps.sh`). When the change lands in rbxts-rs, move the rev in `Cargo.toml` to it and update the
 lock with `cargo update -p rbxts_plugin` (which moves every crate of that source).
 
-## Parity
+## Comparing with the TS transformer
 
+The TS transformer's output (TypeScript 5 roblox-ts with Flamework's TS transformer) stays as a test oracle, not a
+target: `tools/parity.cjs` and `tools/compare.cjs --normalize` show what a change touched, and every remaining
+difference should be one of the [Differences from the TS transformer](#differences-from-the-ts-transformer).
 `tools/parity.cjs` builds a whole project with `rbxtsc-fw` and compares the output, file by file and byte for byte,
-with a reference build of the same project (TypeScript 5 roblox-ts with Flamework's TS transformer):
+with a reference build of the same project:
 
 ```sh
 node tools/parity.cjs <rbxtsc-fw exe> <project dir> <reference out dir> <work dir> [--report FILE] [--diff N] [--save-out DIR]
@@ -115,7 +121,7 @@ usable on its own). The options are described at the top of `tools/parity.cjs`.
 
 With `--normalize` (both tools), Luau files are compared with their generated locals renamed to canonical names
 (`tools/normalize.cjs`, also usable on its own: `node tools/normalize.cjs <file.luau> [<source.ts>]`). The generated
-locals are named differently from TS5's (Known limitations), so this is the comparison to make against a TS5
+locals are named differently from the TS transformer's (Differences), so this is the comparison to make against its
 reference; it also checks that a change touched generated names only. What is renamed: a name the file declares
 (`local`, a `for` variable, a parameter, `local function`) that is not an identifier of the file's source
 (`parity.cjs` finds the sources under the project's `src`, `--src` to change it; `compare.cjs` takes `--src DIR`),
@@ -130,74 +136,71 @@ local, or a use that reads another local still differs. The whole file is one sc
 Without a source (`compare.cjs` without `--src`, a file no source maps to), every declared name is renamed, so a
 user's local renamed consistently goes unnoticed.
 
-## Known limitations
+## Differences from the TS transformer
 
-Where flamework-rs's output may differ from Flamework's TS transformer (TypeScript 5) in ways it cannot detect:
+flamework-rs's output differs from the TS transformer's (TypeScript 5) in the ways below. Unless an item says
+otherwise, only the generated text or an artefact's order differs, not what the build does.
 
-- **Guard text of a mapped type over a union of keys** (`Pick<T, "b" | "a">`, `Omit`, `Record`, a key-remapping
-  `as` clause, and a rest or spread of one): a guard lists its keys (`t.interface({ ... })`) in another order than
-  TS5, which lists them in the order its checker first made the keys' literal types (it shifts with unrelated
-  edits). The guard checks the same keys, so only the generated text differs, not what it accepts. Serializers of
-  these types order their fields by the mapped type itself and are exact.
-- **Guard text of a union** (`t.union(...)`, a literal union): the members are listed in the order TypeScript 7 gives
-  a union's constituents, not TS5's. Only the text differs; the guard accepts the same values.
-- **Order that depends on symbol ids.** A union that no written type orders (`Box<A | B>` reaching `value: T`) orders
-  its members by a text of each type, and an object's text spells a unique-symbol key with the symbol's id
-  (`__@sym@12`). Two keys whose texts agree up to the id (two unique symbols with the same name from different modules,
-  or a user key `"__@zeta@1"` against a real `[zeta]`) are ordered by ids that differ between the compilers. TS5's own
-  order there depends on its global symbol counter, so it can change with unrelated edits; give such unions a written
-  order (a type alias of the union) instead.
-
-Where it differs from TS5's output in shape only, with the same behaviour:
+Text and order:
 
 - **The names of Flamework's generated locals** (`buf`, `value_2`, a guard's `v_Tree`, …): each is named when it is
-  built, as the compiler approves it (never a name the file uses), where TS5's printer named them in print order over
-  the whole file, so the numbers after a name differ. Compare with TS5 with `--normalize` (Parity), which hides
-  these names and nothing else.
+  built, as the compiler approves it (never a name the file uses), so the numbers after a name differ from the TS
+  printer's. `--normalize` (above) hides these names and nothing else.
+- **The order things are recorded in within a file:** a file's new ids (`flamework.build`'s `identifiers` and the
+  counters of `short` / `tiny` / `obfuscated` ids), its `Flamework.env` inputs and its glob and path uses (their
+  entries in `flamework.build` and `include/flamework/globs.json`, and the order of their warnings) follow the order
+  the compiler's hooks run in (roblox-ts lowers a call chain from its innermost call, so a module's
+  `.registerProvidersGlob` calls come in source order, and a class's metadata after its members), not the TS
+  transformer's walk. Files still come in program order, so the output is the same for any checker count; `full` ids
+  are paths and do not move, and a clean build's new salt changes `short` ids anyway.
+- **Guard key order of a mapped type over a union of keys** (`Pick<T, "b" | "a">`, `Omit`, `Record`, a key-remapping
+  `as` clause, and a rest or spread of one): the TS transformer lists the keys in the order its checker first made
+  the keys' literal types (it shifts with unrelated edits). The guard checks the same keys. Serializers of these
+  types order their fields by the mapped type itself and are exact.
+- **Guard text of a union** (`t.union(...)`, a literal union): the members are listed in the order TypeScript 7 gives
+  a union's constituents.
 - **The order of a class's hoisted serializer helpers** (the codecs, `createSerializer` locals and helpers that the
   members of one class hoist), and the order in which its networking calls claim the file's budget of locals: they
-  follow roblox-ts's compile order of the members (instance properties, constructor, methods, statics), where TS5
-  followed source order. Each helper is still defined before the code that uses it; only the order differs.
+  follow roblox-ts's compile order of the members (instance properties, constructor, methods, statics), not source
+  order. Each helper is still defined before the code that uses it.
 - **The order of a network's members.** The keys of a mapped type over `keyof T` (`incomingIds`, `outgoingIds`,
-  `namespaceIds`, and the decoders built for them) are listed by a key of each, where TS5 lists them in the order its
-  checker first made their literal types, which `keyof` does not fix (it shifts with unrelated edits). The arrays hold
-  the members' names and remotes are matched by name, so their order carries no meaning: a server and a client built
-  by the two compilers work together. The order the codecs are generated in and their names follow it.
+  `namespaceIds`, and the decoders built for them) are listed by a key of each, where the TS transformer lists them in
+  the order its checker first made their literal types. Remotes are matched by name, so a server and a client built
+  by the two compilers work together.
 - **A returned send past its function's budget of locals** (`return events.alpha.fire(x)` in a function that already
-  holds many of Flamework's locals): the call and its packing go in a function, where TS5 puts the `return` statement
-  in a block of its own with the packing.
-- **A send in a `for` loop's incrementor** (`for (let i = 0; i < n; events.alpha.fire(i), i++)`): TS5's packing
-  function makes roblox-ts see the loop variable captured and copy it per iteration (`local i = _i` … `_i = i`);
-  flamework-rs's packing is not seen as a closure, so the loop has no copies. The function is called where it is made,
-  so nothing can see the difference.
-- **A comment at the end of a file** (after its last statement) is kept, where TS5 with Flamework's transformer
-  drops it in every file of the project. Comments only.
+  holds many of Flamework's locals): the call and its packing go in a function, where the TS transformer puts the
+  `return` statement in a block of its own with the packing.
+- **A send in a `for` loop's incrementor** (`for (let i = 0; i < n; events.alpha.fire(i), i++)`): the packing is not
+  seen as a closure, so the loop has no per-iteration copies of `i`. The function is called where it is made, so
+  nothing can see the difference.
+- **A comment at the end of a file** (after its last statement) is kept; the TS transformer drops it.
 
-Where it reports a failing build differently:
+Order that depends on symbol ids (can reach a serializer's layout): a union that no written type orders (`Box<A | B>`
+reaching `value: T`) orders its members by a text of each type, and an object's text spells a unique-symbol key with
+the symbol's id (`__@sym@12`). Two keys whose texts agree up to the id (two unique symbols with the same name from
+different modules, or a user key `"__@zeta@1"` against a real `[zeta]`) are ordered by ids that differ between the
+compilers (and, in the TS transformer, with unrelated edits); give such unions a written order (a type alias of the
+union) instead.
 
-- **Type errors and Flamework errors in one file** with `noSemanticDiagnostics: true`: flamework-rs reports the type
-  errors where TS5 reports the Flamework error. Diagnostics only; the build fails either way.
+Diagnostics: with `noSemanticDiagnostics: true`, a file with both type errors and Flamework errors reports the type
+errors, where the TS transformer reports the Flamework error. The build fails either way.
 
-Where it differs on purpose:
+On purpose:
 
-- **A packed send followed by more of its optional chain** (`maybe?.fns.add.invoke(x).andThen(f)`): flamework-rs packs
-  it inside the compiler's nil check, so the rest of the chain runs only when `maybe` is defined. TS5 does not build it:
-  the function it wraps the send in returns `undefined` when `maybe` is, and the type check of its output refuses
-  the rest of the chain on that (TS2532). A send that ends its chain (`maybe?.alpha.fire(x)`, the usual case) is
-  compiled as TS5 compiles it.
-- **Obfuscated keys through an optional chain** (`maybe?.alpha.fire(x)`, `f()?.ns.leaf.fire(x)` with
-  `transformer.obfuscation`): flamework-rs obfuscates the member name as it does outside a chain. TS5 reads the key
-  obfuscation marker off the receiver's type as it is, which may be `undefined` there, so it leaves the name as
-  written and the send reaches no remote.
+- **A packed send followed by more of its optional chain** (`maybe?.fns.add.invoke(x).andThen(f)`): packed inside the
+  compiler's nil check, so the rest of the chain runs only when `maybe` is defined. The TS transformer's output fails
+  its own type check there (TS2532). A send that ends its chain (`maybe?.alpha.fire(x)`) is compiled as the TS
+  transformer compiles it.
+- **Obfuscated keys through an optional chain** (`maybe?.alpha.fire(x)` with `transformer.obfuscation`): the member
+  name is obfuscated as outside a chain. The TS transformer leaves it as written there, so its send reaches no remote.
 - **`middleware` written as a shorthand property, a method or an accessor** (`createServer({ middleware })`): a build
-  error, as for any value that is not an object literal. TS5 fails an internal assertion.
+  error, as for any value that is not an object literal (the TS transformer fails an internal assertion).
 - **A package's `flamework.build` is looked for only in the package's directory** (beside the `package.json` of the
-  program's files), where TS5 looks in every directory up to four above each file. Every look is a build input the
-  watcher watches, and a package installed and imported while watching is read on that rebuild (TS5 needs a restart).
-  - A `flamework.build` in a package's subfolder is not read: that package's ids fall back to unprefixed path ids
-    (`@scope/name:out/...`).
+  program's files), not in every directory up to four above each file. Every look is a build input the watcher
+  watches, so a package installed and imported while watching is read on that rebuild. A `flamework.build` in a
+  package's subfolder is not read: that package's ids fall back to unprefixed path ids (`@scope/name:out/...`).
 
-What flamework-rs refuses that TS5 builds:
+Refused, where the TS transformer builds:
 
 - **Spreading a map, an iterable function or a generator into a packed call's arguments** (`events.list.fire(...map)`):
   arrays, tuples, strings and sets are spread as roblox-ts spreads them; the rest is a build error. Spread the values

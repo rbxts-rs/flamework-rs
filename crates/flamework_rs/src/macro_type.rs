@@ -275,8 +275,8 @@ impl<'c, 'a> MacroCx<'c, 'a> {
         let mut fields = Vec::new();
         for property in self.cx.ts5_properties_of_type(t) {
             let name = property.name();
-            // TS5 finds no type for a symbol key or a private name, and leaves the field out.
-            let Some(ty) = crate::guards::types::ts5_type_of_property(self.cx, t, property) else { continue };
+            // A symbol key or a private name is not reflected: the field is left out.
+            let Some(ty) = crate::guards::types::type_of_named_property(self.cx, t, property) else { continue };
             fields.push(Field {
                 name: name.to_owned(),
                 ty,

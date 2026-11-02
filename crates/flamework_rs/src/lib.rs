@@ -1,7 +1,8 @@
 //! Flamework's TypeScript transformer (`@flamework-experimental/transformer`, v2) ported to Rust, as a plugin compiled
-//! into rbxts-rs, roblox-ts in Rust (DESIGN §10). A project built with it gets what roblox-ts with the TS transformer
-//! writes: the Luau, `flamework.build` and the include JSON (`include/flamework`), byte for byte except where the
-//! repository's README says otherwise (see [Parity and limitations](#parity-and-limitations)).
+//! into rbxts-rs, roblox-ts in Rust (DESIGN §10): a personal port that follows TypeScript 7.1 and its own build order.
+//! A project built with it gets the Luau, `flamework.build` and the include JSON (`include/flamework`) that behave as
+//! the TS transformer's do; the generated text and some artefact orders differ (see
+//! [Differences from the TS transformer](#differences-from-the-ts-transformer)).
 //!
 //! `DESIGN §n` references here and in the other crates are to rbxts-rs's design document, `docs/design.md` in the
 //! rbxts-rs repository. Each module's docs name the TS transformer files it ports (paths under the transformer
@@ -63,7 +64,6 @@
 //! - `finish`: id assignment in transform order, `flamework.build`, the include JSON, the glob and path warnings
 //!   (with `place_source`, what the place holds at a path);
 //! - `part_codec`: [`FwFilePart`] as bytes, for the compiler's incremental state;
-//! - `order`: the order the TS transformer met things in a file;
 //! - `renamed`: TypeScript's errors for names renamed or removed before beta, naming the replacement;
 //! - `schema` (the config schemas, validated as Ajv does), `shuffle` (seeded obfuscation shuffles), `random`, `js`
 //!   (JavaScript semantics the TS code relies on).
@@ -71,14 +71,12 @@
 //! Clean, incremental and watch builds: an incremental build and a watch rebuild reuse the last `flamework.build` (its
 //! ids, salt and seeds), and start a new one where the TS transformer refuses changed inputs (`setup`).
 //!
-//! # Parity and limitations
+//! # Differences from the TS transformer
 //!
-//! The repository's `README.md` has both. **Parity**: `tools/parity.cjs` builds a whole project with `rbxtsc-fw` and
-//! compares its output, file by file and byte for byte (or with the generated locals' names normalised, which differ
-//! from TS5's), with a TypeScript 5 roblox-ts build of the same project.
-//! **Known limitations**: where the output may differ from the TS transformer's, where it differs in shape only, where
-//! a failing build is reported differently, where it differs on purpose, and what flamework-rs refuses that the TS
-//! transformer builds.
+//! The repository's `README.md` lists them: text and artefact order, the diagnostics of a failing build, what differs
+//! on purpose, and what flamework-rs refuses that the TS transformer builds. The TS transformer's output stays a test
+//! oracle: `tools/parity.cjs` builds a whole project with `rbxtsc-fw` and compares it with a TypeScript 5 roblox-ts
+//! build, file by file, with the generated locals' names normalised (`--normalize`).
 #![warn(missing_docs)]
 
 pub mod build_info;
@@ -100,7 +98,6 @@ pub(crate) mod macros;
 pub(crate) mod metadata;
 pub(crate) mod networking;
 pub mod node_path;
-pub(crate) mod order;
 pub(crate) mod part_codec;
 pub(crate) mod place_source;
 pub(crate) mod plugin;

@@ -87,8 +87,8 @@ fn read_shape(
             if cx.checker().get_property_of_type_exported(instance_type, name).is_some() {
                 continue;
             }
-            // TS5 finds no type for a symbol key or a private name (`crate::guards::types::is_internal_property`).
-            let Some(property_type) = crate::guards::types::ts5_type_of_property(cx, member, property) else {
+            // A symbol key or a private name is not reflected (`crate::guards::types::is_internal_property`).
+            let Some(property_type) = crate::guards::types::type_of_named_property(cx, member, property) else {
                 return Ok(None);
             };
             visiting.push(member);

@@ -11,7 +11,7 @@
 //! (`UPDATE_EXPECTED=1` writes it). It is the TS5 pipeline's output (roblox-ts master with the published 2.0.0-beta.0
 //! transformer) but for the generated locals' names (checked with `tools/normalize.cjs`; `chained.ts`: sends in an
 //! optional chain, in a function that checks the chain's start, as TS5). The one differs from TS5's in shape only
-//! (README, Known limitations) and is checked on its own: `scopedReturn.ts` has a returned send past its function's
+//! (README, Differences) and is checked on its own: `scopedReturn.ts` has a returned send past its function's
 //! budget of locals, which flamework-rs packs in a function where TS5 puts the statement in a block.
 //!
 //! The project is copied to a temporary directory with a `node_modules` as an install has it (`support::project`);

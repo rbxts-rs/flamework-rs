@@ -33,7 +33,7 @@ pub fn properties_in_ts_order(cx: &mut Cx<'_>, ty: P<Type>) -> Vec<P<Symbol>> {
 
 pub(crate) use crate::guards::names::local_name;
 pub(crate) use crate::guards::types::{
-    alias_symbol, extract_types, global as resolve_global, is_instance_type, ts5_property_name, ts5_type_of_property,
+    alias_symbol, extract_types, global as resolve_global, is_instance_type, ts5_property_name, type_of_named_property,
 };
 
 /// `type.aliasTypeArguments` (`None` when there are none).

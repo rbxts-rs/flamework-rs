@@ -28,10 +28,10 @@
 //! parameters as any call does (`compile_call_with` keeps roblox-ts's `super.m(self, …)` and the chain's nil checks,
 //! the generated arguments inside them). An inlined or rewritten macro call that is the last link of an optional chain
 //! is taken when the compiler offers the chain's outermost call, before anything of the chain is compiled
-//! (`Interest::calls_chain_outer`), as TS5 replaced the call node: an inlined call's value stands for the whole chain
+//! (`Interest::calls_chain_outer`), and takes the chain's place: an inlined call's value stands for the whole chain
 //! (`maybe?.inlined<T>()` is the value, `maybe` is not evaluated), and a rewritten call keeps only its own `?.`
 //! (`o.m?.<T>(x)` nil-checks `Flamework._implements` itself, `o?.m<T>(x)` is a plain call to it). One followed by
-//! more of its chain (`maybe?.inlined<T>().size()`, mostly a type error in TS5's output) is refused.
+//! more of its chain (`maybe?.inlined<T>().size()`) is refused.
 //!
 //! **Argument order.** The generated values are `Arg::Deferred` slots of `compile_call_with`, built when the
 //! lowering reaches them among the written arguments, so that what they put ahead of the statement lands in argument
@@ -52,7 +52,6 @@ use tsrs_checker::{ElementFlags, LiteralValue, TypeFlags};
 use crate::build_info::{GlobUse, PathUse};
 use crate::macro_type::{Literal as TypeLiteral, literal_of};
 use crate::node_path;
-use crate::order::OrderKey;
 use crate::packages::CORE_PACKAGE;
 use crate::plugin::{FwInstance, PathEvent};
 
@@ -168,7 +167,7 @@ pub(crate) fn user_macro(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> P
     let Some(declaration) = signature.declaration() else { return Ok(Claim::Decline) };
     let metadata = fw.metadata(cx, declaration);
     // The chain's outermost call, offered before the chain is compiled: only an inlined or rewritten call takes the
-    // chain's place (TS5 replaced the call node); any other is lowered with the chain, offered again inside it.
+    // chain's place; any other is lowered with the chain, offered again inside it.
     if call.chain_outer
         && !matches!(metadata.symbols("intrinsic-inline"), Some([_]))
         && metadata.symbols("intrinsic-flamework-rewrite").and_then(|s| s.first()).is_none()
@@ -326,15 +325,10 @@ impl GeneratedSite<'_> {
     fn build(&self, cx: &mut Cx<'_>, index: usize, what: &Generated<'_>) -> PResult<LuauExpr> {
         let (fw, expression) = (self.fw, self.expression);
         match what {
-            Generated::Macro(found) => {
-                let key = fw.order_key(cx, expression, (0, index as u32));
-                fw.file.borrow_mut().current_key = key.clone();
-                Builder { fw, node: expression, key }.build(cx, found)
-            }
+            Generated::Macro(found) => Builder { fw, node: expression }.build(cx, found),
             Generated::Config(class) => {
-                let key = fw.order_key(cx, expression, (0, index as u32));
                 let argument = self.call.args.get(index).copied();
-                crate::components::config::component_config(fw, cx, *class, argument, key)
+                crate::components::config::component_config(fw, cx, *class, argument)
             }
             Generated::Middleware(object) => crate::networking::middleware::compile(fw, cx, expression, *object),
         }
@@ -353,7 +347,7 @@ fn optional_chain_gap(inlined: bool) -> String {
 /// The call's callee is not compiled (inlined or rewritten): asks the compiler to elide the import its root name
 /// comes from (`inlinedText` in `inlinedText<T>()`, `Flamework` in `Flamework.env("X")`), which it does unless
 /// the file's Luau still uses it. Not a namespace import (`ns` in `ns.inlined<T>()`, `ns?.inlined<T>()`), which
-/// TS5 keeps (TypeScript counts the reference whatever replaced the call).
+/// stays (TypeScript's import elision counts the reference whatever replaced the call).
 fn elide_callee_import(cx: &mut Cx<'_>, call: P<Node>) {
     let mut root = call.expression();
     while let Some(node) = root {
@@ -385,22 +379,9 @@ fn elide_callee_import(cx: &mut Cx<'_>, call: P<Node>) {
 /// skipped. Known unsupported shapes: TypeScript also finds a symbol for a `this` callee and, through
 /// `isNamedDeclaration`, for a named class or function expression callee; a macro there would need `@metadata macro`
 /// on a `this` parameter or a class expression, which never happens in practice. A parenthesized decorator call
-/// (`@(deco<T>())`) is offered as an ordinary call, as TS5 transforms it.
+/// (`@(deco<T>())`) is offered and transformed as an ordinary call.
 pub(crate) fn has_symbol_callee(call: P<Node>) -> bool {
     call.expression().is_some_and(|callee| matches!(callee.kind(), Kind::Identifier | Kind::PropertyAccessExpression))
-}
-
-/// `state.isUserMacro(state.getSymbol(node.expression))`: whether the TS transformer takes `call` through
-/// `transformUserMacro`, decided from the callee's own symbol (aliases skipped), as the call hook's offer is, not from
-/// the resolved signature's declaration: `const alias = wrap; alias<T>(x)` and `holder.inner.wrap<T>(x)` (with
-/// `inner = { wrap }`) resolve to `wrap`'s signature but are plain calls. The pre-scan that must agree with the hook
-/// (`crate::order`) asks this.
-pub(crate) fn is_macro_callee(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>) -> bool {
-    if !has_symbol_callee(call) {
-        return false;
-    }
-    let Some(callee) = call.expression() else { return false };
-    crate::metadata::get_symbol(cx, callee).is_some_and(|symbol| fw.is_user_macro(cx, symbol))
 }
 
 /// `isUndefinedArgument`: missing, or the identifier `undefined`.
@@ -652,8 +633,7 @@ impl Analysis<'_> {
         if cx.checker().is_array_type_exported(target) {
             let element = cx.checker().get_type_arguments_exported(target).first().copied();
             // The union's members as written (in the call's type arguments, else in the alias it was declared as),
-            // which is TS5's order (`targetType.types`, the order its checker made them in) for a union the call
-            // writes out of new types; the rest by a key of each member (DESIGN §10.4).
+            // the rest by a key of each member (DESIGN §10.4).
             let constituents = match element {
                 Some(e) if e.flags().intersects(TypeFlags::Union) => {
                     let written = written_union(cx, self.node, e);
@@ -677,8 +657,8 @@ impl Analysis<'_> {
             let properties = cx.ts5_properties_of_type(target);
             let mut entries = Vec::with_capacity(properties.len());
             for member in properties {
-                // TS5 finds no type for a symbol key or a private name, and leaves the member out.
-                let Some(member_type) = crate::guards::types::ts5_type_of_property(cx, target, member) else {
+                // A symbol key or a private name is not reflected: the member is left out.
+                let Some(member_type) = crate::guards::types::type_of_named_property(cx, target, member) else {
                     continue;
                 };
                 let value = self.of_many(cx, member_type)?;
@@ -699,7 +679,7 @@ impl Analysis<'_> {
             return Ok(UserMacro::Literal(LiteralMacro::Undefined));
         }
         if target.flags().intersects(TypeFlags::BooleanLiteral) {
-            // TS5 compared the regular type with `true`; a literal type's value says it for fresh and regular alike.
+            // The literal type's value says which, for fresh and regular types alike.
             return Ok(UserMacro::Literal(LiteralMacro::Bool(literal_of(target) == Some(TypeLiteral::Bool(true)))));
         }
 
@@ -902,12 +882,11 @@ fn property_key(cx: &mut Cx<'_>, property: P<Symbol>) -> TableKey {
 }
 
 /// Builds macro values (`buildUserMacro`) at one generated argument: ids, paths and globs, and env reads are
-/// recorded with that argument's place in the TS transformer's walk.
+/// recorded in the order it builds them.
 pub(crate) struct Builder<'f> {
     pub fw: &'f FwInstance,
     /// The macro call.
     pub node: P<Node>,
-    pub key: OrderKey,
 }
 
 impl Builder<'_> {
@@ -1057,8 +1036,8 @@ impl Builder<'_> {
     fn intrinsic(&self, cx: &mut Cx<'_>, intrinsic: &Intrinsic) -> PResult<LuauExpr> {
         let fw = self.fw;
         match intrinsic {
-            Intrinsic::Path(ty) => build_path(fw, cx, self.node, *ty, self.key.clone()),
-            Intrinsic::PathGlob(ty) => build_path_glob(fw, cx, self.node, *ty, self.key.clone()),
+            Intrinsic::Path(ty) => build_path(fw, cx, self.node, *ty),
+            Intrinsic::PathGlob(ty) => build_path_glob(fw, cx, self.node, *ty),
             Intrinsic::Env { name, fallback } => self.env(cx, *name, *fallback),
             Intrinsic::ObfuscateObject { inner, context } => {
                 let mut inner = (**inner).clone();
@@ -1164,10 +1143,7 @@ impl Builder<'_> {
         }
         let variable = self.fw.shared.env(cx, name);
         let hash = crate::env::hash_env_value(variable.as_deref());
-        let mut file = self.fw.file.borrow_mut();
-        let seq = file.next();
-        file.env_inputs.push((self.key.clone(), seq, (name.to_owned(), hash)));
-        drop(file);
+        self.fw.file.borrow_mut().part.env_inputs.push((name.to_owned(), hash));
         Ok(match variable.as_deref().or(fallback_value) {
             Some(value) => synthesized_string(value),
             None => create::nil(),
@@ -1308,7 +1284,7 @@ fn path_literal(cx: &mut Cx<'_>, node: P<Node>, ty: P<Type>) -> PResult<&'static
 }
 
 /// `buildPathIntrinsic`: the Rojo path of a source path, as an array of names, with the use recorded.
-fn build_path(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>, ty: P<Type>, key: OrderKey) -> PResult<LuauExpr> {
+fn build_path(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>, ty: P<Type>) -> PResult<LuauExpr> {
     let shared = &fw.shared;
     let value = path_literal(cx, call, ty)?;
     // Source paths are relative to the working directory the TS transformer runs in: the project's.
@@ -1331,22 +1307,14 @@ fn build_path(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>, ty: P<Type>, key:
 
     let (macro_name, line, column) = macro_call_shape(cx, call, true);
     let raises = is_core_require_modules(cx, call);
-    let mut file = fw.file.borrow_mut();
-    let seq = file.next();
-    file.events.push((key, seq, PathEvent::Path(PathUse { path: value.to_owned(), macro_name, line, column, raises })));
-    drop(file);
+    let path_use = PathUse { path: value.to_owned(), macro_name, line, column, raises };
+    fw.file.borrow_mut().part.events.push(PathEvent::Path(path_use));
     Ok(create::array(rbx_path.iter().map(|name| synthesized_string(name)).collect()))
 }
 
 /// `buildPathGlobIntrinsic`: the glob relative to the package root (obfuscated under obfuscation), recorded for
 /// `globs.json`.
-fn build_path_glob(
-    fw: &FwInstance,
-    cx: &mut Cx<'_>,
-    call: P<Node>,
-    ty: P<Type>,
-    key: OrderKey,
-) -> PResult<LuauExpr> {
+fn build_path_glob(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>, ty: P<Type>) -> PResult<LuauExpr> {
     let shared = &fw.shared;
     let glob = path_literal(cx, call, ty)?;
     let file_name = cx.file().path.clone();
@@ -1357,11 +1325,8 @@ fn build_path_glob(
         glob.to_owned()
     };
     let (macro_name, line, column) = macro_call_shape(cx, call, false);
-    let mut file = fw.file.borrow_mut();
-    let seq = file.next();
     let glob_use = GlobUse { glob: absolute.clone(), text: glob.to_owned(), macro_name, line, column };
-    file.events.push((key, seq, PathEvent::Glob(glob_use)));
-    drop(file);
+    fw.file.borrow_mut().part.events.push(PathEvent::Glob(glob_use));
     Ok(synthesized_string(&shared.obfuscate_text(&absolute, Some("addPaths"))))
 }
 

@@ -25,7 +25,6 @@ use tsrs_checker::{LiteralValue, TypeFlags};
 use super::shape::build_instance_shape;
 use crate::guards::types::is_instance_type;
 use crate::metadata::get_symbol;
-use crate::order::OrderKey;
 use crate::plugin::FwInstance;
 
 /// The property every component carries, which tells a component type apart from the Instance types around it.
@@ -69,17 +68,15 @@ fn object_initializer(field: Option<P<Node>>) -> Option<P<Node>> {
 }
 
 /// `transformComponentConfig` for one config parameter of `class`'s decorator: the Luau value of the argument
-/// (`argument`, or an empty object when it is missing or not an object literal, which the TS replaces too). `key` is
-/// the order key of the argument: the ids of the links sort after those of the written argument.
+/// (`argument`, or an empty object when it is missing or not an object literal, which the TS replaces too).
 pub(crate) fn component_config(
     fw: &FwInstance,
     cx: &mut Cx<'_>,
     class: P<Node>,
     argument: Option<P<Node>>,
-    key: OrderKey,
 ) -> PResult<LuauExpr> {
     let literal = argument.filter(|a| a.kind() == Kind::ObjectLiteralExpression);
-    let config = Config { fw, class, at: class.name().unwrap_or(class), key };
+    let config = Config { fw, class, at: class.name().unwrap_or(class) };
 
     // Links first: they report a component the guards cannot be generated for, which reads far better than the
     // "cannot generate a guard for a class" the guards would raise.
@@ -265,7 +262,6 @@ struct Config<'f> {
     class: P<Node>,
     /// `node.name ?? node`.
     at: P<Node>,
-    key: OrderKey,
 }
 
 impl Config<'_> {
@@ -370,9 +366,6 @@ impl Config<'_> {
             }
         }
         if let Some(component) = component {
-            let mut key = self.key.clone();
-            key.push((u32::MAX, 0));
-            self.fw.file.borrow_mut().current_key = key;
             let id = self.fw.type_uid(cx, component, self.at)?;
             fields.push((synthesized_string("component"), self.fw.id_expr(cx, id)));
         }
@@ -556,9 +549,9 @@ impl Config<'_> {
         };
         for super_member in cx.checker().get_properties_of_type(super_attributes).to_vec() {
             let name = super_member.name();
-            // TS5 finds no type for a symbol key or a private name (`crate::guards::types::is_internal_property`).
-            let prop = crate::guards::types::ts5_type_of_property(cx, attributes, super_member);
-            let super_prop = crate::guards::types::ts5_type_of_property(cx, super_attributes, super_member);
+            // A symbol key or a private name is not reflected (`crate::guards::types::is_internal_property`).
+            let prop = crate::guards::types::type_of_named_property(cx, attributes, super_member);
+            let super_prop = crate::guards::types::type_of_named_property(cx, super_attributes, super_member);
             if prop.is_some() && prop == super_prop {
                 omitted.push(name.to_owned());
             }

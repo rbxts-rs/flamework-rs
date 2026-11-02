@@ -2,7 +2,7 @@
 //!
 //! The TS generator built TypeScript that roblox-ts compiled; here it builds the same TypeScript as [`ir`] and
 //! [`lower`] compiles it the way roblox-ts did, so the Luau is the TS5 pipeline's but for the generated locals' names
-//! and, within a class, the order of the hoisted helpers (README, Known limitations; see `lower` for what the round
+//! and, within a class, the order of the hoisted helpers (README, Differences; see `lower` for what the round
 //! trip through the printer leaves in the output). The wire format, every order on
 //! it, the layout text and its hash are the TS generator's: see the TS file's header, which this port keeps as the
 //! reference.
@@ -578,10 +578,9 @@ pub fn build_serializer(
 
 /// `union`'s members in the serializer's order (`orderAlternatives`): the written order of `written` (the union as the
 /// call writes it) or of the alias it was declared as, else by a key of each member's type. `Modding.Many<(A | B)[]>`
-/// lists its values in this order. TS5 took its checker's creation order, which is the written one for a union of
-/// types the call makes (`({ z: 1 } | { a: 1 })[]`); for members that existed before (`(3 | 1 | 2)[]`, property names
-/// of the libraries, `keyof`) its order depends on what its checker met first, and this one is the written or key
-/// order instead (DESIGN §10.4). A tie fails the build, as it does for a serializer. `node` is the macro call.
+/// lists its values in this order, which never depends on what the checker met first (`(3 | 1 | 2)[]`, property
+/// names of the libraries, `keyof`; DESIGN §10.4). A tie fails the build, as it does for a serializer. `node` is the
+/// macro call.
 pub fn union_member_order(
     fw: &FwInstance,
     cx: &mut Cx<'_>,

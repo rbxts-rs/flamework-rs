@@ -15,9 +15,9 @@
 //! budget; in a function called where the call is otherwise. A call reached through `?.` (`a?.b.fire(x)`) goes in a
 //! function with nil checks of its own (`guardOptionalChain`), taken when the compiler offers the chain's outermost
 //! call before compiling the chain (`Interest::calls_chain_outer`): the operands ahead of each `?.` checked (or the
-//! target bound and checked), the arguments and the packing, then the target read again for the send, as TS5 does.
+//! target bound and checked), the arguments and the packing, then the target read again for the send.
 //! Only a call followed by more of its chain (`a?.fn.invoke(x).andThen(...)`), which is not that outermost call, is
-//! lowered by the compiler inside the chain's nil check, its statements there (README, known limitations).
+//! lowered by the compiler inside the chain's nil check, its statements there (README, Differences).
 //!
 //! **Names.** Each local is named when the hook first emits it ([`crate::serializer::local_name`]).
 

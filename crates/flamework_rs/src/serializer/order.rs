@@ -475,7 +475,7 @@ impl Gen<'_, '_, '_> {
             let mut parts = Vec::new();
             for property in typeinfo::properties_in_ts_order(self.cx, ty) {
                 let optional = if property.flags().intersects(SymbolFlags::Optional) { "?" } else { "" };
-                let property_type = typeinfo::ts5_type_of_property(self.cx, ty, property);
+                let property_type = typeinfo::type_of_named_property(self.cx, ty, property);
                 let key = match property_type {
                     Some(t) => self.type_key(t, seen),
                     None => "unknown".into(),

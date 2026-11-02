@@ -3,8 +3,7 @@
 //!
 //! An id is known at once ([`IdAnswer::Now`]: full mode, ids in a build info, package ids) or late
 //! ([`IdAnswer::Late`]: `short` / `tiny` / `obfuscated`, assigned in `finish` in transform order). Each request of a
-//! new id is recorded with its place in the TS transformer's walk ([`crate::order`]); `end_file` keeps the first of
-//! each.
+//! new id is recorded in the order the hooks make it; `end_file` keeps the first of each.
 
 use rbxts_plugin::ts::{Kind, Node, P, Symbol, Type};
 use rbxts_plugin::{Cx, LuauExpr, PResult, PluginDiagnostic, synthesized_string};
@@ -126,10 +125,7 @@ impl FwInstance {
         let declaration = self.describe_declaration(cx, node);
         let (answer, new) = self.shared.ids.request(&self.shared.build_info, &declaration);
         if let Some(new) = new {
-            let mut file = self.file.borrow_mut();
-            let key = file.current_key.clone();
-            let seq = file.next();
-            file.id_requests.push((key, seq, new));
+            self.file.borrow_mut().id_requests.push(new);
         }
         answer
     }

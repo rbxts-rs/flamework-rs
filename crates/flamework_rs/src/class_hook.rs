@@ -102,10 +102,6 @@ pub(crate) fn class_metadata(fw: &FwInstance, cx: &mut Cx<'_>, class: &ClassSite
         return Ok(Vec::new());
     }
 
-    // The TS transformer asks for these ids before it transforms the members.
-    let key = fw.order_key(cx, node, crate::order::BEFORE_CHILDREN);
-    fw.file.borrow_mut().current_key = key;
-
     let specifier = fw.shared.reflect_specifier(&cx.file().path);
     let reflect = import_named(cx, &specifier, &specifier, "Reflect", node)?;
     let name_text = class_name.text();
@@ -270,8 +266,7 @@ fn parameter_fields(
 /// metadata being the user macros of a `Modding.Injectable<{ metadata: [...] }>` dependency.
 fn dependency_metadata(fw: &FwInstance, cx: &mut Cx<'_>, trace: P<Node>, ty: P<Type>) -> PResult<LuauExpr> {
     let metadata = Analysis { fw, node: trace }.injectable_metadata(cx, ty)?;
-    let key = fw.file.borrow().current_key.clone();
-    Builder { fw, node: trace, key }.dependency(cx, ty, false, metadata.as_deref())
+    Builder { fw, node: trace }.dependency(cx, ty, false, metadata.as_deref())
 }
 
 /// `generateFieldMetadata`.
