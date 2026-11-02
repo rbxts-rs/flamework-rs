@@ -3,9 +3,9 @@
 //! writes: the Luau, `flamework.build` and the include JSON (`include/flamework`), byte for byte except where the
 //! repository's README says otherwise (see [Parity and limitations](#parity-and-limitations)).
 //!
-//! `DESIGN §n` references here and in the other crates are to rbxts-rs's design document, which this repository
-//! does not hold. Each module's docs name the TS transformer files it ports (paths under the transformer package's
-//! `src`, such as `util/functions/buildGuardFromType.ts`).
+//! `DESIGN §n` references here and in the other crates are to rbxts-rs's design document, `docs/design.md` in the
+//! rbxts-rs repository. Each module's docs name the TS transformer files it ports (paths under the transformer
+//! package's `src`, such as `util/functions/buildGuardFromType.ts`).
 //!
 //! # Using it
 //!

@@ -24,6 +24,8 @@ rev: Cargo does not enforce one copy of a git dependency, so a mismatch builds a
 E0308 on a tsrs type. `bash tools/check-deps.sh` fails when any `tsrs_*` or `rbxts_*` crate is in the graph twice; run
 it after changing a dependency, a `[patch]` or `Cargo.lock`. `Cargo.lock` started as a copy of rbxts-rs's.
 
+`DESIGN §n` in the code and docs refers to rbxts-rs's `docs/design.md`.
+
 ## Build and test
 
 The toolchain comes from `rust-toolchain.toml`. Dev builds are optimised (a debug checker is unusably slow).
