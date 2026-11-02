@@ -25,16 +25,11 @@ use rbxts_transform::{CompileOptions, CompileReport, PluginOptions, compile_proj
 use tsrs_compiler::diagnosticwriter::flatten_diagnostic_message;
 use tsrs_diagnostics::Category;
 
-const DEFAULT_MONOREPO: &str = "E:/Projects/TS/Flamework/ExperimentalV2Monorepo";
-const DEFAULT_RBXTS: &str = "E:/Projects/TS/Flamework/roblox-ts-test/realproject/node_modules/@rbxts";
 const RBXTS_PACKAGES: [&str; 3] = ["compiler-types", "t", "types"];
 
 fn sources() -> Option<(PathBuf, PathBuf)> {
-    let var = |name: &str, default: &str| {
-        std::env::var_os(name).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(default))
-    };
-    let monorepo = var("FLAMEWORK_RS_MONOREPO", DEFAULT_MONOREPO);
-    let rbxts = var("FLAMEWORK_RS_RBXTS", DEFAULT_RBXTS);
+    let monorepo = PathBuf::from(std::env::var_os("FLAMEWORK_RS_MONOREPO")?);
+    let rbxts = PathBuf::from(std::env::var_os("FLAMEWORK_RS_RBXTS")?);
     (monorepo.join("packages/core/out/index.d.ts").is_file()
         && RBXTS_PACKAGES.iter().all(|name| rbxts.join(name).is_dir()))
     .then_some((monorepo, rbxts))

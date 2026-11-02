@@ -4,8 +4,9 @@
 //
 //   node crates/flamework_rs/tests/data/gen/generate.cjs <monorepo>
 //
-// <monorepo> defaults to E:/Projects/TS/Flamework/ExperimentalV2Monorepo. Nothing in it is written;
-// throwaway files go to the OS temp directory and are removed at the end.
+// <monorepo> (or FLAMEWORK_RS_MONOREPO when it is left out) is a checkout of the monorepo with the
+// transformer built. Nothing in it is written; throwaway files go to the OS temp directory and are
+// removed at the end.
 "use strict";
 const fs = require("fs");
 const os = require("os");
@@ -13,7 +14,12 @@ const path = require("path");
 const crypto = require("crypto");
 const { createRequire } = require("module");
 
-const MONOREPO = path.resolve(process.argv[2] ?? "E:/Projects/TS/Flamework/ExperimentalV2Monorepo");
+const MONOREPO_ARG = process.argv[2] ?? process.env.FLAMEWORK_RS_MONOREPO;
+if (!MONOREPO_ARG) {
+	console.error("usage: node generate.cjs <monorepo> (or set FLAMEWORK_RS_MONOREPO)");
+	process.exit(2);
+}
+const MONOREPO = path.resolve(MONOREPO_ARG);
 const TRANSFORMER = path.join(MONOREPO, "packages", "transformer");
 const OUT = path.join(TRANSFORMER, "out");
 const DATA = path.resolve(__dirname, "..");

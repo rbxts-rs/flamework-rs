@@ -489,12 +489,14 @@ mod tests {
         );
     }
 
-    /// The embedded schemas are the transformer's files (line endings aside). Skipped, with a note, when the monorepo
-    /// is not at `FLAMEWORK_MONOREPO` (default `E:/Projects/TS/Flamework/ExperimentalV2Monorepo`).
+    /// The embedded schemas are the transformer's files (line endings aside). Skipped, with a note, without a
+    /// monorepo at `FLAMEWORK_RS_MONOREPO`.
     #[test]
     fn the_embedded_schemas_match_the_transformers() {
-        let monorepo = std::env::var("FLAMEWORK_MONOREPO")
-            .unwrap_or_else(|_| "E:/Projects/TS/Flamework/ExperimentalV2Monorepo".to_owned());
+        let Ok(monorepo) = std::env::var("FLAMEWORK_RS_MONOREPO") else {
+            println!("[schema] FLAMEWORK_RS_MONOREPO is not set, drift not checked");
+            return;
+        };
         let transformer = std::path::Path::new(&monorepo).join("packages/transformer");
         for (name, embedded) in [
             ("flamework.config.schema.json", PROJECT_CONFIG_SCHEMA_TEXT),

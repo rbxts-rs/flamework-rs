@@ -1,7 +1,7 @@
 //! A fixture copied to a temporary directory with a `node_modules` as an install has it, built with the real
-//! compiler (`compile_project_with`). As `tests/e2e.rs` does it: the `@rbxts` packages from `FLAMEWORK_RS_RBXTS`
-//! (else the real project's), the built Flamework packages from `FLAMEWORK_RS_MONOREPO` (else the monorepo), their
-//! `flamework.build` set to this transformer's version. Without them the tests are skipped, saying so.
+//! compiler (`compile_project_with`). As `tests/e2e.rs` does it: the `@rbxts` packages from `FLAMEWORK_RS_RBXTS`,
+//! the built Flamework packages from the monorepo at `FLAMEWORK_RS_MONOREPO`, their `flamework.build` set to this
+//! transformer's version. Without them the tests are skipped, saying so.
 
 use std::path::{Path, PathBuf};
 
@@ -12,14 +12,11 @@ use rbxts_transform::{CompileOptions, CompileReport, PluginOptions, compile_proj
 use tsrs_compiler::diagnosticwriter::flatten_diagnostic_message;
 use tsrs_diagnostics::Category;
 
-const DEFAULT_MONOREPO: &str = "E:/Projects/TS/Flamework/ExperimentalV2Monorepo";
-const DEFAULT_RBXTS: &str = "E:/Projects/TS/Flamework/roblox-ts-test/realproject/node_modules/@rbxts";
 const RBXTS_PACKAGES: [&str; 3] = ["compiler-types", "t", "types"];
 
 fn sources() -> Option<(PathBuf, PathBuf)> {
-    let var = |name: &str, default: &str| std::env::var_os(name).map(PathBuf::from).unwrap_or_else(|| default.into());
-    let monorepo = var("FLAMEWORK_RS_MONOREPO", DEFAULT_MONOREPO);
-    let rbxts = var("FLAMEWORK_RS_RBXTS", DEFAULT_RBXTS);
+    let monorepo = PathBuf::from(std::env::var_os("FLAMEWORK_RS_MONOREPO")?);
+    let rbxts = PathBuf::from(std::env::var_os("FLAMEWORK_RS_RBXTS")?);
     (monorepo.join("packages/core/out/index.d.ts").is_file() && RBXTS_PACKAGES.iter().all(|n| rbxts.join(n).is_dir()))
         .then_some((monorepo, rbxts))
 }

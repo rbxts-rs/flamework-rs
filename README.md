@@ -36,9 +36,17 @@ bash tools/check-deps.sh
 
 The end-to-end tests (`e2e`, `guards_e2e`, `macros`, `macros_env`, `serializer_e2e`) build fixtures with the real
 compiler. They need the built Flamework v2 packages (a checkout of its monorepo with `packages/core/out` built:
-`FLAMEWORK_RS_MONOREPO`) and the `@rbxts` packages `compiler-types`, `t` and `types` (a `node_modules/@rbxts`
-folder: `FLAMEWORK_RS_RBXTS`). Without them they are skipped, saying so. The unit test that checks the embedded JSON
-schemas against the transformer's reads the monorepo from `FLAMEWORK_MONOREPO`.
+`FLAMEWORK_RS_MONOREPO`) and the `@rbxts` packages `compiler-types`, `t` and `types` (a `node_modules/@rbxts` folder:
+`FLAMEWORK_RS_RBXTS`; its `compiler-types` must declare `Iterable` with TypeScript 7's three type parameters, and its
+`types` must have the `vector` library). Without them they are skipped, saying so; so is the unit test that checks the
+embedded JSON schemas against the transformer's (`FLAMEWORK_RS_MONOREPO`). To set both for every `cargo test` on one
+machine, put them in an uncommitted `.cargo/config.toml` (git-ignored):
+
+```toml
+[env]
+FLAMEWORK_RS_MONOREPO = "<monorepo>"
+FLAMEWORK_RS_RBXTS = "<project>/node_modules/@rbxts"
+```
 
 `diagnostics` is the TS transformer tests' failure assertions as one table (`tests/diagnostics/cases.json`, built on
 the TS tests' own fixture in `tests/diagnostics/fixture`): each case's build must fail with TS5's message. The file

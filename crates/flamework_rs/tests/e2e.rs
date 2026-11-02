@@ -7,12 +7,10 @@
 //! roblox-ts's `getChangedFilePaths` order, as rbxts-rs transforms in it since S3.
 //!
 //! The fixture is copied to a temporary directory with a `node_modules` made as an install would have it: the
-//! `@rbxts` packages copied (`FLAMEWORK_RS_RBXTS`, else the real project's, whose compiler-types both
-//! roblox-ts master and rbxts-rs accept), and the built `core`, `components` and
-//! `networking` packages (`out`, `package.json`, `flamework.build`) copied from the monorepo
-//! (`FLAMEWORK_RS_MONOREPO`, else `E:/Projects/TS/Flamework/ExperimentalV2Monorepo`). A junction to the packages
-//! themselves would take the Rojo resolver into their `node_modules`, whose bun links are relative and break
-//! through a junction. Without a monorepo the tests are skipped, saying so.
+//! `@rbxts` packages copied from `FLAMEWORK_RS_RBXTS`, and the built `core`, `components` and `networking`
+//! packages (`out`, `package.json`, `flamework.build`) copied from the monorepo at `FLAMEWORK_RS_MONOREPO`. A
+//! junction to the packages themselves would take the Rojo resolver into their `node_modules`, whose bun links are
+//! relative and break through a junction. Without both the tests are skipped, saying so.
 
 #![cfg(windows)]
 
@@ -26,20 +24,13 @@ use rbxts_transform::{CompileOptions, CompileReport, PluginOptions, compile_proj
 use tsrs_compiler::diagnosticwriter::flatten_diagnostic_message;
 use tsrs_diagnostics::Category;
 
-const DEFAULT_MONOREPO: &str = "E:/Projects/TS/Flamework/ExperimentalV2Monorepo";
-
 /// The `@rbxts` packages the fixture needs.
 const RBXTS_PACKAGES: [&str; 3] = ["compiler-types", "t", "types"];
 
-const DEFAULT_RBXTS: &str = "E:/Projects/TS/Flamework/roblox-ts-test/realproject/node_modules/@rbxts";
-
 /// The monorepo with a built core, and a folder with the `@rbxts` packages.
 fn sources() -> Option<(PathBuf, PathBuf)> {
-    let var = |name: &str, default: &str| {
-        std::env::var_os(name).map(PathBuf::from).unwrap_or_else(|| PathBuf::from(default))
-    };
-    let monorepo = var("FLAMEWORK_RS_MONOREPO", DEFAULT_MONOREPO);
-    let rbxts = var("FLAMEWORK_RS_RBXTS", DEFAULT_RBXTS);
+    let monorepo = PathBuf::from(std::env::var_os("FLAMEWORK_RS_MONOREPO")?);
+    let rbxts = PathBuf::from(std::env::var_os("FLAMEWORK_RS_RBXTS")?);
     (monorepo.join("packages/core/out/index.d.ts").is_file()
         && RBXTS_PACKAGES.iter().all(|name| rbxts.join(name).is_dir()))
     .then_some((monorepo, rbxts))
