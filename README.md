@@ -99,13 +99,13 @@ rbxts_project = { path = "<rbxts-rs>/crates/rbxts_project" }
 rbxts_transform = { path = "<rbxts-rs>/crates/rbxts_transform" }
 ```
 
-After adding it, run `cargo update -p rbxts_cli -p rbxts_luau -p rbxts_luau_check -p rbxts_plugin -p rbxts_project
--p rbxts_transform`: without that, Cargo prints "patch was not used" and silently builds the pinned rbxts-rs, so check
-that `rbxtsc-fw --build-info` names the local checkout's commit. While the patch is on, Cargo rewrites `Cargo.lock` for
-the path sources, so `--locked` fails: build without it, and restore `Cargo.lock` (`git checkout Cargo.lock`) when you
-remove the patch. The local checkout must name the same tsrs as this workspace (`tools/check-deps.sh`). When the change
-lands in rbxts-rs, move the rev in `Cargo.toml` to it and update the lock with `cargo update -p rbxts_plugin` (which
-moves every crate of that source).
+After adding it, run `cargo update -p rbxts_cli -p rbxts_luau -p rbxts_luau_check -p rbxts_plugin -p rbxts_project -p
+rbxts_transform`: without that, if the checkout's crate versions differ from the locked ones, Cargo prints "patch was
+not used" and silently builds the pinned rbxts-rs. Either way, check that `rbxtsc-fw --build-info` names the local
+checkout's commit. While the patch is on, Cargo rewrites `Cargo.lock` for the path sources, so `--locked` fails: build
+without it, and restore `Cargo.lock` (`git checkout Cargo.lock`) when you remove the patch. The local checkout must name
+the same tsrs as this workspace (`tools/check-deps.sh`). When the change lands in rbxts-rs, move the rev in `Cargo.toml`
+to it and update the lock with `cargo update -p rbxts_plugin` (which moves every crate of that source).
 
 ## Comparing with the TS transformer
 
@@ -158,15 +158,16 @@ Text and order:
   not the TS transformer's walk. Files still come in program order, so the output is the same for any checker count;
   `full` ids are paths and do not move, and a clean build's new salt changes `short` ids anyway.
 - **Property order is TypeScript 7.1's** (`Cx::properties_of_type`): a class's or interface's own members first, then
-  the inherited ones, each group in declaration order, and keys without a declaration (a mapped type's over a union of
-  literal keys: `Pick<T, "b" | "a">`, `Omit`, `Record`) after them by name. The TS transformer has TypeScript 5's
-  order (its checker's, which for mapped keys follows the order it first made their literal types and shifts with
-  unrelated edits). So the key order of guards (`t.interface`, a component's `attributes` guard) and the order of a
-  macro type's `getFields` differ, checking and listing the same keys; and for some type shapes (interfaces extending
-  others, redeclared members, spreads, object rests, late-bound keys) so do a serializer's field order and its layout
-  hash, so a buffer written by one compiler's build is not read by the other's. Two TypeScript 7.1 quirks: a `Record`
-  over a numeric enum lists its keys in code-unit order (`1, 10, 2`); and a class extending a generic base declared in
-  another file can list inherited members among its own, where an unrelated edit can move them.
+  the inherited ones, each group in declaration order, and keys without a declaration (a `Record` over literal keys:
+  `Record<"b" | "a", V>` is `a, b`) after them by name; `Pick<T, K>`, `Omit` and `Partial<T>` follow `T`'s declarations.
+  The TS transformer has TypeScript 5's order (its checker's, which for mapped keys follows the order it first made
+  their literal types and shifts with unrelated edits). So the key order of guards (`t.interface`, a component's
+  `attributes` guard) and the order of a macro type's `getFields` differ, checking and listing the same keys; and for
+  some type shapes (interfaces extending others, redeclared members, spreads, object rests, late-bound keys) so do a
+  serializer's field order and its layout hash, so a buffer written by one compiler's build is not read by the other's.
+  Two TypeScript 7.1 quirks: a `Record` over a numeric enum lists its keys in code-unit order (`1, 10, 2`); and a class
+  extending a generic base declared in another file can list inherited members among its own, where an unrelated edit
+  can move them.
 - **Guard text of a union** (`t.union(...)`, a literal union): the members are listed in the order TypeScript 7 gives
   a union's constituents.
 - **The order of a class's hoisted serializer helpers** (the codecs, `createSerializer` locals and helpers that the
