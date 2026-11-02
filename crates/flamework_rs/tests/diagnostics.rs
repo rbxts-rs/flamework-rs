@@ -8,8 +8,9 @@
 //! A case adds or replaces files of the fixture (`files`; `null` removes one), sets variables the fixture's
 //! `flamework.config.json` reads (`env`, appended to its `.env`) and may build another tsconfig (`tsconfig`). The
 //! build must fail, and its output must hold every `contains` text and none of the `excludes`, and a line holding the
-//! parts of each `line` in order, and no line holding those of a `not_line`. `<ROOT>` in a text stands for the
-//! project folder. The output is what `rbxtsc-fw` prints, without colours: the warnings, each diagnostic as
+//! parts of each `line` in order, and no line holding those of a `not_line`, and each `count` text (`[text, n]`)
+//! exactly `n` times (where a TS test counts, as the size of its map of refused calls). `<ROOT>` in a text stands for
+//! the project folder. The output is what `rbxtsc-fw` prints, without colours: the warnings, each diagnostic as
 //! TypeScript's pretty reporter prints it (`src/a.ts:1:2 - error TS @flamework-experimental/transformer: ...`), then
 //! the fatal errors.
 //!
@@ -49,6 +50,7 @@ struct Case {
     excludes: Vec<String>,
     lines: Vec<Vec<String>>,
     not_lines: Vec<Vec<String>>,
+    counts: Vec<(String, usize)>,
     marked: Option<String>,
     covered: Option<String>,
 }
@@ -70,6 +72,22 @@ fn string_lists(value: Option<&Value>) -> Vec<Vec<String>> {
         Some(Value::Array(lists)) => lists.iter().map(|l| strings(Some(l))).collect(),
         None => Vec::new(),
         Some(other) => panic!("expected an array of arrays, got {other}"),
+    }
+}
+
+fn counts(value: Option<&Value>) -> Vec<(String, usize)> {
+    match value {
+        Some(Value::Array(pairs)) => pairs
+            .iter()
+            .map(|pair| match pair.as_array().map(Vec::as_slice) {
+                Some([text_value, Value::Number(n)]) => {
+                    (text(text_value).to_owned(), n.as_u64().expect("a count") as usize)
+                }
+                _ => panic!("expected [text, count], got {pair}"),
+            })
+            .collect(),
+        None => Vec::new(),
+        Some(other) => panic!("expected an array of [text, count], got {other}"),
     }
 }
 
@@ -100,6 +118,7 @@ fn cases() -> Vec<Case> {
                 excludes: strings(item.get("excludes")),
                 lines: string_lists(item.get("line")),
                 not_lines: string_lists(item.get("not_line")),
+                counts: counts(item.get("count")),
                 marked: item.get("marked").map(|v| text(v).to_owned()),
                 covered: item.get("covered").map(|v| text(v).to_owned()),
             }
@@ -237,6 +256,12 @@ fn run(case: &Case, index: usize) -> (String, Vec<String>) {
     for parts in &case.not_lines {
         if has_line(&printed, parts) {
             wrong.push(format!("a line with {parts:?}"));
+        }
+    }
+    for (text, expected) in &case.counts {
+        let found = printed.matches(root(text).as_str()).count();
+        if found != *expected {
+            wrong.push(format!("{text:?} {found} times, not {expected}"));
         }
     }
     (printed, wrong)

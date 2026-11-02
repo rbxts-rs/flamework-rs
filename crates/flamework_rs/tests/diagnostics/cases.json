@@ -323,6 +323,46 @@
 				"One call site packs for all of them or for none, so some would drop what it sends",
 				"so the callers of some would reject what the callback returns",
 				"Make the call where the member's own type is known"
+			],
+			"line": [
+				[
+					"src/mixCallback.ts:",
+					" - error TS @flamework-experimental/transformer: The call 'member(name).setCallback(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; plain members are sent as they are, as networking.serialization is off."
+				],
+				[
+					"src/mixEventByName.ts:",
+					" - error TS @flamework-experimental/transformer: The call 'member(name).fire(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; plain members are sent as they are, as networking.serialization is off."
+				],
+				[
+					"src/mixEventEither.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? client.serializedPing : client.plainPing).fire(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; plain members are sent as they are, as networking.serialization is off."
+				],
+				[
+					"src/mixFunction.ts:",
+					" - error TS @flamework-experimental/transformer: The call 'member(name).invoke(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; plain members are sent as they are, as networking.serialization is off."
+				],
+				[
+					"src/mixRawCallback.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? serverFunctions.serializedFn : serverFunctions.rawFn).setCallback(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; Raw members are sent as they are."
+				],
+				[
+					"src/mixRawEvent.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? client.serializedPing : client.rawPing).fire(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; Raw members are sent as they are."
+				],
+				[
+					"src/mixRawFunction.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? clientFunctions.serializedFn : clientFunctions.rawFn).invoke(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; Raw members are sent as they are."
+				],
+				[
+					"src/mixServerEvent.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? server.serializedPong : server.plainPong).broadcast(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; plain members are sent as they are, as networking.serialization is off."
+				]
+			],
+			"count": [
+				[
+					"may reach networking members that are packed differently",
+					8
+				]
 			]
 		},
 		{
@@ -339,6 +379,34 @@
 				"Serialized members are packed into a buffer; Raw members are sent as they are",
 				"their argument lists are not laid out and checked alike ('ProbeServerEvents.plainPing(value: number): void' and 'ProbeServerEvents.wide(value: number | string): void')",
 				"their results are not laid out and checked alike ('ProbeFunctions.serializedFn(v: number): number' and 'ProbeFunctions.serializedText(v: number): string')"
+			],
+			"line": [
+				[
+					"src/mixLists.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? client.plainPing : client.wide).fire(...)' may reach networking members that are packed differently: their argument lists are not laid out and checked alike ('ProbeServerEvents.plainPing(value: number): void' and 'ProbeServerEvents.wide(value: number | string): void')."
+				],
+				[
+					"src/mixPlainRaw.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? client.plainPing : client.rawPing).fire(...)' may reach networking members that are packed differently: plain members are packed, as networking.serialization is on; Raw members are sent as they are."
+				],
+				[
+					"src/mixPlainRawCallback.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? serverFunctions.plainFn : serverFunctions.rawFn).setCallback(...)' may reach networking members that are packed differently: plain members are packed, as networking.serialization is on; Raw members are sent as they are."
+				],
+				[
+					"src/mixResults.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? serverFunctions.serializedFn : serverFunctions.serializedText).setCallback(...)' may reach networking members that are packed differently: their results are not laid out and checked alike ('ProbeFunctions.serializedFn(v: number): number' and 'ProbeFunctions.serializedText(v: number): string')."
+				],
+				[
+					"src/mixSerializedRaw.ts:",
+					" - error TS @flamework-experimental/transformer: The call 'member(name).fire(...)' may reach networking members that are packed differently: Serialized members are packed into a buffer; Raw members are sent as they are."
+				]
+			],
+			"count": [
+				[
+					"may reach networking members that are packed differently",
+					5
+				]
 			]
 		},
 		{
@@ -352,6 +420,22 @@
 				"their results are not laid out and checked alike ('LayoutFunctions.numberFirst(): number | string' and 'LayoutFunctions.textFirst(): string | number')",
 				"so the receiver of the other would read what it sends wrong",
 				"so the callers of the other would read them wrong"
+			],
+			"line": [
+				[
+					"src/layoutCallback.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? serverFunctions.textFirst : serverFunctions.numberFirst).setCallback(...)' may reach networking members that are packed differently: their results are not laid out and checked alike ('LayoutFunctions.numberFirst(): number | string' and 'LayoutFunctions.textFirst(): string | number')."
+				],
+				[
+					"src/layoutEvent.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? client.textFirst : client.numberFirst).fire(...)' may reach networking members that are packed differently: their argument lists are not laid out and checked alike ('LayoutServerEvents.numberFirst(value: number | string): void' and 'LayoutServerEvents.textFirst(value: string | number): void')."
+				]
+			],
+			"count": [
+				[
+					"may reach networking members that are packed differently",
+					2
+				]
 			]
 		},
 		{
@@ -361,6 +445,18 @@
 			},
 			"contains": [
 				"their results are not laid out and checked alike ('InfinityFunctions.negative(): { [-1e999]: number }' and 'InfinityFunctions.positive(): { 1e999: number }')"
+			],
+			"line": [
+				[
+					"src/infinityKeys.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? serverFunctions.positive : serverFunctions.negative).setCallback(...)' may reach networking members that are packed differently: their results are not laid out and checked alike ('InfinityFunctions.negative(): { [-1e999]: number }' and 'InfinityFunctions.positive(): { 1e999: number }')."
+				]
+			],
+			"count": [
+				[
+					"may reach networking members that are packed differently",
+					1
+				]
 			]
 		},
 		{
@@ -474,6 +570,12 @@
 					" - error TS @flamework-experimental/transformer: The call 'target.fire(...)' may reach networking members that are packed differently: their argument lists are not laid out and checked alike ('MergeServerEvents.numberFirst(value: number | string): void' and 'MergeServerEvents.textFirst(value: string | number): void')."
 				]
 			],
+			"count": [
+				[
+					"may reach networking members that are packed differently",
+					21
+				]
+			],
 			"excludes": [
 				"error TS1",
 				"error TS2",
@@ -493,6 +595,18 @@
 			},
 			"contains": [
 				"The call '(flag ? serverFunctions.both : serverFunctions.other).setCallback(...)' may reach networking members that are packed differently: their results are not laid out and checked alike ('BothServerFunctions.both(): string | number' and 'BothServerFunctions.other(): number | string')."
+			],
+			"line": [
+				[
+					"src/bothRefused.ts:",
+					" - error TS @flamework-experimental/transformer: The call '(flag ? serverFunctions.both : serverFunctions.other).setCallback(...)' may reach networking members that are packed differently: their results are not laid out and checked alike ('BothServerFunctions.both(): string | number' and 'BothServerFunctions.other(): number | string')."
+				]
+			],
+			"count": [
+				[
+					"may reach networking members that are packed differently",
+					1
+				]
 			]
 		},
 		{
@@ -693,6 +807,12 @@
 				"'ComponentStreamingMode.Default' was removed before beta. It stood for 'ComponentStreamingMode.Contextual', which replaces it.",
 				"Write 'onConstructed'.",
 				"'ComponentPlugin.createPlugin' was renamed 'ComponentPlugin.builder' before beta."
+			],
+			"count": [
+				[
+					"'ComponentStreamingMode.Default' was removed",
+					2
+				]
 			]
 		},
 		{
