@@ -270,7 +270,7 @@ pub fn setup(cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<FwShared, Fata
     let is_game = !package_name.starts_with('@');
 
     // The `$schema` line the TS transformer adds to a game's flamework.config.json is not written: it would edit a
-    // user's source file from a build (Q-F5, the user's call).
+    // user's source file from a build.
 
     let loaded = config::load_project_config_with(
         &mut SetupInputs { cx },
@@ -423,7 +423,7 @@ pub fn setup(cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<FwShared, Fata
     }
 
     // transformer.plugins: JavaScript plugins cannot run here; macro types are registered in the build's main.rs
-    // (Q-F8; the macro types themselves are F2).
+    // (warned about and ignored).
     if !config.plugins.is_empty() {
         let names: Vec<String> = config.plugins.iter().map(|p| format!("'{}'", p.path)).collect();
         cx.warn(

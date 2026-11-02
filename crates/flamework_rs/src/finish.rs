@@ -97,7 +97,7 @@ pub(crate) fn finish(
     Ok(())
 }
 
-/// `calculateGlobs`: every glob's matches, as output paths relative to the package root. Matches are sorted (Q-F4).
+/// `calculateGlobs`: every glob's matches, as output paths relative to the package root. Matches are sorted.
 /// Each glob is recorded with the compiler, which matches it again in watch: only `include/flamework/globs.json`
 /// and `flamework.build` depend on the matches, never a file's Luau, so a change re-runs `finish` only.
 fn calculate_globs(shared: &FwShared, info: &mut BuildInfo, cx: &mut FinishCx<'_>) {

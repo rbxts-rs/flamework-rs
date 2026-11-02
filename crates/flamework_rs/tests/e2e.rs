@@ -3,7 +3,7 @@
 //!
 //! `tests/fixture/expected` holds a full-mode build, checked against the TS5 pipeline (roblox-ts master with the
 //! monorepo transformer at 1a72fa1) on the same sources: every Luau file is equal; `flamework.build` and `globs.json`
-//! differ in the order of glob matches, which are sorted here (Q-F4). The identifiers in `flamework.build` follow
+//! differ in the order of glob matches, which are sorted here. The identifiers in `flamework.build` follow
 //! roblox-ts's `getChangedFilePaths` order, as rbxts-rs transforms in it since S3.
 //!
 //! The fixture is copied to a temporary directory with a `node_modules` made as an install would have it: the

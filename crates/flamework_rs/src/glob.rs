@@ -1,5 +1,5 @@
 //! Glob matching as the TS transformer calls it: `glob.sync(pattern, { root, cwd: root, nocase: true })` with glob
-//! 9.3 (minimatch 8, brace-expansion 2), results sorted (Q-F4) with forward slashes.
+//! 9.3 (minimatch 8, brace-expansion 2), results sorted with forward slashes.
 //!
 //! Ported pieces, each to its library's rules:
 //! - brace expansion (`{a,b}`, nesting, `{1..10}`, `{a..e}`, padding and steps, a group without a comma or a range

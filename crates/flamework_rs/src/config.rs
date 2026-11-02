@@ -660,7 +660,7 @@ impl SchemaReferenceChange {
 
 /// Gives a game's `flamework.config.json` a `$schema` line pointing at `schema_path` when it has none, or creates the
 /// file with just that line when the game has none and its tsconfig is at the package root. Never for a package.
-/// (Q-F5: whether rbxts-rs keeps writing it, and where the schema lives, is the user's call.)
+/// (Not called by the build today: see `setup.rs`.)
 pub fn add_schema_reference(
     project_directory: &str,
     root_directory: &str,

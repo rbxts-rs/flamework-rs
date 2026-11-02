@@ -1,4 +1,4 @@
-//! The TS transformer's failure assertions as one table (DESIGN §10.6, Q-F7): every build of
+//! The TS transformer's failure assertions as one table (DESIGN §10.6): every build of
 //! `packages/transformer/tests/*.test.ts` (monorepo 2.0.0-beta.0) that must fail with a message containing some text,
 //! as data in `tests/diagnostics/cases.json`, built here on `tests/diagnostics/fixture`, the TS tests' own fixture
 //! (its sources as build inputs; its `fieldInfoPlugin.cjs` is `support::fixture_macros`). The table was made from a
