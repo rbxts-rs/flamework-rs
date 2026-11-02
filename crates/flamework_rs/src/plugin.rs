@@ -21,8 +21,9 @@ use std::sync::Arc;
 
 use rbxts_plugin::ts::{Node, P, Symbol};
 use rbxts_plugin::{
-    AccessSite, AssignSite, CallSite, CheckerInfo, Claim, ClassFilter, ClassSite, Cx, Fatal, FileIndex, FinishCx,
-    Interest, KeyAnswer, LuauExpr, LuauStmt, PResult, Plugin, PluginInfo, PluginInstance, SetupCx, SymbolRole, Tag,
+    AccessSite, AssignSite, CallSite, ChangeSet, CheckerInfo, Claim, ClassFilter, ClassSite, Cx, Fatal, FileIndex,
+    FinishCx, Interest, KeyAnswer, LuauExpr, LuauStmt, PResult, Plugin, PluginInfo, PluginInstance, RebuildPlan,
+    SetupCx, SymbolRole, Tag,
 };
 
 use crate::build_info::{GlobUse, PathUse};
@@ -194,6 +195,17 @@ impl Plugin for Flamework {
 
     fn setup(&self, cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<Arc<FwShared>, Fatal> {
         crate::setup::setup(cx, state).map(Arc::new)
+    }
+
+    /// A watch rebuild whose program reaches a package directory setup's build-info scan did not look in (a package
+    /// installed and imported while watching, in either order) sets up again, so the rebuild reads that package's
+    /// `flamework.build` as a clean build does. Other rebuilds keep the `Shared`.
+    fn rebuild_start(&self, shared: &FwShared, _state: &FwState, changes: &ChangeSet) -> RebuildPlan {
+        let added = changes.added.iter().map(String::as_str);
+        match shared.package_directories.first_new_with(&mut crate::inputs::FsInputs, added) {
+            Some(_) => RebuildPlan::RerunSetup,
+            None => RebuildPlan::KeepShared,
+        }
     }
 
     fn instance(&self, shared: Arc<FwShared>, _checker: CheckerInfo) -> FwInstance {

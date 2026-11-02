@@ -4,10 +4,11 @@
 use std::path::PathBuf;
 
 use flamework_rs::build_info::{
-    BuildInfo, CandidateScan, check_project_version, load_package_build_infos,
+    BuildInfo, CandidateScan, PackageDirectories, check_project_version, load_package_build_infos,
     package_build_info_remedy,
 };
 use flamework_rs::ids::{Declaration, IdAnswer, IdConfig, IdMode, Ids};
+use flamework_rs::inputs::FsInputs;
 use flamework_rs::{VERSION, uuid};
 
 /// A tree in a folder of the test's own: `<temp>/fwrs-setup-<label>-<pid>/root`. Nothing is written outside the
@@ -276,6 +277,29 @@ fn the_scan_looks_only_in_package_directories() {
     .map(|dir| t.path(&format!("{dir}/flamework.build")).replace('\\', "/"))
     .collect();
     assert_eq!(inputs.0, read);
+}
+
+/// A watch rebuild sets up again when its added files reach a package directory the scan did not look in: each added
+/// file's nearest `package.json` directory, unless a known package directory comes first.
+#[test]
+fn added_files_in_a_new_package_directory_are_noticed() {
+    let t = Tree::new("newpkg");
+    t.write("game/package.json", r#"{"name":"game"}"#);
+    t.write("game/node_modules/@s/known/package.json", r#"{"name":"@s/known"}"#);
+    t.write("game/node_modules/@s/new/package.json", r#"{"name":"@s/new"}"#);
+    let known_directories = [t.path("game"), t.path("game/node_modules/@s/known")];
+    let known = PackageDirectories::new(known_directories.iter().map(String::as_str));
+    let first_new = |files: &[&str]| {
+        let files: Vec<String> = files.iter().map(|f| t.path(f).replace('\\', "/")).collect();
+        known.first_new_with(&mut FsInputs, files.iter().map(String::as_str))
+    };
+    assert_eq!(first_new(&[]), None);
+    assert_eq!(first_new(&["game/src/server/new.ts", "game/node_modules/@s/known/out/index.d.ts"]), None);
+    assert_eq!(
+        first_new(&["game/src/a.ts", "game/node_modules/@s/new/out/sub/index.d.ts"]).map(|d| d.replace('\\', "/")),
+        Some(t.path("game/node_modules/@s/new").replace('\\', "/"))
+    );
+    assert!(known.contains(&t.path("game").to_uppercase()) == cfg!(windows));
 }
 
 /// Per file, the variables `Flamework.env` inlined there and their values.

@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rbxts_plugin::{BuildKind, Cx, Fatal, SetupCx};
 
-use crate::build_info::{self, BUILD_INFO_NAME, BuildInfo, CandidateScan};
+use crate::build_info::{self, BUILD_INFO_NAME, BuildInfo, CandidateScan, PackageDirectories};
 use crate::config::{self, LoadedProjectConfig, TransformerConfig};
 use crate::ids::{IdConfig, IdMode, Ids};
 use crate::inputs::{Inputs, strip_bom};
@@ -76,6 +76,9 @@ pub struct FwShared {
     /// transform's id lookups: a kept `Shared` misses the ids later builds added, which the transform then asks for as
     /// new ones and `finish` answers from [`FwState`].
     pub(crate) build_info: BuildInfo,
+    /// The program's package directories the build-info scan looked in: a watch rebuild whose program reaches
+    /// another one sets up again (`Plugin::rebuild_start`).
+    pub(crate) package_directories: PackageDirectories,
     /// The build seed, under obfuscation.
     pub(crate) build_seed: Option<uuid::Namespace>,
     /// The namespace of `Modding.Hash` values: the build seed under obfuscation, else the reused build info's
@@ -294,7 +297,7 @@ pub fn setup(cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<FwShared, Fata
 
     // The package build infos above the program's files, once per directory, looked for in the program's package
     // directories only (`CandidateScan`).
-    {
+    let package_directories = {
         let mut directories: Vec<String> = Vec::new();
         let mut packages: Vec<&str> = Vec::new();
         for file in program.source_files() {
@@ -308,6 +311,7 @@ pub fn setup(cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<FwShared, Fata
                 packages.push(package);
             }
         }
+        let package_directories = PackageDirectories::new(packages.iter().copied());
         let mut inputs = SetupInputs { cx };
         let mut scan = CandidateScan::new();
         scan.look_only_in_packages(packages);
@@ -329,7 +333,8 @@ pub fn setup(cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<FwShared, Fata
         for info in infos {
             build_info.add_build_info(info);
         }
-    }
+        package_directories
+    };
 
     let mode = config.effective_id_mode();
     config.id_generation_mode = Some(mode);
@@ -501,6 +506,7 @@ pub fn setup(cx: &mut SetupCx<'_>, state: &mut FwState) -> Result<FwShared, Fata
         loaded,
         ids,
         build_info,
+        package_directories,
         build_seed,
         hash_seed,
         hash_used: AtomicBool::new(false),

@@ -822,6 +822,56 @@ impl CandidateScan {
     }
 }
 
+/// The package directories a setup's scan looked in ([`CandidateScan::look_only_in_packages`]), kept with its
+/// `Shared` so that a watch rebuild can tell when the program reaches a package the scan did not see: a package
+/// installed and imported while watching (in either order) adds its files to the program, and its `flamework.build`
+/// was never a recorded input, so only setting up again reads it (TS5 reads the candidates once per process).
+#[derive(Debug, Default, Clone)]
+pub struct PackageDirectories {
+    keys: HashSet<String>,
+}
+
+impl PackageDirectories {
+    /// The package directories of the program's files.
+    pub fn new<'a>(directories: impl IntoIterator<Item = &'a str>) -> Self {
+        PackageDirectories { keys: directories.into_iter().map(path_key).collect() }
+    }
+
+    /// Whether the scan looked in `directory`.
+    pub fn contains(&self, directory: &str) -> bool {
+        self.keys.contains(&path_key(directory))
+    }
+
+    /// The package directory of the first of `files` (a watch rebuild's added program files) that is not one of
+    /// these: the nearest directory above the file holding a `package.json` (the compiler's package scope), unless a
+    /// known package directory comes first. Reads through `inputs` (the disk, unrecorded: this decides whether to set
+    /// up again, and the setup that follows records what it reads).
+    pub fn first_new_with<'a>(
+        &self,
+        inputs: &mut dyn Inputs,
+        files: impl IntoIterator<Item = &'a str>,
+    ) -> Option<String> {
+        let mut seen: HashSet<String> = HashSet::new();
+        for file in files {
+            let mut directory = node_path::dirname(file);
+            loop {
+                if self.contains(&directory) || !seen.insert(path_key(&directory)) {
+                    break;
+                }
+                if inputs.exists(&node_path::join(&[&directory, "package.json"])) {
+                    return Some(directory);
+                }
+                let parent = node_path::dirname(&directory);
+                if parent == directory {
+                    break;
+                }
+                directory = parent;
+            }
+        }
+        None
+    }
+}
+
 /// `arePathsEqual`: normalised, and without case on Windows.
 pub fn are_paths_equal(a: &str, b: &str) -> bool {
     path_key(a) == path_key(b)

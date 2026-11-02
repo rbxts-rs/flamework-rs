@@ -478,3 +478,82 @@ fn one_and_four_checkers_give_the_same_bytes() {
     }
     assert_eq!(differences(&snapshot(&one.root), &snapshot(&four.root)), Vec::<String>::new(), "incremental");
 }
+
+/// A file of the fixture that imports the package's type (`IMPORTS`) or not yet (`NO_IMPORT`).
+const PKG_USE: &str = "src/shared/pkguse.ts";
+const NO_IMPORT: &str = "export const libThingId = \"none\";\n";
+const IMPORTS: &str = "import { Flamework } from \"@flamework-experimental/core\";\nimport type { LibThing } from \"@fwtest/lib\";\n\nexport const libThingId = Flamework.id<LibThing>();\n";
+
+/// Installs `@fwtest/lib`, a package whose `flamework.build` names `LibThing`'s id `fl:lib@LibThing` (without it,
+/// the id falls back to `@fwtest/lib:out/init@LibThing`), returning the touched paths (for [`watch`]).
+fn install_package(root: &Path) -> Vec<String> {
+    let build = format!(
+        "{{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"{}\",\n\t\"identifiers\": {{\n\t\t\"@fwtest/lib:out/init@LibThing\": \"fl:lib@LibThing\"\n\t}},\n\t\"identifierPrefix\": \"fl\"\n}}",
+        flamework_rs::VERSION
+    );
+    let package = "node_modules/@fwtest/lib";
+    let mut touched = Vec::new();
+    for (file, text) in [
+        ("package.json", "{ \"name\": \"@fwtest/lib\", \"version\": \"1.0.0\", \"main\": \"out/init.luau\", \"types\": \"out/index.d.ts\" }"),
+        ("flamework.build", build.as_str()),
+        ("out/index.d.ts", "export interface LibThing {\n\tthing(): void;\n}\n"),
+        ("out/init.luau", "return {}\n"),
+    ] {
+        touched.extend(write(root, &format!("{package}/{file}"), text));
+    }
+    touched
+}
+
+/// A package installed and imported while watching, in either order: the rebuild reads the package's
+/// `flamework.build` (set up again, as the program reaches a package directory setup did not look in) and writes what a
+/// clean build of the same tree writes. Edits that reach no new package keep the setup.
+#[test]
+fn a_package_installed_while_watching_is_read() {
+    for order in ["install-then-import", "import-then-install"] {
+        let Some(project) = Project::new("fixture", &format!("night2-{order}")) else { return };
+        project.write(PKG_USE, NO_IMPORT);
+        let root = project.root.clone();
+        let alpha = "src/server/services/alpha.ts";
+        let alpha_text = project.read(alpha);
+        let edited = alpha_text.replace("onInit() {}", "onInit() {\n\t\tprint(\"edited\");\n\t}");
+        let at = || root.clone();
+        let (r1, r2, r3, r4, r5) = (at(), at(), at(), at(), at());
+        let mut edits: Vec<Edit> = vec![
+            Box::new(move || install_package(&r1)),
+            Box::new(move || write(&r2, PKG_USE, IMPORTS)),
+            // a plain edit, and a new source file of the project: no new package
+            Box::new(move || write(&r3, alpha, &edited)),
+            Box::new(move || write(&r4, "src/shared/extra.ts", "export const extra = 1;\n")),
+            Box::new(move || write(&r5, "src/shared/extra.ts", "export const extra = 2;\n")),
+        ];
+        if order == "import-then-install" {
+            edits.swap(0, 1);
+        }
+        let outcomes = watch(&root, None, edits);
+        let (first, second) = (&outcomes[1], &outcomes[2]);
+        if order == "install-then-import" {
+            first.assert_ok();
+            assert_eq!(first.transformed, Vec::<String>::new(), "{order}: the install alone");
+            second.assert_ok();
+            assert!(second.summary.all, "{order}: the import sets up again");
+        } else {
+            assert!(!first.errors.is_empty(), "{order}: the import of a package not installed fails");
+            second.assert_ok();
+            assert!(second.summary.all, "{order}: the install sets up again");
+        }
+        let output = project.read("out/shared/pkguse.luau");
+        assert!(output.contains("\"fl:lib@LibThing\""), "{order}:\n{output}");
+        let later = ["server/services/alpha.ts", "shared/extra.ts", "shared/extra.ts"];
+        for (file, outcome) in later.into_iter().zip(&outcomes[3..]) {
+            outcome.assert_ok();
+            assert!(!outcome.summary.all, "{order}: {file} keeps the setup");
+            assert_eq!(outcome.transformed, [file], "{order}");
+        }
+        let watched = snapshot(&root);
+        let clean = build_once(&root, None);
+        clean.assert_ok();
+        assert_eq!(clean.kind(), BuildKind::Clean);
+        let differences = differences(&watched, &snapshot(&root));
+        assert_eq!(differences, Vec::<String>::new(), "{order}: the watcher's tree against a clean build");
+    }
+}
