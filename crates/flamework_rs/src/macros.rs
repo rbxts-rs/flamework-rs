@@ -19,10 +19,8 @@
 //! `tuple-guards` intrinsic is [`crate::guards::tuple_guards`].
 //!
 //! **Serializers.** The `serializer` intrinsic is [`crate::serializer::build_serializer`], versioned by the argument of
-//! the `intrinsic-serializer-options` parameter. Every serializer site of the file is built when the file begins
-//! ([`prepare_file_serializers`]), so that the generated names come out as TypeScript's printer gave them.
-//! `Many<(A | B)[]>` lists its values as the call (or the union's alias) writes them, else by key
-//! ([`crate::serializer::union_member_order`]).
+//! the `intrinsic-serializer-options` parameter, built at the call. `Many<(A | B)[]>` lists its values as the call
+//! (or the union's alias) writes them, else by key ([`crate::serializer::union_member_order`]).
 //!
 //! **Call shapes.** A call is a macro only when its callee is an identifier or a property access (TypeScript's
 //! `getSymbolAtLocation` has no symbol for any other callee): `o["m"]()`, `(o.m)()` and `o.m!()` are plain calls,
@@ -36,7 +34,8 @@
 //! more of its chain (`maybe?.inlined<T>().size()`, mostly a type error in TS5's output) is refused.
 //!
 //! **Argument order.** The generated values are `Arg::Deferred` slots of `compile_call_with`, built when the
-//! lowering reaches them among the written arguments, so that their names come out in TS5's print order.
+//! lowering reaches them among the written arguments, so that what they put ahead of the statement lands in argument
+//! order.
 //!
 //! **Networking.** The `network-decoder` / `network-result-decoder` intrinsics are decoders built with the file's
 //! serializers ([`crate::serializer::build_decoder`]), `network-unreliable` reads the member's markers, and
@@ -132,69 +131,8 @@ pub(crate) enum UserMacro {
     SharedRef(Box<UserMacro>),
 }
 
-impl UserMacro {
-    /// The values in it that the file's serializers build ahead (`serializer`, and the network decoders of packed
-    /// members), in build order: shuffled as [`Builder`] shuffles them (`shuffles` counts the shuffles of the call
-    /// so far), a decoder only where the member is packed. `version` is the call's serializer version.
-    pub(crate) fn prepared_sites(
-        &self,
-        fw: &FwInstance,
-        cx: &mut Cx<'_>,
-        call: P<Node>,
-        version: Option<u32>,
-        shuffles: &mut usize,
-        out: &mut Vec<(P<Type>, crate::serializer::SiteKind)>,
-    ) {
-        use crate::serializer::SiteKind;
-        let mut each = |items: &mut dyn Iterator<Item = &UserMacro>, cx: &mut Cx<'_>, out: &mut Vec<_>| {
-            for item in items {
-                item.prepared_sites(fw, cx, call, version, shuffles, out);
-            }
-        };
-        match self {
-            UserMacro::Generic { kind: GenericKind::Dependency { metadata: Some(items), .. }, .. }
-            | UserMacro::Many(items) => each(&mut items.iter(), cx, out),
-            UserMacro::Map(entries) => each(&mut entries.iter().map(|(_, m)| m), cx, out),
-            UserMacro::SharedRef(inner) => inner.prepared_sites(fw, cx, call, version, shuffles, out),
-            UserMacro::Intrinsic(Intrinsic::ObfuscateObject { inner, .. }) => match &**inner {
-                UserMacro::Map(entries) => {
-                    let mut entries: Vec<&UserMacro> = entries.iter().map(|(_, m)| m).collect();
-                    shuffle(fw, cx, call, &mut entries, "obfuscate-obj", shuffles);
-                    for entry in entries {
-                        entry.prepared_sites(fw, cx, call, version, shuffles, out);
-                    }
-                }
-                inner => inner.prepared_sites(fw, cx, call, version, shuffles, out),
-            },
-            UserMacro::Intrinsic(Intrinsic::ShuffleArray(inner)) => match &**inner {
-                UserMacro::Many(items) => {
-                    let mut items: Vec<&UserMacro> = items.iter().collect();
-                    shuffle(fw, cx, call, &mut items, "shuffle-array", shuffles);
-                    for item in items {
-                        item.prepared_sites(fw, cx, call, version, shuffles, out);
-                    }
-                }
-                inner => inner.prepared_sites(fw, cx, call, version, shuffles, out),
-            },
-            UserMacro::Intrinsic(Intrinsic::Serializer(ty)) => out.push((*ty, SiteKind::Serializer { version })),
-            UserMacro::Intrinsic(Intrinsic::NetworkDecoder { list, member, key })
-                if crate::networking::mode::packed_member(fw, cx, *member, call, *key) == Some(true) =>
-            {
-                out.push((*list, SiteKind::Decoder { result: false }));
-            }
-            UserMacro::Intrinsic(Intrinsic::NetworkResultDecoder { function, key })
-                if crate::networking::mode::packed_member(fw, cx, Some(*function), call, *key) == Some(true) =>
-            {
-                out.push((*function, SiteKind::Decoder { result: true }));
-            }
-            _ => {}
-        }
-    }
-}
-
 /// `obfuscateArray` under obfuscation: a shuffle seeded by the build seed, the file, the call's place, what is
-/// shuffled and how many shuffles the call made before (DESIGN §10.4), so it is the same on every checker, and the
-/// same when the file's sites are prepared ([`UserMacro::prepared_sites`]) as when the call is built.
+/// shuffled and how many shuffles the call made before (DESIGN §10.4), so it is the same on every checker.
 pub(crate) fn shuffle<T>(fw: &FwInstance, cx: &Cx<'_>, call: P<Node>, items: &mut [T], context: &str, count: &mut usize) {
     let shared = &fw.shared;
     if shared.config.obfuscation != Some(true) {
@@ -287,9 +225,7 @@ pub(crate) fn user_macro(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> P
         return Ok(Claim::Decline);
     }
 
-    // Taken: from here on, build and compile. What the serializers of the root statement hoisted printed ahead of
-    // it, so it is named first (a hook may not decline after naming).
-    crate::serializer::enter_statement(fw, cx, expression);
+    // Taken: from here on, build and compile.
     // The generated values by argument index: a parameter's metadata, a component config (which replaces its
     // argument, one that is not an object literal too, as the TS does), a network's middleware.
     let mut generated: Vec<(usize, Generated<'_>)> =
@@ -457,8 +393,8 @@ pub(crate) fn has_symbol_callee(call: P<Node>) -> bool {
 /// `state.isUserMacro(state.getSymbol(node.expression))`: whether the TS transformer takes `call` through
 /// `transformUserMacro`, decided from the callee's own symbol (aliases skipped), as the call hook's offer is, not from
 /// the resolved signature's declaration: `const alias = wrap; alias<T>(x)` and `holder.inner.wrap<T>(x)` (with
-/// `inner = { wrap }`) resolve to `wrap`'s signature but are plain calls. The pre-scans that must agree with the hook
-/// ([`collect_sites`], `crate::order`) ask this.
+/// `inner = { wrap }`) resolve to `wrap`'s signature but are plain calls. The pre-scan that must agree with the hook
+/// (`crate::order`) asks this.
 pub(crate) fn is_macro_callee(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>) -> bool {
     if !has_symbol_callee(call) {
         return false;
@@ -606,112 +542,6 @@ fn serializer_version_at(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>) -> PRe
         fw.metadata(cx, declaration).symbols("intrinsic-serializer-options").and_then(|s| s.first().copied())
     });
     crate::serializer::serializer_version(cx, call, options)
-}
-
-/// Builds every serializer of the file, once per file ([`crate::serializer::prepare_serializers`]): TypeScript's
-/// printer named the generated identifiers over the whole file, the declarations of every top-level statement first,
-/// so each serializer's names depend on the others'. Called from the file's first hook (`begin_file`), ahead of
-/// anything else Flamework names. The sites are the `serializer` intrinsics of every user macro call the hook will
-/// take, grouped by root statement, in the order the TS transformer built them ([`collect_sites`]). A call the hook
-/// declines or fails on is left out; its errors come again when the call is compiled (the compiler keeps one of each).
-pub(crate) fn prepare_file_serializers(fw: &FwInstance, cx: &mut Cx<'_>) {
-    if std::mem::replace(&mut fw.serializer.borrow_mut().file_prepared, true) {
-        return;
-    }
-    let file = cx.file().source;
-    let mut groups = Vec::new();
-    for &statement in file.as_node().statements() {
-        let mut sites = Vec::new();
-        collect_sites(fw, cx, statement, &mut sites);
-        if !sites.is_empty() {
-            groups.push((statement, sites));
-        }
-    }
-    crate::serializer::prepare_serializers(fw, cx, &groups);
-}
-
-/// The `serializer` sites under `node`, in the order the TS transformer built them, which is the order its printer
-/// printed their values in: a user macro call's arguments in index order, each generated one where its parameter is
-/// and each written one with the macro calls in it (`wrap<A>(wrap<B>(0))` builds `B` first); any other node's
-/// children in source order.
-fn collect_sites(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, out: &mut Vec<crate::serializer::SerializerSite>) {
-    // A call on a networking member: its arguments' sites, then its own packing.
-    if crate::networking::calls::collect(fw, cx, node, out, collect_sites) {
-        return;
-    }
-    if matches!(node.kind(), Kind::CallExpression | Kind::NewExpression)
-        && let Some(generated) = serializer_parameters(fw, cx, node)
-    {
-        let version = serializer_version_at(fw, cx, node);
-        if let Some(callee) = node.expression() {
-            collect_sites(fw, cx, callee, out);
-        }
-        let arguments = node.arguments();
-        let highest = generated.iter().map(|(index, _)| *index).max().unwrap_or(0);
-        for index in 0..arguments.len().max(highest + 1) {
-            match generated.iter().find(|(i, _)| *i == index) {
-                Some((_, types)) => {
-                    // a call whose version fails is left to its hook, which reports the error
-                    if let Ok(version) = version {
-                        out.extend(types.iter().map(|(ty, kind)| crate::serializer::SerializerSite {
-                            node,
-                            ty: *ty,
-                            kind: kind.with_version(version),
-                        }));
-                    }
-                }
-                None => {
-                    if let Some(&argument) = arguments.get(index) {
-                        collect_sites(fw, cx, argument, out);
-                    }
-                }
-            }
-        }
-        return;
-    }
-    node.for_each_child(&mut |child| {
-        collect_sites(fw, cx, child, out);
-        false
-    });
-}
-
-/// The parameters of `call` whose generated values hold `serializer` or network intrinsics, with each one's `T` and
-/// site kind in build order: `None` for a call with none, that is not a user macro, or that the hook declines
-/// (`super()`) or fails on.
-#[allow(clippy::type_complexity)]
-fn serializer_parameters(
-    fw: &FwInstance,
-    cx: &mut Cx<'_>,
-    call: P<Node>,
-) -> Option<Vec<(usize, Vec<(P<Type>, crate::serializer::SiteKind)>)>> {
-    if !is_macro_callee(fw, cx, call) {
-        return None;
-    }
-    let signature = cx.checker().get_resolved_signature_exported(call);
-    signature.declaration()?;
-    let analysis = Analysis { fw, node: call };
-    let arguments = call.arguments();
-    let mut generated = Vec::new();
-    let mut shuffles = 0;
-    for index in 0..parameter_count(cx, signature) {
-        if !is_undefined_argument(arguments.get(index).copied()) {
-            continue;
-        }
-        let parameter_type = cx.checker().get_type_at_position_exported(signature, index);
-        let target = cx.checker().get_non_nullable_type(parameter_type);
-        match analysis.of_union(cx, target) {
-            Ok(Some(found)) => {
-                let mut types = Vec::new();
-                found.prepared_sites(fw, cx, call, None, &mut shuffles, &mut types);
-                if !types.is_empty() {
-                    generated.push((index, types));
-                }
-            }
-            Ok(None) => {}
-            Err(_) => return None,
-        }
-    }
-    (!generated.is_empty()).then_some(generated)
 }
 
 fn property(cx: &mut Cx<'_>, ty: P<Type>, name: &str) -> Option<P<Type>> {

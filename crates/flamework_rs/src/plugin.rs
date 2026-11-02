@@ -272,9 +272,6 @@ impl PluginInstance for FwInstance {
             ..FileState::default()
         };
         *self.serializer.borrow_mut() = crate::serializer::FileSerializer::default();
-        // The file's serializers, built before any hook names anything: TypeScript's printer named their top-level
-        // declarations ahead of everything it printed.
-        crate::macros::prepare_file_serializers(self, cx);
         Ok(())
     }
 
@@ -303,7 +300,6 @@ impl PluginInstance for FwInstance {
     }
 
     fn class(&self, cx: &mut Cx<'_>, class: &ClassSite) -> PResult<Vec<LuauStmt>> {
-        crate::serializer::enter_statement(self, cx, class.node);
         crate::class_hook::class_metadata(self, cx, class)
     }
 

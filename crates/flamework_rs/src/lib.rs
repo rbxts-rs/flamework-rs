@@ -63,8 +63,7 @@
 //! - `finish`: id assignment in transform order, `flamework.build`, the include JSON, the glob and path warnings
 //!   (with `place_source`, what the place holds at a path);
 //! - `part_codec`: [`FwFilePart`] as bytes, for the compiler's incremental state;
-//! - `order`, `ts_names`: the order the TS transformer met things in a file, and the names its printer gave
-//!   generated locals;
+//! - `order`: the order the TS transformer met things in a file;
 //! - `renamed`: TypeScript's errors for names renamed or removed before beta, naming the replacement;
 //! - `schema` (the config schemas, validated as Ajv does), `shuffle` (seeded obfuscation shuffles), `random`, `js`
 //!   (JavaScript semantics the TS code relies on).
@@ -75,7 +74,8 @@
 //! # Parity and limitations
 //!
 //! The repository's `README.md` has both. **Parity**: `tools/parity.cjs` builds a whole project with `rbxtsc-fw` and
-//! compares its output, file by file and byte for byte, with a TypeScript 5 roblox-ts build of the same project.
+//! compares its output, file by file and byte for byte (or with the generated locals' names normalised, which differ
+//! from TS5's), with a TypeScript 5 roblox-ts build of the same project.
 //! **Known limitations**: where the output may differ from the TS transformer's, where it differs in shape only, where
 //! a failing build is reported differently, where it differs on purpose, and what flamework-rs refuses that the TS
 //! transformer builds.
@@ -111,7 +111,6 @@ pub(crate) mod serializer;
 pub(crate) mod setup;
 pub mod sha;
 pub(crate) mod shuffle;
-pub(crate) mod ts_names;
 pub(crate) mod uid;
 pub mod uuid;
 

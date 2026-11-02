@@ -175,7 +175,8 @@ pub fn luau<'r>(report: &'r CompileReport, relative: &str) -> &'r str {
         .unwrap_or_else(|| panic!("no output {relative}"))
 }
 
-/// Every output and artifact against `tests/<fixture>/expected`; the differences, described.
+/// Every output and artifact against `tests/<fixture>/expected`; the differences, described. With `UPDATE_EXPECTED=1`,
+/// writes them there instead.
 pub fn compare_expected(project: &Project, report: &CompileReport, fixture: &str) -> Vec<String> {
     let expected = fixture_dir(fixture).join("expected");
     let mut failures = Vec::new();
@@ -189,15 +190,18 @@ pub fn compare_expected(project: &Project, report: &CompileReport, fixture: &str
             failures.push(format!("{relative}: no output"));
             continue;
         };
-        let want = std::fs::read_to_string(expected.join("out").join(&relative))
-            .unwrap_or_else(|e| panic!("{relative}: {e}"))
-            .replace("\r\n", "\n");
-        if *luau != want {
-            failures.push(format!("{relative}: differs from expected\n--- ours\n{luau}"));
-        }
+        failures.extend(super::expected::check(&relative, &expected.join("out").join(&relative), luau));
     }
     for artifact in ["flamework.build", "include/flamework/globs.json", "include/flamework/paths.json", "include/flamework/config.json"] {
         let path = expected.join(artifact);
+        if super::expected::updating() {
+            if project.exists(artifact) {
+                failures.extend(super::expected::check(artifact, &path, &project.read(artifact)));
+            } else {
+                let _ = std::fs::remove_file(&path);
+            }
+            continue;
+        }
         match (path.is_file(), project.exists(artifact)) {
             (false, false) => {}
             (true, true) => {

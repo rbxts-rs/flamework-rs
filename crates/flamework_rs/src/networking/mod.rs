@@ -12,10 +12,6 @@
 //! - **Modes** ([`mode`]): how a member's markers and `networking.serialization` decide whether it is packed.
 //! - **`explainRemovedNetworkMarker`** ([`mode::explain_removed_marker`]): TypeScript's error for a marker dropped before
 //!   beta, as one naming the marker that replaces it.
-//!
-//! Every packing site of a file is planned and built when the file begins, with the file's serializers
-//! ([`crate::serializer::prepare_serializers`]), in the TS transformer's order: they share the file's generated
-//! helpers, whose names follow that order.
 
 pub(crate) mod analysis;
 pub(crate) mod calls;

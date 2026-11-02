@@ -118,9 +118,9 @@ With `--normalize` (both tools), Luau files are compared with their locals renam
 differently from TS5's (Known limitations), so this is the comparison to make against a TS5 reference; it also
 checks that a change touched names only. Every identifier other than a keyword, a field name or a table
 constructor's key becomes `<class>#<n>`: its class is its name without a trailing number (`buf_2` is `buf`), and `n`
-counts the class's names in the order they first occur in the file. Two files normalise alike exactly when one is the
-other with names consistently swapped within their classes: a changed constant, a different order, or a use that
-reads another local still differs.
+counts the class's names in the order they first occur in the file (the `_` class, names that are never read, is
+kept as `_`). Two files normalise alike exactly when one is the other with names consistently swapped within their
+classes: a changed constant, a different order, or a use that reads another local still differs.
 
 ## Known limitations
 
@@ -142,6 +142,9 @@ Where flamework-rs's output may differ from Flamework's TS transformer (TypeScri
 
 Where it differs from TS5's output in shape only, with the same behaviour:
 
+- **The names of Flamework's generated locals** (`buf`, `value_2`, a guard's `v_Tree`, …): each is named when it is
+  built, as the compiler approves it (never a name the file uses), where TS5's printer named them in print order over
+  the whole file, so the numbers after a name differ. Names only: compare with TS5 with `--normalize` (Parity).
 - **The order of a network's members.** The keys of a mapped type over `keyof T` (`incomingIds`, `outgoingIds`,
   `namespaceIds`, and the decoders built for them) are listed by a key of each, where TS5 lists them in the order its
   checker first made their literal types, which `keyof` does not fix (it shifts with unrelated edits). The arrays hold
@@ -156,8 +159,6 @@ Where it differs from TS5's output in shape only, with the same behaviour:
   so nothing can see the difference.
 - **A comment at the end of a file** (after its last statement) is kept, where TS5 with Flamework's transformer
   drops it in every file of the project. Comments only.
-- **A `Flamework.createSerializer` call inside a method** can renumber the locals of a later property initializer's
-  send (names only).
 
 Where it reports a failing build differently:
 

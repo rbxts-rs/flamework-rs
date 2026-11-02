@@ -1,14 +1,12 @@
 //! Names of the locals a guard declares.
 //!
-//! The TS builder makes them with `factory.createUniqueName(base, Optimistic)`, and TypeScript's printer names them
-//! when it prints the transformed file, in print order: `base` when the file uses no such name yet, else `base_1`,
-//! `base_2`, … (`makeUniqueName`). So the name a local gets depends on where it is printed, not on when the builder
-//! made it (a recursive guard's `depth` is made deep inside the guard and printed first).
+//! The TS builder makes them with `factory.createUniqueName(base, Optimistic)`: `base` when the file uses no such name yet,
+//! else `base_1`, `base_2`, … (`makeUniqueName`).
 //!
 //! Here a guard is built with placeholder identifiers ([`Names::fresh`]), and [`Names::assign`] names them once the
 //! guard is complete, walking the Luau in render order and asking the compiler for each name
-//! ([`rbxts_plugin::Cx::is_usable_local_name`], which records the names it approves for the whole file, as the
-//! printer's `generatedNames` does). [`Names::substitute`] replaces placeholders by other expressions first (the
+//! ([`rbxts_plugin::Cx::is_usable_local_name`], which records the names it approves for the whole file), so a
+//! recursive guard's `depth`, made deep inside the guard, is named where it renders first. [`Names::substitute`] replaces placeholders by other expressions first (the
 //! `guards.Name` fields of a guard holding more locals than Luau allows).
 
 use std::collections::HashMap;
@@ -114,7 +112,7 @@ pub(crate) fn declared(expr: &Expr) -> AnyIdentifier {
     }
 }
 
-/// TypeScript's `makeUniqueName` with the `Optimistic` flag, against the names the compiler has seen in the file:
+/// TypeScript's `makeUniqueName` with the `Optimistic` flag, each name approved by the compiler (`is_usable_local_name`):
 /// `base` itself when it is free, else the first free `base_1`, `base_2`, … (`base1`, … when `base` ends in `_`).
 pub(crate) fn unique_name(cx: &Cx<'_>, base: &str) -> String {
     if cx.is_usable_local_name(base) {

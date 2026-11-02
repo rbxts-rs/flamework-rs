@@ -35,6 +35,94 @@ local vread = function(buf_1, o_1)
 	end
 end
 local guard = (function()
+	local depth_1 = 0
+	local memo_1
+	local Node_2
+	Node_2 = t.interface({
+		v = t.number,
+		kids = t.array(function(value_2)
+			if depth_1 >= 1000 then
+				return false
+			end
+			local results_1
+			if type(value_2) == "table" then
+				results_1 = memo_1[Node_2]
+				if results_1 == nil then
+					results_1 = {}
+					memo_1[Node_2] = results_1
+				else
+					local known_1 = results_1[value_2]
+					if known_1 ~= nil then
+						return known_1
+					end
+				end
+			end
+			depth_1 += 1
+			local result_2 = Node_2(value_2)
+			depth_1 -= 1
+			if results_1 ~= nil then
+				results_1[value_2] = result_2
+			end
+			return result_2
+		end),
+	})
+	return function(value_3)
+		local outerDepth_1 = depth_1
+		local outerMemo_1 = memo_1
+		memo_1 = {}
+		local ok_1, result_3 = pcall(Node_2, value_3)
+		depth_1 = outerDepth_1
+		memo_1 = outerMemo_1
+		if not ok_1 then
+			error(result_3, 0)
+		end
+		return result_3
+	end
+end)()
+codec.s_Node = function(v)
+	local array = v.kids
+	local n_3 = #array
+	local size = vsize(n_3)
+	for i = 1, n_3 do
+		local item = array[i]
+		if item == nil then
+			error(`[Flamework] the array has no value at Node.kids[{i - 1}]`)
+		end
+		size += codec.s_Node(item)
+	end
+	return size + 1
+end
+codec.w_Node = function(buf_2, o_2, v)
+	buffer.writeu8(buf_2, o_2, v.v)
+	local array_1 = v.kids
+	o_2 = vwrite(buf_2, o_2 + 1, #array_1)
+	for i_1 = 1, #array_1 do
+		local item_1 = array_1[i_1]
+		o_2 = codec.w_Node(buf_2, o_2, item_1)
+	end
+	return o_2
+end
+codec.r_Node = function(buf_2, o_2)
+	local v_1 = buffer.readu8(buf_2, o_2)
+	local count, o_3 = vread(buf_2, o_2 + 1)
+	o_2 = o_3
+	if count * 2 > buffer.len(buf_2) - o_2 then
+		error("malformed payload")
+	end
+	local array_2 = table.create(count)
+	for i_2 = 1, count do
+		local value_4, o_4 = codec.r_Node(buf_2, o_2)
+		array_2[i_2] = value_4
+		o_2 = o_4
+	end
+	local value_5 = {
+		v = v_1,
+		kids = array_2,
+	}
+	return value_5, o_2
+end
+-- A guard in a written argument ahead of a generated serializer: TS5 names the guard's locals first (print order).
+local w = wrap(Flamework.createGuard((function()
 	local depth = 0
 	local memo
 	local Node_1
@@ -77,94 +165,6 @@ local guard = (function()
 			error(result_1, 0)
 		end
 		return result_1
-	end
-end)()
-codec.s_Node = function(v)
-	local array = v.kids
-	local n_3 = #array
-	local size = vsize(n_3)
-	for i = 1, n_3 do
-		local item = array[i]
-		if item == nil then
-			error(`[Flamework] the array has no value at Node.kids[{i - 1}]`)
-		end
-		size += codec.s_Node(item)
-	end
-	return size + 1
-end
-codec.w_Node = function(buf_2, o_2, v)
-	buffer.writeu8(buf_2, o_2, v.v)
-	local array_1 = v.kids
-	o_2 = vwrite(buf_2, o_2 + 1, #array_1)
-	for i_1 = 1, #array_1 do
-		local item_1 = array_1[i_1]
-		o_2 = codec.w_Node(buf_2, o_2, item_1)
-	end
-	return o_2
-end
-codec.r_Node = function(buf_2, o_2)
-	local v_1 = buffer.readu8(buf_2, o_2)
-	local count, o_3 = vread(buf_2, o_2 + 1)
-	o_2 = o_3
-	if count * 2 > buffer.len(buf_2) - o_2 then
-		error("malformed payload")
-	end
-	local array_2 = table.create(count)
-	for i_2 = 1, count do
-		local value_2, o_4 = codec.r_Node(buf_2, o_2)
-		array_2[i_2] = value_2
-		o_2 = o_4
-	end
-	local value_3 = {
-		v = v_1,
-		kids = array_2,
-	}
-	return value_3, o_2
-end
--- A guard in a written argument ahead of a generated serializer: TS5 names the guard's locals first (print order).
-local w = wrap(Flamework.createGuard((function()
-	local depth_1 = 0
-	local memo_1
-	local Node_2
-	Node_2 = t.interface({
-		v = t.number,
-		kids = t.array(function(value_4)
-			if depth_1 >= 1000 then
-				return false
-			end
-			local results_1
-			if type(value_4) == "table" then
-				results_1 = memo_1[Node_2]
-				if results_1 == nil then
-					results_1 = {}
-					memo_1[Node_2] = results_1
-				else
-					local known_1 = results_1[value_4]
-					if known_1 ~= nil then
-						return known_1
-					end
-				end
-			end
-			depth_1 += 1
-			local result_2 = Node_2(value_4)
-			depth_1 -= 1
-			if results_1 ~= nil then
-				results_1[value_4] = result_2
-			end
-			return result_2
-		end),
-	})
-	return function(value_5)
-		local outerDepth_1 = depth_1
-		local outerMemo_1 = memo_1
-		memo_1 = {}
-		local ok_1, result_3 = pcall(Node_2, value_5)
-		depth_1 = outerDepth_1
-		memo_1 = outerMemo_1
-		if not ok_1 then
-			error(result_3, 0)
-		end
-		return result_3
 	end
 end)()), {
 	serialize = function(v_2)
@@ -246,10 +246,10 @@ end)()), {
 		return value_6
 	end,
 })
-codec.s_Map_string_u8 = function(v_5)
+codec.s_Map_string_u8 = function(v_6)
 	local size_3 = 0
 	local n_6 = 0
-	for key_2, entry_3 in v_5 do
+	for key_2, entry_3 in v_6 do
 		n_6 += 1
 		local length_3 = #key_2
 		size_3 += vsize(length_3) + length_3 + 1
@@ -257,52 +257,52 @@ codec.s_Map_string_u8 = function(v_5)
 	size_3 += vsize(n_6)
 	return size_3
 end
-codec.w_Map_string_u8 = function(buf_5, o_10, v_5)
+codec.w_Map_string_u8 = function(buf_7, o_11, v_6)
 	-- ▼ ReadonlyMap.size ▼
 	local _size = 0
-	for _ in v_5 do
+	for _ in v_6 do
 		_size += 1
 	end
 	-- ▲ ReadonlyMap.size ▲
 	local n_7 = _size
-	o_10 = vwrite(buf_5, o_10, n_7)
-	for key_3, entry_4 in v_5 do
+	o_11 = vwrite(buf_7, o_11, n_7)
+	for key_3, entry_4 in v_6 do
 		local length_4 = #key_3
-		o_10 = vwrite(buf_5, o_10, length_4)
-		buffer.writestring(buf_5, o_10, key_3)
-		o_10 += length_4
-		buffer.writeu8(buf_5, o_10, entry_4)
-		o_10 += 1
+		o_11 = vwrite(buf_7, o_11, length_4)
+		buffer.writestring(buf_7, o_11, key_3)
+		o_11 += length_4
+		buffer.writeu8(buf_7, o_11, entry_4)
+		o_11 += 1
 	end
-	return o_10
+	return o_11
 end
-codec.r_Map_string_u8 = function(buf_5, o_10)
-	local count_2, o_11 = vread(buf_5, o_10)
-	o_10 = o_11
-	if count_2 * 2 > buffer.len(buf_5) - o_10 then
+codec.r_Map_string_u8 = function(buf_7, o_11)
+	local count_2, o_12 = vread(buf_7, o_11)
+	o_11 = o_12
+	if count_2 * 2 > buffer.len(buf_7) - o_11 then
 		error("malformed payload")
 	end
 	local map_1 = {}
 	for _1 = 1, count_2 do
-		local length_5, o_12 = vread(buf_5, o_10)
-		local text_1 = buffer.readstring(buf_5, o_12, length_5)
-		o_10 = o_12 + length_5
-		local entry_5 = buffer.readu8(buf_5, o_10)
+		local length_5, o_13 = vread(buf_7, o_11)
+		local text_1 = buffer.readstring(buf_7, o_13, length_5)
+		o_11 = o_13 + length_5
+		local entry_5 = buffer.readu8(buf_7, o_11)
 		map_1[text_1] = entry_5
-		o_10 += 1
+		o_11 += 1
 	end
-	return map_1, o_10
+	return map_1, o_11
 end
 -- Generated, written (holding a guard), generated: named in index order.
 local interleaved = two({
-	serialize = function(v_6)
-		local buf_6 = buffer.create(codec.s_Node(v_6))
-		codec.w_Node(buf_6, 0, v_6)
-		return buf_6
+	serialize = function(v_5)
+		local buf_5 = buffer.create(codec.s_Node(v_5))
+		codec.w_Node(buf_5, 0, v_5)
+		return buf_5
 	end,
-	deserialize = function(buf_7)
-		local value_8, o_13 = codec.r_Node(buf_7, 0)
-		if o_13 ~= buffer.len(buf_7) then
+	deserialize = function(buf_6)
+		local value_8, o_10 = codec.r_Node(buf_6, 0)
+		if o_10 ~= buffer.len(buf_6) then
 			error("malformed payload")
 		end
 		return value_8
@@ -413,8 +413,8 @@ codec.r_NodeArray = function(buf_10, o_15)
 	end
 	local array_3 = table.create(count_3)
 	for i_5 = 1, count_3 do
-		local value_12, o_17 = codec.r_Node(buf_10, o_15)
-		array_3[i_5] = value_12
+		local value_14, o_17 = codec.r_Node(buf_10, o_15)
+		array_3[i_5] = value_14
 		o_15 = o_17
 	end
 	return array_3, o_15
@@ -426,37 +426,37 @@ local viaMethod = wrapper:wrap(Flamework.createGuard((function()
 	local Node_4
 	Node_4 = t.interface({
 		v = t.number,
-		kids = t.array(function(value_13)
+		kids = t.array(function(value_12)
 			if depth_3 >= 1000 then
 				return false
 			end
 			local results_3
-			if type(value_13) == "table" then
+			if type(value_12) == "table" then
 				results_3 = memo_3[Node_4]
 				if results_3 == nil then
 					results_3 = {}
 					memo_3[Node_4] = results_3
 				else
-					local known_3 = results_3[value_13]
+					local known_3 = results_3[value_12]
 					if known_3 ~= nil then
 						return known_3
 					end
 				end
 			end
 			depth_3 += 1
-			local result_6 = Node_4(value_13)
+			local result_6 = Node_4(value_12)
 			depth_3 -= 1
 			if results_3 ~= nil then
-				results_3[value_13] = result_6
+				results_3[value_12] = result_6
 			end
 			return result_6
 		end),
 	})
-	return function(value_14)
+	return function(value_13)
 		local outerDepth_3 = depth_3
 		local outerMemo_3 = memo_3
 		memo_3 = {}
-		local ok_3, result_7 = pcall(Node_4, value_14)
+		local ok_3, result_7 = pcall(Node_4, value_13)
 		depth_3 = outerDepth_3
 		memo_3 = outerMemo_3
 		if not ok_3 then

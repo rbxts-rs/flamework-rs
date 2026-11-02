@@ -2,5 +2,6 @@
 
 #![allow(dead_code)]
 
+pub mod expected;
 pub mod fixture_macros;
 pub mod project;

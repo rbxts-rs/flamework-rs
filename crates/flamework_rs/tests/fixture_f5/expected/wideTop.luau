@@ -444,24 +444,24 @@ local codec = {}
 local vsize = function(n_1)
 	return if n_1 < 128 then 1 elseif n_1 < 16384 then 2 elseif n_1 < 2097152 then 3 elseif n_1 < 268435456 then 4 else 5
 end
-local vwrite = function(buf_1, o_1, n_2)
+local vwrite = function(buf, o, n_2)
 	while n_2 >= 128 do
-		buffer.writeu8(buf_1, o_1, n_2 % 128 + 128)
-		o_1 += 1
+		buffer.writeu8(buf, o, n_2 % 128 + 128)
+		o += 1
 		n_2 = math.floor(n_2 / 128)
 	end
-	buffer.writeu8(buf_1, o_1, n_2)
-	return o_1 + 1
+	buffer.writeu8(buf, o, n_2)
+	return o + 1
 end
-local vread = function(buf_2, o_2)
+local vread = function(buf_1, o_1)
 	local n_3 = 0
 	local scale = 1
 	while true do
-		local b = buffer.readu8(buf_2, o_2)
-		o_2 += 1
+		local b = buffer.readu8(buf_1, o_1)
+		o_1 += 1
 		n_3 += b % 128 * scale
 		if b < 128 then
-			return n_3, o_2
+			return n_3, o_1
 		end
 		scale *= 128
 		if scale > 268435456 then
@@ -480,17 +480,17 @@ do
 	local arg = text()
 	local arg_1 = compute()
 	local length = #arg
-	local buf = buffer.create(vsize(length) + length + 1)
-	local o = 0
+	local buf_2 = buffer.create(vsize(length) + length + 1)
+	local o_2 = 0
 	local length_1 = #arg
-	o = vwrite(buf, o, length_1)
-	buffer.writestring(buf, o, arg)
-	o += length_1
+	o_2 = vwrite(buf_2, o_2, length_1)
+	buffer.writestring(buf_2, o_2, arg)
+	o_2 += length_1
 	if not (arg_1 >= 0 and arg_1 <= 255 and arg_1 % 1 == 0) then
 		codec.checkWidth("u8", arg_1, "'bravo' [1]")
 	end
-	buffer.writeu8(buf, o, arg_1)
-	Events.bravo:_fire(buf)
+	buffer.writeu8(buf_2, o_2, arg_1)
+	Events.bravo:_fire(buf_2)
 end
 return {
 	v0 = v0,

@@ -4,12 +4,13 @@
 //! its budget of locals, a user-declared serializer macro, serializer macros nested in each other's arguments, the
 //! mapped types, the types that copy or inherit a mapped type's properties (spreads, object rests, a generic
 //! interface's instantiated bases) and `as` clauses that rename keys, the properties TS5 leaves out (unique-symbol
-//! keys, private names), a guard named after the serializers' file-level locals, and guards earlier in a
-//! serializer's root statement, named after what the serializer hoisted).
+//! keys, private names), a guard beside the serializers' file-level locals, and guards earlier in a
+//! serializer's root statement than what the serializer hoisted).
 //!
-//! `tests/fixture_f4/expected` holds the TS5 pipeline's output for every file (roblox-ts master with the published
-//! 2.0.0-beta.0 transformer), each compared whole. `unions.luau` has union members told apart by F3's guards, which
-//! print with the serializer's names (`crate::serializer::ir::Guard`).
+//! `tests/fixture_f4/expected` holds rbxtsc-fw's output for every file, each compared whole (`UPDATE_EXPECTED=1`
+//! writes it). It is the TS5 pipeline's output (roblox-ts master with the published 2.0.0-beta.0 transformer) but for
+//! the generated locals' names (checked with `tools/normalize.cjs`). `unions.luau` has union members told apart by
+//! F3's guards, named with the serializer's code (`crate::serializer::ir::Guard`).
 //!
 //! The project is copied to a temporary directory with a `node_modules` as an install has it (`support::project`);
 //! without the monorepo and the `@rbxts` packages the tests are skipped, saying so.
@@ -23,7 +24,7 @@ use support::project::{Project, assert_clean, errors, fixture_dir, luau};
 
 const FIXTURE: &str = "fixture_f4";
 
-/// Every file builds, and the files in `expected` equal TS5's byte for byte.
+/// Every file builds, and the files in `expected` equal its output byte for byte.
 #[test]
 fn every_kind_builds_and_matches_ts5() {
     let Some(project) = Project::new(FIXTURE, "kinds") else { return };
@@ -36,26 +37,11 @@ fn every_kind_builds_and_matches_ts5() {
     for entry in std::fs::read_dir(&expected).unwrap() {
         let entry = entry.unwrap();
         let name = entry.file_name().to_string_lossy().into_owned();
-        let want = std::fs::read_to_string(entry.path()).unwrap().replace("\r\n", "\n");
         compared += 1;
-        failures.extend(first_difference(&name, luau(&report, &name), &want));
+        failures.extend(support::expected::check(&name, &entry.path(), luau(&report, &name)));
     }
     assert!(compared >= 17, "expected outputs missing ({compared})");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-}
-
-/// Where `got` first differs from TS5's `want`, described.
-fn first_difference(name: &str, got: &str, want: &str) -> Option<String> {
-    if got == want {
-        return None;
-    }
-    let line = got.lines().zip(want.lines()).position(|(a, b)| a != b).unwrap_or(0);
-    Some(format!(
-        "{name}: first difference at line {}\n  ours: {}\n  ts5:  {}",
-        line + 1,
-        got.lines().nth(line).unwrap_or("<eof>"),
-        want.lines().nth(line).unwrap_or("<eof>")
-    ))
 }
 
 /// A serializer's errors carry the TS transformer's text, at the macro call: a version that is not known when the
@@ -121,10 +107,7 @@ fn mapped_links_match_ts5() {
     let expected = fixture_dir(FIXTURE).join("expected");
     let failures: Vec<String> = ["spreads.luau", "remaps.luau"]
         .into_iter()
-        .filter_map(|name| {
-            let want = std::fs::read_to_string(expected.join(name)).unwrap().replace("\r\n", "\n");
-            first_difference(name, luau(&report, name), &want)
-        })
+        .filter_map(|name| support::expected::check(name, &expected.join(name), luau(&report, name)))
         .collect();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

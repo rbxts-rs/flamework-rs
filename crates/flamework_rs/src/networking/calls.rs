@@ -9,8 +9,8 @@
 //! the serializer's generator ([`crate::serializer`]) and the bindings as roblox-ts compiled them, from the arguments
 //! compiled by the compiler in the TS statements' order.
 //!
-//! **Where it goes** (`emitWithStatements`, decided when the file begins, in the TS transformer's order, as its
-//! `LocalBudget` claims are): ahead of the statement around the call when that runs them exactly when the call runs
+//! **Where it goes** (`emitWithStatements`, decided when the site is built at its hook, with its `LocalBudget`
+//! claim): ahead of the statement around the call when that runs them exactly when the call runs
 //! (`hoistsCleanly`) and the scope's budget of Flamework locals has room; in a block with the statement past the
 //! budget; in a function called where the call is otherwise. A call reached through `?.` (`a?.b.fire(x)`) goes in a
 //! function with nil checks of its own (`guardOptionalChain`), taken when the compiler offers the chain's outermost
@@ -19,10 +19,7 @@
 //! Only a call followed by more of its chain (`a?.fn.invoke(x).andThen(...)`), which is not that outermost call, is
 //! lowered by the compiler inside the chain's nil check, its statements there (README, known limitations).
 //!
-//! **Names.** The locals are named as TypeScript's printer named the TS transformer's unique names: those that land
-//! ahead of a statement when the printer began the function body (or file) around it (`generateNames`,
-//! [`crate::serializer::enter_statement`]), the rest where they print. A class's members printed in source order, so a
-//! hook in a member first names the sites of the members before it.
+//! **Names.** Each local is named when the hook first emits it ([`crate::serializer::local_name`]).
 
 use rbxts_luau::{AssignmentOperator, BinaryOperator, Expr, Stmt, UnaryOperator, create};
 use rbxts_plugin::ts::{Kind, Node, P, Type};
@@ -33,8 +30,7 @@ pub(crate) use super::analysis::CallShape;
 use super::scope::{self, COMPACT_LOCALS, Scope};
 use crate::plugin::FwInstance;
 use crate::serializer::ir::{self, Body, E, ExtLiteral, ExtValue, Id, S, Ty};
-use crate::serializer::lower::Namer;
-use crate::serializer::{EncodingSite, GResult, Gen, SerializerSite, SiteKind};
+use crate::serializer::{EncodingSite, GResult, Gen, local_name};
 
 /// Where a call site's statements go (`emitWithStatements`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,13 +48,6 @@ pub(crate) enum Placement {
     Chain,
 }
 
-impl Placement {
-    /// Its locals are named when the printer began the function around the statement.
-    pub(crate) fn ahead_of_statement(self) -> bool {
-        matches!(self, Placement::Ahead | Placement::Scoped)
-    }
-}
-
 /// A value the site reads: an argument, bound to a local unless it is an identifier or a literal.
 #[derive(Debug)]
 pub(crate) struct Value {
@@ -69,13 +58,10 @@ pub(crate) struct Value {
     pub ext: Option<ExtValue>,
 }
 
-/// A networking call site's code, built when the file began ([`crate::serializer::prepare_serializers`]) or at its
-/// hook.
+/// A networking call site's code, built at its hook ([`crate::serializer::call_site`]).
 #[derive(Debug)]
 pub struct BuiltCall {
     pub(crate) shape: CallShape,
-    /// The function body (or the file) whose printer pass names the locals that land ahead of the statement.
-    pub(crate) naming_scope: P<Node>,
     pub(crate) placement: Placement,
     /// The target's local, when it is bound.
     target: Option<Id>,
@@ -105,56 +91,6 @@ impl BuiltCall {
         ids.extend(self.callback.map(|(_, id)| id));
         ids
     }
-
-    /// `generateNames` of its statements: the locals it declares, the packing's included.
-    pub(crate) fn generate_declarations(&self, namer: &mut Namer<'_>, cx: &mut Cx<'_>) {
-        let declared: Vec<S> = self.declared().into_iter().map(|id| S::Let(id, None)).collect();
-        namer.generate_top(cx, &declared);
-        namer.generate_top(cx, &self.encoding);
-    }
-}
-
-// --- the file's sites, in the TS transformer's order -----------------------------------------------------------------
-
-/// The sites under a networking call, in the TS transformer's order, then the call's own; `false` when `node` is not
-/// a call that packs (the caller walks its children). `walk` collects the sites under a node.
-pub(crate) fn collect(
-    fw: &FwInstance,
-    cx: &mut Cx<'_>,
-    node: P<Node>,
-    out: &mut Vec<SerializerSite>,
-    walk: fn(&FwInstance, &mut Cx<'_>, P<Node>, &mut Vec<SerializerSite>),
-) -> bool {
-    if node.kind() != Kind::CallExpression || is_user_macro_call(fw, cx, node) {
-        return false;
-    }
-    let mut key_of = |cx: &mut Cx<'_>, ty, result| prepare_key(fw, cx, node, ty, result);
-    let Ok(Some(shape)) = super::analysis::analyze(fw, cx, node, &mut key_of) else { return false };
-    match &shape {
-        CallShape::Send { target, .. } => {
-            // The arguments are transformed first, then the target (`guardOptionalChain`).
-            for &argument in node.arguments() {
-                walk(fw, cx, argument, out);
-            }
-            walk(fw, cx, *target, out);
-        }
-        CallShape::Callback { target, .. } => {
-            walk(fw, cx, *target, out);
-            if let Some(&callback) = node.arguments().first() {
-                walk(fw, cx, callback, out);
-            }
-        }
-    }
-    let ty = cx.checker().get_any_type();
-    out.push(SerializerSite { node, ty, kind: SiteKind::Call(std::rc::Rc::new(shape)) });
-    true
-}
-
-/// A packing key while the file is prepared: nothing is placed (a key hoists nothing).
-fn prepare_key(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<rbxts_plugin::ts::Type>, result: bool) -> PResult<String> {
-    let (key, hoisted) = crate::serializer::run(fw, cx, node, |gn| gn.packing_key(node, ty, result))?;
-    debug_assert!(hoisted.is_empty(), "a packing key hoists nothing");
-    Ok(key)
 }
 
 /// `state.isUserMacro(symbol)` of the callee: such a call is the user macro's, never networking's.
@@ -231,7 +167,6 @@ fn build_send(
 
     let mut call = BuiltCall {
         shape: shape.clone(),
-        naming_scope: node,
         placement: Placement::Bare,
         target: target_local,
         leading,
@@ -282,7 +217,6 @@ fn build_callback(
 
     let mut call = BuiltCall {
         shape: shape.clone(),
-        naming_scope: node,
         placement: Placement::Bare,
         target: target_local,
         leading: Vec::new(),
@@ -370,7 +304,6 @@ fn live_locals(gn: &Gen<'_, '_, '_>, node: P<Node>) -> u32 {
 /// `emitWithStatements`' decision, with the scope's claim.
 fn place(gn: &mut Gen<'_, '_, '_>, node: P<Node>, call: &mut BuiltCall, hoisted: &[P<Node>]) {
     let statement = scope::enclosing_statement(node);
-    call.naming_scope = statement.map_or(node, scope::naming_scope);
     let locals = call.declared().len() as u32 + declared_locals(&call.encoding);
     let has_statements = !call.declared().is_empty() || !call.encoding.is_empty();
     call.placement = if !has_statements {
@@ -452,13 +385,7 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
     let mut key_of = |cx: &mut Cx<'_>, ty, result| crate::serializer::packing_key(fw, cx, node, ty, result);
     let Some(shape) = super::analysis::analyze(fw, cx, node, &mut key_of)? else { return Ok(Claim::Decline) };
 
-    crate::serializer::enter_statement(fw, cx, node);
-    let (built, prepared) = crate::serializer::call_site(fw, cx, node, &shape)?;
-    let built = built.borrow();
-    // What prints where the call is is named there; a site built only now is named whole now.
-    if !prepared || !built.placement.ahead_of_statement() {
-        crate::serializer::with_namer(fw, |namer| built.generate_declarations(namer, cx));
-    }
+    let built = crate::serializer::call_site(fw, cx, node, &shape)?;
     if call.chain_outer {
         return chain_function(fw, cx, node, &built).map(Claim::Take);
     }
@@ -475,7 +402,7 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
                 Some((table, nodes)) => {
                     let (array, prereqs) = cx.capture(|cx| spread_array(cx, nodes))?;
                     statements.extend(prereqs);
-                    statements.push(create::local(create::any_id(local_name(fw, *table)), Some(array)));
+                    statements.push(create::local(create::any_id(local_name(fw, cx, *table)), Some(array)));
                 }
                 None => {
                     for value in &built.packed {
@@ -494,10 +421,9 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
             let (callback_node, callback) = built.callback.expect("a callback site has its callback");
             let (value, prereqs) = cx.capture(|cx| cx.compile_expr(callback_node))?;
             statements.extend(prereqs);
-            let callback_name = local_name(fw, callback);
+            let callback_name = local_name(fw, cx, callback);
             statements.push(create::local(create::any_id(callback_name.clone()), Some(value)));
             let pack = built.pack.as_ref().expect("a callback site has its packer");
-            crate::serializer::with_namer(fw, |namer| namer.walk_output(cx, &[], &[pack]));
             let pack = crate::serializer::with_lowerer(fw, cx, |lowerer| {
                 let mut prereqs = Vec::new();
                 lowerer.expr(pack, &mut prereqs)
@@ -571,7 +497,7 @@ fn chain_function(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &Built
         }
         match built.target {
             Some(local) => {
-                let name = local_name(fw, local);
+                let name = local_name(fw, cx, local);
                 let value = compile_named(cx, target, &name, &mut statements)?;
                 statements.push(create::local(create::any_id(name.clone()), Some(value)));
                 Some(create::id(name))
@@ -583,7 +509,7 @@ fn chain_function(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &Built
         // The TS binds the target whatever it is; one the site did not bind (a pure target behind an operand that is
         // not a reference) gets a temporary.
         let name = match built.target {
-            Some(local) => create::any_id(local_name(fw, local)),
+            Some(local) => create::any_id(local_name(fw, cx, local)),
             None => rbxts_luau::AnyIdentifier::from(cx.temp_id("target")),
         };
         let value = match &name {
@@ -606,7 +532,7 @@ fn chain_function(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &Built
                 Some((table, nodes)) => {
                     let (array, prereqs) = cx.capture(|cx| spread_array(cx, nodes))?;
                     statements.extend(prereqs);
-                    statements.push(create::local(create::any_id(local_name(fw, *table)), Some(array)));
+                    statements.push(create::local(create::any_id(local_name(fw, cx, *table)), Some(array)));
                 }
                 None => {
                     for value in &built.packed {
@@ -632,10 +558,9 @@ fn chain_function(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &Built
             let (callback_node, callback) = built.callback.expect("a callback site has its callback");
             let (value, prereqs) = cx.capture(|cx| cx.compile_expr(callback_node))?;
             statements.extend(prereqs);
-            let callback_name = local_name(fw, callback);
+            let callback_name = local_name(fw, cx, callback);
             statements.push(create::local(create::any_id(callback_name.clone()), Some(value)));
             let pack = built.pack.as_ref().expect("a callback site has its packer");
-            crate::serializer::with_namer(fw, |namer| namer.walk_output(cx, &[], &[pack]));
             let pack = crate::serializer::with_lowerer(fw, cx, |lowerer| {
                 let mut prereqs = Vec::new();
                 lowerer.expr(pack, &mut prereqs)
@@ -695,11 +620,6 @@ fn is_whole_statement(node: P<Node>) -> bool {
     false
 }
 
-/// The name a local of the site got.
-fn local_name(fw: &FwInstance, id: Id) -> String {
-    crate::serializer::with_namer(fw, |namer| namer.names.get(&id).cloned()).unwrap_or_else(|| "_".to_owned())
-}
-
 /// The target, compiled ahead of the arguments as the call would evaluate it, and bound to its local when the TS
 /// transformer bound it.
 fn target_value(
@@ -728,7 +648,7 @@ fn target_value(
     statements.extend(prereqs);
     Ok(match built.target {
         Some(local) => {
-            let name = local_name(fw, local);
+            let name = local_name(fw, cx, local);
             statements.push(create::local(create::any_id(name.clone()), Some(value)));
             create::id(name)
         }
@@ -780,7 +700,7 @@ fn bind_value(fw: &FwInstance, cx: &mut Cx<'_>, value: &Value, statements: &mut 
     statements.extend(prereqs);
     Ok(match (value.local, &value.ext) {
         (Some(local), _) => {
-            let name = local_name(fw, local);
+            let name = local_name(fw, cx, local);
             statements.push(create::local(create::any_id(name.clone()), Some(compiled)));
             create::id(name)
         }
@@ -792,9 +712,8 @@ fn bind_value(fw: &FwInstance, cx: &mut Cx<'_>, value: &Value, statements: &mut 
     })
 }
 
-/// Names what is left of the packing where it prints, and lowers it: its statements, payload and blob list.
+/// Lowers the packing: its statements, payload and blob list.
 fn lower_encoding(fw: &FwInstance, cx: &mut Cx<'_>, built: &BuiltCall) -> (Vec<Stmt>, Option<Expr>, Option<Expr>) {
-    crate::serializer::with_namer(fw, |namer| namer.walk_output(cx, &built.encoding, &[]));
     crate::serializer::with_lowerer(fw, cx, |lowerer| {
         let statements = lowerer.statements(&built.encoding);
         let mut prereqs = Vec::new();

@@ -6,8 +6,8 @@
 //! - **Parentheses.** `ts.factory` parenthesizes operands as it builds nodes (`parenthesizerRules`), and roblox-ts
 //!   keeps a parenthesized expression whose inside is not simple (`#(v.name)` from `(v.name as string).size()`).
 //!   The builders below apply the same rules.
-//! - **Names.** Generated identifiers are `createUniqueName`s, named by the printer in print order
-//!   ([`crate::ts_names`]); an [`Id`] carries its hint until [`crate::serializer::lower`] names it.
+//! - **Names.** Generated identifiers are `createUniqueName`s; an [`Id`] carries its hint until
+//!   [`crate::serializer::lower`] names it, when it first lowers it (the names follow build order, not TS5's printer).
 //! - **Types.** roblox-ts picks macros by type (`size()` of a string is `#s`, of a set a counting loop); every
 //!   identifier records the type its declaration gives it ([`Ty`]), and casts carry theirs.
 
@@ -164,8 +164,8 @@ pub enum Body {
     Expr(E),
 }
 
-/// A guard built by F3 ([`crate::guards::guard_for_unnamed`]) with placeholders for its locals: the namer names them
-/// when the guard prints, as TypeScript's printer did ([`Guard::name`]); the lowering reads the named guard.
+/// A guard built by F3 ([`crate::guards::guard_for_unnamed`]) with placeholders for its locals, named when the guard
+/// is lowered ([`Guard::name`]).
 #[derive(Debug)]
 pub struct Guard {
     unnamed: rbxts_plugin::LuauExpr,

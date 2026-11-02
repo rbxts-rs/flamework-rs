@@ -168,15 +168,3 @@ pub(crate) fn check_packed(
     let mode = network_mode(cx, member, node, name.as_deref())?;
     Ok(is_packed(fw, mode))
 }
-
-/// [`check_packed`] while the file's sites are prepared: `None` when the member is refused (its error is reported
-/// again where the macro is built, and kept once).
-pub(crate) fn packed_member(
-    fw: &FwInstance,
-    cx: &mut Cx<'_>,
-    member: Option<P<Type>>,
-    node: P<Node>,
-    key: Option<P<Type>>,
-) -> Option<bool> {
-    check_packed(fw, cx, member, node, key).ok()
-}

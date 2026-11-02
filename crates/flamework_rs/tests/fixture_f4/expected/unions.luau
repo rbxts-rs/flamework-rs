@@ -41,11 +41,11 @@ codec.s_Wallet = function(v_1)
 		local n_4 = #array
 		local size_1 = vsize(n_4)
 		for i = 1, n_4 do
-			local item_1 = array[i]
-			if item_1 == nil then
+			local item = array[i]
+			if item == nil then
 				error(`[Flamework] the array has no value at Wallet.Items[{i - 1}]`)
 			end
-			local length = #item_1
+			local length = #item
 			size_1 += vsize(length) + length
 		end
 		size += size_1
@@ -63,10 +63,10 @@ codec.w_Wallet = function(buf_2, o_2, v_1)
 		local array_1 = v_3.Items
 		o_2 = vwrite(buf_2, o_2 + 1, #array_1)
 		for i_1 = 1, #array_1 do
-			local item_2 = array_1[i_1]
-			local length_1 = #item_2
+			local item_1 = array_1[i_1]
+			local length_1 = #item_1
 			o_2 = vwrite(buf_2, o_2, length_1)
-			buffer.writestring(buf_2, o_2, item_2)
+			buffer.writestring(buf_2, o_2, item_1)
 			o_2 += length_1
 		end
 	else
@@ -249,11 +249,11 @@ codec.w_Mixed = function(buf_8, o_8, v_9, blobs)
 		buffer.writeu8(buf_8, o_8, 4)
 		o_8 = vwrite(buf_8, o_8 + 1, #v_11)
 		for i_3 = 1, #v_11 do
-			local item_3 = v_11[i_3]
-			if item_3 == nil then
+			local item_2 = v_11[i_3]
+			if item_2 == nil then
 				error(`[Flamework] the array has no value at Mixed[{i_3 - 1}]`)
 			end
-			buffer.writef64(buf_8, o_8, item_3)
+			buffer.writef64(buf_8, o_8, item_2)
 			o_8 += 8
 		end
 	else
@@ -695,14 +695,14 @@ local unwritten = Flamework.createSerializer({
 		local n_10 = #v_34
 		local size_10 = vsize(n_10)
 		for i_5 = 1, n_10 do
-			local item_4 = v_34[i_5]
-			if item_4 == nil then
+			local item_3 = v_34[i_5]
+			if item_3 == nil then
 				error(`[Flamework] the array has no value at value[{i_5 - 1}]`)
 			end
 			local size_11 = 1
-			if item_4.alpha ~= nil then
+			if item_3.alpha ~= nil then
 				size_11 += 8
-			elseif item_4.zed ~= nil then
+			elseif item_3.zed ~= nil then
 				size_11 += 1
 			end
 			size_10 += size_11
@@ -711,14 +711,14 @@ local unwritten = Flamework.createSerializer({
 		local o_32 = 0
 		o_32 = vwrite(buf_25, o_32, #v_34)
 		for i_6 = 1, #v_34 do
-			local item_5 = v_34[i_6]
-			if item_5.alpha ~= nil then
+			local item_4 = v_34[i_6]
+			if item_4.alpha ~= nil then
 				buffer.writeu8(buf_25, o_32, 0)
-				buffer.writef64(buf_25, o_32 + 1, item_5.alpha)
+				buffer.writef64(buf_25, o_32 + 1, item_4.alpha)
 				o_32 += 9
-			elseif item_5.zed ~= nil then
+			elseif item_4.zed ~= nil then
 				buffer.writeu8(buf_25, o_32, 1)
-				buffer.writeu8(buf_25, o_32 + 1, if item_5.zed then 1 else 0)
+				buffer.writeu8(buf_25, o_32 + 1, if item_4.zed then 1 else 0)
 				o_32 += 2
 			else
 				error("value matches none of the union's members")
@@ -823,8 +823,8 @@ local withBoolean = Flamework.createSerializer({
 	end,
 })
 local enum_KeyCode = {}
-for _, item in Enum.KeyCode:GetEnumItems() do
-	enum_KeyCode[item.Value] = item
+for _, item_5 in Enum.KeyCode:GetEnumItems() do
+	enum_KeyCode[item_5.Value] = item_5
 end
 local withEnum = Flamework.createSerializer({
 	serialize = function(v_38)

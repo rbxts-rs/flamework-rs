@@ -35,12 +35,12 @@ local before = Flamework.createGuard((function()
 			return result
 		end),
 	})
-	local guard_2 = t.union(t.string, Node_1)
+	local guard = t.union(t.string, Node_1)
 	return function(value_1)
 		local outerDepth = depth
 		local outerMemo = memo
 		memo = {}
-		local ok, result_1 = pcall(guard_2, value_1)
+		local ok, result_1 = pcall(guard, value_1)
 		depth = outerDepth
 		memo = outerMemo
 		if not ok then
@@ -77,16 +77,16 @@ local vread = function(buf_1, o_1)
 		end
 	end
 end
-local guard = t.map(t.string, t.number)
-local guard_1 = t.array(t.number)
+local guard_1 = t.map(t.string, t.number)
+local guard_2 = t.array(t.number)
 local s = Flamework.createSerializer({
 	serialize = function(v_1)
 		local v_2 = v_1
 		local size = 1
-		if guard_1(v_2) then
+		if guard_2(v_2) then
 			local n_3 = #v_2
 			size += vsize(n_3) + n_3 * 1
-		elseif guard(v_2) then
+		elseif guard_1(v_2) then
 			local size_1 = 0
 			local n_4 = 0
 			for key, entry in v_2 do
@@ -110,7 +110,7 @@ local s = Flamework.createSerializer({
 		local buf_2 = buffer.create(size)
 		local o_2 = 0
 		local v_3 = v_1
-		if guard_1(v_3) then
+		if guard_2(v_3) then
 			buffer.writeu8(buf_2, o_2, 0)
 			o_2 = vwrite(buf_2, o_2 + 1, #v_3)
 			for i = 1, #v_3 do
@@ -121,7 +121,7 @@ local s = Flamework.createSerializer({
 				buffer.writeu8(buf_2, o_2, item_1)
 				o_2 += 1
 			end
-		elseif guard(v_3) then
+		elseif guard_1(v_3) then
 			buffer.writeu8(buf_2, o_2, 1)
 			-- ▼ ReadonlyMap.size ▼
 			local _size = 0

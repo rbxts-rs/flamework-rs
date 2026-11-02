@@ -179,7 +179,8 @@ fn luau<'r>(report: &'r CompileReport, relative: &str) -> &'r str {
         .unwrap_or_else(|| panic!("no output {relative}"))
 }
 
-/// The full-mode build equals `tests/fixture/expected`: every Luau file, `flamework.build` and the include JSON.
+/// The full-mode build equals `tests/fixture/expected`: every Luau file, `flamework.build` and the include JSON
+/// (`UPDATE_EXPECTED=1` writes them instead).
 #[test]
 fn full_mode_matches_the_expected_outputs() {
     let Some(project) = Project::new("full") else { return };
@@ -199,16 +200,23 @@ fn full_mode_matches_the_expected_outputs() {
             failures.push(format!("{relative}: no output"));
             continue;
         };
-        let want = std::fs::read_to_string(expected.join("out").join(&relative))
-            .unwrap_or_else(|e| panic!("{relative}: {e}"))
-            .replace("\r\n", "\n");
+        let path = expected.join("out").join(&relative);
+        if std::env::var_os("UPDATE_EXPECTED").is_some() {
+            std::fs::write(&path, luau).unwrap();
+            continue;
+        }
+        let want = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{relative}: {e}")).replace("\r\n", "\n");
         if *luau != want {
             failures.push(format!("{relative}: differs from expected\n--- ours\n{luau}"));
         }
     }
     for artifact in ["flamework.build", "include/flamework/globs.json", "include/flamework/paths.json", "include/flamework/config.json"] {
-        let want = std::fs::read_to_string(expected.join(artifact)).unwrap().replace("\r\n", "\n");
         let ours = project.read(artifact);
+        if std::env::var_os("UPDATE_EXPECTED").is_some() {
+            std::fs::write(expected.join(artifact), &ours).unwrap();
+            continue;
+        }
+        let want = std::fs::read_to_string(expected.join(artifact)).unwrap().replace("\r\n", "\n");
         if ours != want {
             failures.push(format!("{artifact}: differs from expected\n--- ours\n{ours}"));
         }

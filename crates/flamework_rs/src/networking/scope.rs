@@ -43,22 +43,6 @@ pub(crate) fn enclosing_statement(node: P<Node>) -> Option<P<Node>> {
     None
 }
 
-/// The function body (or the file) whose printer pass names what lands ahead of `statement`: the scope TypeScript's
-/// printer runs `generateNames` over (the nearest function-like around it, or the source file).
-pub(crate) fn naming_scope(statement: P<Node>) -> P<Node> {
-    let mut current = statement.parent();
-    while let Some(parent) = current {
-        if tsrs_ast::is_function_like(Some(parent))
-            || parent.kind() == Kind::ClassStaticBlockDeclaration
-            || parent.kind() == Kind::SourceFile
-        {
-            return parent;
-        }
-        current = parent.parent();
-    }
-    statement
-}
-
 /// Flamework's locals in each scope (`LocalBudget`), for the networking call sites' claims. The file's budget is the
 /// serializer's (`claim_file` asks it), shared with the file's hoisted helpers.
 #[derive(Debug, Default)]

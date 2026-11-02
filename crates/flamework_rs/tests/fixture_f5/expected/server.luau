@@ -16,20 +16,20 @@ end
 local vsize = function(n)
 	return if n < 128 then 1 elseif n < 16384 then 2 elseif n < 2097152 then 3 elseif n < 268435456 then 4 else 5
 end
-local vwrite = function(buf, o, n_1)
+local vwrite = function(buf_1, o, n_1)
 	while n_1 >= 128 do
-		buffer.writeu8(buf, o, n_1 % 128 + 128)
+		buffer.writeu8(buf_1, o, n_1 % 128 + 128)
 		o += 1
 		n_1 = math.floor(n_1 / 128)
 	end
-	buffer.writeu8(buf, o, n_1)
+	buffer.writeu8(buf_1, o, n_1)
 	return o + 1
 end
-local vread = function(buf_1, o_1)
+local vread = function(buf_2, o_1)
 	local n_2 = 0
 	local scale = 1
 	while true do
-		local b = buffer.readu8(buf_1, o_1)
+		local b = buffer.readu8(buf_2, o_1)
 		o_1 += 1
 		n_2 += b % 128 * scale
 		if b < 128 then
@@ -72,9 +72,9 @@ local Events = GlobalEvents:createServer({
 	outgoingIds = { "alpha", "lima", "mike" },
 	outgoingUnreliable = {},
 	incomingSerializers = {
-		alpha = (function(buf_2)
-			local value = { buffer.readf64(buf_2, 0) }
-			if buffer.len(buf_2) ~= 8 then
+		alpha = (function(buf)
+			local value = { buffer.readf64(buf, 0) }
+			if buffer.len(buf) ~= 8 then
 				error("malformed payload")
 			end
 			return value

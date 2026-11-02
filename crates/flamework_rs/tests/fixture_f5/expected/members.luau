@@ -5,20 +5,20 @@ local codec = {}
 local vsize = function(n)
 	return if n < 128 then 1 elseif n < 16384 then 2 elseif n < 2097152 then 3 elseif n < 268435456 then 4 else 5
 end
-local vwrite = function(buf, o, n_1)
+local vwrite = function(buf_2, o, n_1)
 	while n_1 >= 128 do
-		buffer.writeu8(buf, o, n_1 % 128 + 128)
+		buffer.writeu8(buf_2, o, n_1 % 128 + 128)
 		o += 1
 		n_1 = math.floor(n_1 / 128)
 	end
-	buffer.writeu8(buf, o, n_1)
+	buffer.writeu8(buf_2, o, n_1)
 	return o + 1
 end
-local vread = function(buf_1, o_1)
+local vread = function(buf_3, o_1)
 	local n_2 = 0
 	local scale = 1
 	while true do
-		local b = buffer.readu8(buf_1, o_1)
+		local b = buffer.readu8(buf_3, o_1)
 		o_1 += 1
 		n_2 += b % 128 * scale
 		if b < 128 then
@@ -56,42 +56,42 @@ do
 		self.events = Events
 		self.arrow = function(value)
 			return (function()
-				local arg_5 = value * compute()
-				local buf_6 = buffer.create(8)
-				buffer.writef64(buf_6, 0, arg_5)
-				return self.events.alpha:_fire(buf_6)
+				local arg = value * compute()
+				local buf = buffer.create(8)
+				buffer.writef64(buf, 0, arg)
+				return self.events.alpha:_fire(buf)
 			end)()
 		end
-		local arg_4 = value * compute()
-		local buf_5 = buffer.create(8)
-		buffer.writef64(buf_5, 0, arg_4)
-		self.events.alpha:_fire(buf_5)
+		local arg_1 = value * compute()
+		local buf_1 = buffer.create(8)
+		buffer.writef64(buf_1, 0, arg_1)
+		self.events.alpha:_fire(buf_1)
 	end
 	function Members:method(value)
-		local arg_1 = tostring(value)
-		local arg_2 = compute()
-		local length = #arg_1
-		local buf_3 = buffer.create(vsize(length) + length + 1)
-		local o_2 = 0
-		local length_1 = #arg_1
-		o_2 = vwrite(buf_3, o_2, length_1)
-		buffer.writestring(buf_3, o_2, arg_1)
-		o_2 += length_1
-		if not (arg_2 >= 0 and arg_2 <= 255 and arg_2 % 1 == 0) then
-			codec.checkWidth("u8", arg_2, "'bravo' [1]")
-		end
-		buffer.writeu8(buf_3, o_2, arg_2)
-		self.events.bravo:_fire(buf_3)
+		local arg_2 = tostring(value)
 		local arg_3 = compute()
-		local buf_4 = buffer.create(8)
-		buffer.writef64(buf_4, 0, arg_3)
-		return self.events.alpha:_fire(buf_4)
+		local length = #arg_2
+		local buf_4 = buffer.create(vsize(length) + length + 1)
+		local o_2 = 0
+		local length_1 = #arg_2
+		o_2 = vwrite(buf_4, o_2, length_1)
+		buffer.writestring(buf_4, o_2, arg_2)
+		o_2 += length_1
+		if not (arg_3 >= 0 and arg_3 <= 255 and arg_3 % 1 == 0) then
+			codec.checkWidth("u8", arg_3, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_4, o_2, arg_3)
+		self.events.bravo:_fire(buf_4)
+		local arg_4 = compute()
+		local buf_5 = buffer.create(8)
+		buffer.writef64(buf_5, 0, arg_4)
+		return self.events.alpha:_fire(buf_5)
 	end
 	Members.first = (function()
-		local arg = compute()
-		local buf_2 = buffer.create(8)
-		buffer.writef64(buf_2, 0, arg)
-		return Events.alpha:_fire(buf_2)
+		local arg_5 = compute()
+		local buf_6 = buffer.create(8)
+		buffer.writef64(buf_6, 0, arg_5)
+		return Events.alpha:_fire(buf_6)
 	end)()
 	Members.last = (function()
 		local arg_6 = compute()

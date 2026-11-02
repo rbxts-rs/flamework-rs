@@ -32,48 +32,48 @@ local vread = function(buf_1, o_1)
 	end
 end
 local guard = (function()
-	local depth = 0
-	local memo
-	local Node_1
-	Node_1 = t.interface({
+	local depth_1 = 0
+	local memo_1
+	local Node_2
+	Node_2 = t.interface({
 		v = t.number,
-		kids = t.array(function(value)
-			if depth >= 1000 then
+		kids = t.array(function(value_2)
+			if depth_1 >= 1000 then
 				return false
 			end
-			local results
-			if type(value) == "table" then
-				results = memo[Node_1]
-				if results == nil then
-					results = {}
-					memo[Node_1] = results
+			local results_1
+			if type(value_2) == "table" then
+				results_1 = memo_1[Node_2]
+				if results_1 == nil then
+					results_1 = {}
+					memo_1[Node_2] = results_1
 				else
-					local known = results[value]
-					if known ~= nil then
-						return known
+					local known_1 = results_1[value_2]
+					if known_1 ~= nil then
+						return known_1
 					end
 				end
 			end
-			depth += 1
-			local result = Node_1(value)
-			depth -= 1
-			if results ~= nil then
-				results[value] = result
+			depth_1 += 1
+			local result_2 = Node_2(value_2)
+			depth_1 -= 1
+			if results_1 ~= nil then
+				results_1[value_2] = result_2
 			end
-			return result
+			return result_2
 		end),
 	})
-	return function(value_1)
-		local outerDepth = depth
-		local outerMemo = memo
-		memo = {}
-		local ok, result_1 = pcall(Node_1, value_1)
-		depth = outerDepth
-		memo = outerMemo
-		if not ok then
-			error(result_1, 0)
+	return function(value_3)
+		local outerDepth_1 = depth_1
+		local outerMemo_1 = memo_1
+		memo_1 = {}
+		local ok_1, result_3 = pcall(Node_2, value_3)
+		depth_1 = outerDepth_1
+		memo_1 = outerMemo_1
+		if not ok_1 then
+			error(result_3, 0)
 		end
-		return result_1
+		return result_3
 	end
 end)()
 codec.s_Node = function(v_1)
@@ -108,61 +108,61 @@ codec.r_Node = function(buf_2, o_2)
 	end
 	local array_2 = table.create(count)
 	for i_2 = 1, count do
-		local value_2, o_4 = codec.r_Node(buf_2, o_2)
-		array_2[i_2] = value_2
+		local value_4, o_4 = codec.r_Node(buf_2, o_2)
+		array_2[i_2] = value_4
 		o_2 = o_4
 	end
-	local value_3 = {
+	local value_5 = {
 		v = v_2,
 		kids = array_2,
 	}
-	return value_3, o_2
+	return value_5, o_2
 end
 -- The same in a function body: one root statement, the guard's statement first.
 local function make()
 	local g = Flamework.createGuard((function()
-		local depth_1 = 0
-		local memo_1
-		local Node_2
-		Node_2 = t.interface({
+		local depth = 0
+		local memo
+		local Node_1
+		Node_1 = t.interface({
 			v = t.number,
-			kids = t.array(function(value_4)
-				if depth_1 >= 1000 then
+			kids = t.array(function(value)
+				if depth >= 1000 then
 					return false
 				end
-				local results_1
-				if type(value_4) == "table" then
-					results_1 = memo_1[Node_2]
-					if results_1 == nil then
-						results_1 = {}
-						memo_1[Node_2] = results_1
+				local results
+				if type(value) == "table" then
+					results = memo[Node_1]
+					if results == nil then
+						results = {}
+						memo[Node_1] = results
 					else
-						local known_1 = results_1[value_4]
-						if known_1 ~= nil then
-							return known_1
+						local known = results[value]
+						if known ~= nil then
+							return known
 						end
 					end
 				end
-				depth_1 += 1
-				local result_2 = Node_2(value_4)
-				depth_1 -= 1
-				if results_1 ~= nil then
-					results_1[value_4] = result_2
+				depth += 1
+				local result = Node_1(value)
+				depth -= 1
+				if results ~= nil then
+					results[value] = result
 				end
-				return result_2
+				return result
 			end),
 		})
-		return function(value_5)
-			local outerDepth_1 = depth_1
-			local outerMemo_1 = memo_1
-			memo_1 = {}
-			local ok_1, result_3 = pcall(Node_2, value_5)
-			depth_1 = outerDepth_1
-			memo_1 = outerMemo_1
-			if not ok_1 then
-				error(result_3, 0)
+		return function(value_1)
+			local outerDepth = depth
+			local outerMemo = memo
+			memo = {}
+			local ok, result_1 = pcall(Node_1, value_1)
+			depth = outerDepth
+			memo = outerMemo
+			if not ok then
+				error(result_1, 0)
 			end
-			return result_3
+			return result_1
 		end
 	end)())
 	local s = Flamework.createSerializer({

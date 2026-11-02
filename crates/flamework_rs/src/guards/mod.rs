@@ -12,11 +12,12 @@
 //! - [`guard_fields_in_context`] (`buildGuardsFromType`): one guard per property (component attributes);
 //! - [`tuple_guards`] (`buildTupleGuardsIntrinsic`): the `tuple-guards` intrinsic, `{ { guards }, rest, { after } }`.
 //!
-//! **Text.** The Luau is what roblox-ts makes of the TS builder's output, so it matches a TS5 build byte for byte,
-//! but for the order of union members: TS7 orders a union's constituents its own way (deterministically), and the
-//! guard follows it (DESIGN §10.4, behaviour-neutral). Locals are named as TypeScript's printer names the builder's
-//! unique names ([`names`]); strings are the builder's synthesized literals ([`rbxts_plugin::synthesized_string`]);
-//! properties come in TS5's order ([`rbxts_plugin::Cx::ts5_properties_of_type`]).
+//! **Text.** The Luau is what roblox-ts makes of the TS builder's output, so it matches a TS5 build but for the order
+//! of union members and the locals' names: TS7 orders a union's constituents its own way (deterministically), and the
+//! guard follows it (DESIGN §10.4, behaviour-neutral); locals are named in the guard's render order with the
+//! compiler's approval ([`names`]), not by TypeScript's printer over the whole file. Strings are the builder's
+//! synthesized literals ([`rbxts_plugin::synthesized_string`]); properties come in TS5's order
+//! ([`rbxts_plugin::Cx::ts5_properties_of_type`]).
 //!
 //! **Not the TS's.**
 //! - The Luau-limits budget: the TS lets Flamework's code claim 16 locals in a file's main chunk and 64 in a
@@ -85,8 +86,8 @@ pub fn guard_for_in_context(
 }
 
 /// [`guard_for`] with its locals left unnamed: the guard holds placeholders, and `names` gives each its base name
-/// ([`names::Names::assign_with`]). For a guard that lands inside other generated code (the serializer's), whose
-/// names TypeScript's printer gave in print order, together with that code's.
+/// ([`names::Names::assign_with`]). For a guard that lands inside other generated code (the serializer's), named
+/// when that code is lowered.
 pub(crate) fn guard_for_unnamed(
     cx: &mut Cx<'_>,
     config: GuardConfig<'_>,

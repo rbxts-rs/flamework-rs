@@ -1,5 +1,5 @@
-//! The generated TypeScript ([`super::ir`]) compiled to Luau as roblox-ts compiled it, after naming its identifiers
-//! as TypeScript's printer named them.
+//! The generated TypeScript ([`super::ir`]) compiled to Luau as roblox-ts compiled it. Each generated identifier is
+//! named when it is first lowered ([`LowerCx::local_name`]).
 //!
 //! Only the shapes the generator builds are handled; the roblox-ts behaviour each one follows is named where it is
 //! done (`transformCallExpression`, the property call macros, `addOneIfArrayType`, …).
@@ -13,225 +13,31 @@ use rbxts_luau::{
 use rbxts_plugin::Cx;
 
 use super::ir::{AssignOp, Bind, Body, CallKind, E, Else, Id, Ids, Key, Op, S, Ty};
-use crate::ts_names::TsNames;
 
-/// Names every identifier of one hook's output in the printer's order: the declarations of the statements that go
-/// to the top of the file first (`generateNames` of the source file), then each function's parameters as they print
-/// and its body's declarations when the body starts (`emitBlockFunctionBody`); any identifier left is named where it
-/// first prints.
-pub struct Namer<'n> {
-    pub ids: &'n Ids,
-    pub names: &'n mut HashMap<Id, String>,
-    pub ts_names: &'n mut TsNames,
+/// What the lowering asks the compiler for.
+pub trait LowerCx {
+    /// `luau.tempId(hint)`: one of the compiler's temporaries (`Cx::temp_id`).
+    fn temp_id(&mut self, hint: &str) -> rbxts_luau::TemporaryIdentifier;
+    /// A generated local's name: `hint`, else the first of `hint_1`, `hint_2`, … (`hint1`, … when the hint ends in
+    /// `_`) that the compiler approves (`Cx::is_usable_local_name`, which keeps it from every other name of the file).
+    fn local_name(&mut self, hint: &str) -> String;
 }
 
-impl Namer<'_> {
-    fn name(&mut self, cx: &mut Cx<'_>, id: Id) {
-        if self.names.contains_key(&id) {
-            return;
-        }
-        let name = self.ts_names.unique(cx, self.ids.hint(id));
-        self.names.insert(id, name);
+impl LowerCx for Cx<'_> {
+    fn temp_id(&mut self, hint: &str) -> rbxts_luau::TemporaryIdentifier {
+        Cx::temp_id(self, hint)
     }
 
-    /// The printer's walk over `top` (statements that land at the top of the file), then `expressions` (what lands
-    /// where the value is).
-    pub fn name_output(&mut self, cx: &mut Cx<'_>, top: &[S], inline: &[S], expressions: &[&E]) {
-        for s in top {
-            self.generate(cx, s);
-        }
-        for s in top {
-            self.walk_stmt(cx, s);
-        }
-        for s in inline {
-            self.generate(cx, s);
-        }
-        for s in inline {
-            self.walk_stmt(cx, s);
-        }
-        for e in expressions {
-            self.walk_expr(cx, e);
-        }
-    }
-
-    /// The file-level `generateNames` of statements that go to the top of the file.
-    pub fn generate_top(&mut self, cx: &mut Cx<'_>, top: &[S]) {
-        for s in top {
-            self.generate(cx, s);
-        }
-    }
-
-    /// Names what `statements` and then `expressions` print, as they print (after [`Namer::generate_top`]).
-    pub fn walk_output(&mut self, cx: &mut Cx<'_>, statements: &[S], expressions: &[&E]) {
-        for s in statements {
-            self.walk_stmt(cx, s);
-        }
-        for e in expressions {
-            self.walk_expr(cx, e);
-        }
-    }
-
-    /// `generateNames`: the names a statement declares in its block, through nested blocks but not functions.
-    fn generate(&mut self, cx: &mut Cx<'_>, s: &S) {
-        match s {
-            S::Const(bind, _) => self.bind(cx, bind),
-            S::Let(id, _) => self.name(cx, *id),
-            S::If(_, then, otherwise) => {
-                self.generate_list(cx, then);
-                match otherwise.as_deref() {
-                    Some(Else::If(s)) => self.generate(cx, s),
-                    Some(Else::Block(list)) => self.generate_list(cx, list),
-                    None => {}
-                }
-            }
-            S::Block(list) | S::While(_, list) => self.generate_list(cx, list),
-            S::ForOf(bind, _, body) => {
-                self.bind(cx, bind);
-                self.generate_list(cx, body);
-            }
-            S::Expr(_) | S::Assign(..) | S::Return(_) => {}
-        }
-    }
-
-    fn generate_list(&mut self, cx: &mut Cx<'_>, list: &[S]) {
-        for s in list {
-            self.generate(cx, s);
-        }
-    }
-
-    fn bind(&mut self, cx: &mut Cx<'_>, bind: &Bind) {
-        match bind {
-            Bind::One(id) => self.name(cx, *id),
-            Bind::Tuple(ids) => {
-                for id in ids {
-                    self.name(cx, *id);
-                }
-            }
-        }
-    }
-
-    fn walk_list(&mut self, cx: &mut Cx<'_>, list: &[S]) {
-        for s in list {
-            self.walk_stmt(cx, s);
-        }
-    }
-
-    fn walk_stmt(&mut self, cx: &mut Cx<'_>, s: &S) {
-        match s {
-            S::Const(bind, e) => {
-                self.bind(cx, bind);
-                self.walk_expr(cx, e);
-            }
-            S::Let(id, e) => {
-                self.name(cx, *id);
-                if let Some(e) = e {
-                    self.walk_expr(cx, e);
-                }
-            }
-            S::Expr(e) => self.walk_expr(cx, e),
-            S::Assign(target, _, value) => {
-                self.walk_expr(cx, target);
-                self.walk_expr(cx, value);
-            }
-            S::If(condition, then, otherwise) => {
-                self.walk_expr(cx, condition);
-                self.walk_list(cx, then);
-                match otherwise.as_deref() {
-                    Some(Else::If(s)) => self.walk_stmt(cx, s),
-                    Some(Else::Block(list)) => self.walk_list(cx, list),
-                    None => {}
-                }
-            }
-            S::Block(list) => self.walk_list(cx, list),
-            S::ForOf(bind, iterable, body) => {
-                self.bind(cx, bind);
-                self.walk_expr(cx, iterable);
-                self.walk_list(cx, body);
-            }
-            S::While(condition, body) => {
-                self.walk_expr(cx, condition);
-                self.walk_list(cx, body);
-            }
-            S::Return(e) => {
-                if let Some(e) = e {
-                    self.walk_expr(cx, e);
-                }
-            }
-        }
-    }
-
-    fn walk_expr(&mut self, cx: &mut Cx<'_>, e: &E) {
-        match e {
-            E::Id(id) => self.name(cx, *id),
-            E::Global(_) | E::Ext(..) | E::Num(_) | E::Str(_) | E::Bool(_) | E::Undefined => {}
-            E::Guard(guard) => {
-                let ts_names = &mut *self.ts_names;
-                guard.name(|base| ts_names.unique(cx, base));
-            }
-            E::Prop(object, _) => self.walk_expr(cx, object),
-            E::Elem(object, index) => {
-                self.walk_expr(cx, object);
-                self.walk_expr(cx, index);
-            }
-            E::Call(callee, args, _) => {
-                self.walk_expr(cx, callee);
-                for a in args {
-                    self.walk_expr(cx, a);
-                }
-            }
-            E::Binary(l, _, r) => {
-                self.walk_expr(cx, l);
-                self.walk_expr(cx, r);
-            }
-            E::Not(e) | E::Neg(e) | E::Paren(e) | E::As(e, _) => self.walk_expr(cx, e),
-            E::Cond(c, a, b) => {
-                self.walk_expr(cx, c);
-                self.walk_expr(cx, a);
-                self.walk_expr(cx, b);
-            }
-            E::Template(_, spans) => {
-                for (e, _) in spans {
-                    self.walk_expr(cx, e);
-                }
-            }
-            E::Arrow(arrow) => {
-                for p in &arrow.params {
-                    self.name(cx, p.id);
-                    if let Some(d) = &p.default {
-                        self.walk_expr(cx, d);
-                    }
-                }
-                match &arrow.body {
-                    Body::Block(list) => {
-                        self.generate_list(cx, list);
-                        self.walk_list(cx, list);
-                    }
-                    Body::Expr(e) => self.walk_expr(cx, e),
-                }
-            }
-            E::Object(fields) => {
-                for (key, value) in fields {
-                    if let Key::Computed(k) = key {
-                        self.walk_expr(cx, k);
-                    }
-                    self.walk_expr(cx, value);
-                }
-            }
-            E::Array(list) | E::New(_, list) => {
-                for e in list {
-                    self.walk_expr(cx, e);
-                }
-            }
-        }
+    fn local_name(&mut self, hint: &str) -> String {
+        crate::guards::names::unique_name(self, hint)
     }
 }
 
-/// Compiles named IR to Luau.
+/// Compiles IR to Luau, naming each generated identifier (`names`, shared by the file's code) when it first lowers it.
 pub struct Lowerer<'l> {
     pub ids: &'l Ids,
-    pub names: &'l HashMap<Id, String>,
-    /// `luau.tempId(hint)`: the compiler's temporaries (`cx.temp_id`).
-    pub temp: &'l mut dyn FnMut(&str) -> rbxts_luau::TemporaryIdentifier,
+    pub names: &'l mut HashMap<Id, String>,
+    pub cx: &'l mut dyn LowerCx,
 }
 
 /// `skipDownwards`: past parentheses and casts.
@@ -246,11 +52,17 @@ fn skip_downwards(e: &E) -> &E {
 }
 
 impl Lowerer<'_> {
-    fn name(&self, id: Id) -> &str {
-        self.names.get(&id).map(String::as_str).unwrap_or_else(|| panic!("unnamed identifier {:?}", self.ids.hint(id)))
+    /// The identifier's name, given now if it has none yet.
+    pub fn name(&mut self, id: Id) -> String {
+        if let Some(name) = self.names.get(&id) {
+            return name.clone();
+        }
+        let name = self.cx.local_name(self.ids.hint(id));
+        self.names.insert(id, name.clone());
+        name
     }
 
-    fn any_id(&self, id: Id) -> AnyIdentifier {
+    fn any_id(&mut self, id: Id) -> AnyIdentifier {
         create::any_id(self.name(id))
     }
 
@@ -298,17 +110,19 @@ impl Lowerer<'_> {
     fn statement(&mut self, s: &S, out: &mut Vec<Stmt>) {
         match s {
             S::Const(Bind::One(id), e) => {
+                let name = self.any_id(*id);
                 let value = self.expr(e, out);
-                out.push(create::local(self.any_id(*id), Some(value)));
+                out.push(create::local(name, Some(value)));
             }
             S::Const(Bind::Tuple(ids), e) => {
-                let value = self.expr(e, out);
                 let left = ids.iter().map(|id| self.any_id(*id)).collect();
+                let value = self.expr(e, out);
                 out.push(create::locals(left, vec![value]));
             }
             S::Let(id, e) => {
+                let name = self.any_id(*id);
                 let value = e.as_ref().map(|e| self.expr(e, out));
-                out.push(create::local(self.any_id(*id), value));
+                out.push(create::local(name, value));
             }
             S::Expr(e) => self.expression_statement(e, out),
             S::Assign(target, op, value) => {
@@ -432,7 +246,10 @@ impl Lowerer<'_> {
             E::Id(id) => create::id(self.name(*id)),
             E::Global(name) => create::id(name.as_str()),
             E::Ext(value) => value.value.borrow().clone(),
-            E::Guard(guard) => guard.named(),
+            E::Guard(guard) => {
+                guard.name(|base| self.cx.local_name(base));
+                guard.named()
+            }
             E::Num(value) => number(*value),
             E::Str(text) => string_literal(text),
             E::Bool(value) => create::bool(*value),
@@ -640,7 +457,7 @@ impl Lowerer<'_> {
                     ("size", Ty::Set | Ty::Map) => {
                         let class = if ty == Ty::Set { "ReadonlySet.size" } else { "ReadonlyMap.size" };
                         // `pushToVar(0, "size")` and a counting loop, between the macro comments.
-                        let size: Expr = (self.temp)("size").into();
+                        let size: Expr = self.cx.temp_id("size").into();
                         out.push(create::comment(format!(" ▼ {class} ▼")));
                         out.push(create::local(AnyIdentifier::try_from(size.clone()).unwrap(), Some(create::number(0.0))));
                         out.push(create::for_in(
@@ -874,29 +691,39 @@ fn surrogate_pair_at(bytes: &[u8], i: usize) -> Option<(u16, u16)> {
 mod tests {
     use super::super::ir::{self, Bind, Body, Ids, Op, S, Ty};
     use super::*;
-    use crate::ts_names::TsNames;
+    use std::collections::HashSet;
 
-    /// Names the ids as the printer would (without a compiler) and renders `statements` at the top of a file.
-    fn render(ids: &Ids, statements: &[S], identifiers: &[&'static str]) -> String {
-        let mut names = HashMap::new();
-        let mut ts_names = TsNames::with_identifiers(identifiers);
-        for s in statements {
-            pregenerate(ids, &mut names, &mut ts_names, s);
-        }
-        for (i, hint) in ids.hints.iter().enumerate() {
-            names.entry(Id(i as u32)).or_insert_with(|| ts_names.unique_plain(hint));
-        }
-        let mut temps = rbxts_luau::TempIds::new();
-        let mut temp = |hint: &str| temps.temp_id(hint);
-        let mut lowerer = Lowerer { ids, names: &names, temp: &mut temp };
-        let luau = lowerer.statements(statements);
-        rbxts_luau::render_ast(&luau)
+    /// The compiler, as far as the lowering asks it: temporaries, and names approved once each, never one of the file's
+    /// `identifiers`.
+    struct TestCx {
+        temps: rbxts_luau::TempIds,
+        taken: HashSet<String>,
     }
 
-    fn pregenerate(ids: &Ids, names: &mut HashMap<Id, String>, ts_names: &mut TsNames, s: &S) {
-        if let S::Const(Bind::One(id), _) | S::Let(id, _) = s {
-            names.entry(*id).or_insert_with(|| ts_names.unique_plain(ids.hint(*id)));
+    impl LowerCx for TestCx {
+        fn temp_id(&mut self, hint: &str) -> rbxts_luau::TemporaryIdentifier {
+            self.temps.temp_id(hint)
         }
+
+        fn local_name(&mut self, hint: &str) -> String {
+            let prefix = if hint.ends_with('_') { hint.to_owned() } else { format!("{hint}_") };
+            let name = std::iter::once(hint.to_owned())
+                .chain((1u32..).map(|i| format!("{prefix}{i}")))
+                .find(|name| !self.taken.contains(name))
+                .unwrap();
+            self.taken.insert(name.clone());
+            name
+        }
+    }
+
+    /// Renders `statements` at the top of a file whose source uses `identifiers`.
+    fn render(ids: &Ids, statements: &[S], identifiers: &[&str]) -> String {
+        let mut names = HashMap::new();
+        let mut cx =
+            TestCx { temps: rbxts_luau::TempIds::new(), taken: identifiers.iter().map(|s| (*s).to_owned()).collect() };
+        let mut lowerer = Lowerer { ids, names: &mut names, cx: &mut cx };
+        let luau = lowerer.statements(statements);
+        rbxts_luau::render_ast(&luau)
     }
 
     #[test]

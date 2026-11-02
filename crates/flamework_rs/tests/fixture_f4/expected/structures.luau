@@ -1201,7 +1201,7 @@ local readonlyMap = Flamework.createSerializer({
 			error("malformed payload")
 		end
 		local map_3 = {}
-		for _5 = 1, count_12 do
+		for _6 = 1, count_12 do
 			local length_36, o_66 = vread(buf_60, o_64)
 			local text_19 = buffer.readstring(buf_60, o_66, length_36)
 			o_64 = o_66 + length_36
@@ -1211,7 +1211,7 @@ local readonlyMap = Flamework.createSerializer({
 				error("malformed payload")
 			end
 			local set_3 = {}
-			for _6 = 1, count_13 do
+			for _5 = 1, count_13 do
 				set_3[buffer.readf64(buf_60, o_64)] = true
 				o_64 += 8
 			end
@@ -1434,7 +1434,7 @@ local markers = Flamework.createSerializer({
 			error("malformed payload")
 		end
 		local array_13 = table.create(count_18)
-		for i_28 = 1, count_18 do
+		for i_29 = 1, count_18 do
 			local count_19, o_83 = vread(buf_67, o_81)
 			o_81 = o_83
 			zeros += count_19
@@ -1442,12 +1442,12 @@ local markers = Flamework.createSerializer({
 				error("malformed payload")
 			end
 			local array_14 = table.create(count_19)
-			for i_29 = 1, count_19 do
-				array_14[i_29] = {
+			for i_28 = 1, count_19 do
+				array_14[i_28] = {
 					type = "marker",
 				}
 			end
-			array_13[i_28] = array_14
+			array_13[i_29] = array_14
 		end
 		if o_81 ~= buffer.len(buf_67) then
 			error("malformed payload")
