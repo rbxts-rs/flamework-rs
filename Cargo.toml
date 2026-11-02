@@ -15,11 +15,11 @@ license = "MIT"
 # To work against a local rbxts-rs checkout, see the README ("Developing against a local rbxts-rs").
 # Cargo.lock started as a copy of rbxts-rs's lock file, so the transitive versions match what rbxts-rs tests with.
 [workspace.dependencies]
-rbxts_plugin = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "7972e4d8c61eeb711bfe8ef8a78f0adbd867f341" }
-rbxts_luau = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "7972e4d8c61eeb711bfe8ef8a78f0adbd867f341" }
-rbxts_project = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "7972e4d8c61eeb711bfe8ef8a78f0adbd867f341" }
-rbxts_transform = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "7972e4d8c61eeb711bfe8ef8a78f0adbd867f341" }
-rbxts_cli = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "7972e4d8c61eeb711bfe8ef8a78f0adbd867f341" }
+rbxts_plugin = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "de73e851bdf467265fa804aecc41ee80a8b45e07" }
+rbxts_luau = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "de73e851bdf467265fa804aecc41ee80a8b45e07" }
+rbxts_project = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "de73e851bdf467265fa804aecc41ee80a8b45e07" }
+rbxts_transform = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "de73e851bdf467265fa804aecc41ee80a8b45e07" }
+rbxts_cli = { git = "file:///E:/Projects/TS/Flamework/rbxts-rs", rev = "de73e851bdf467265fa804aecc41ee80a8b45e07" }
 tsrs_core = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
 tsrs_ast = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
 tsrs_checker = { git = "file:///E:/Projects/TS/Flamework/roblox-ts-test/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
