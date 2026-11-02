@@ -99,10 +99,13 @@ rbxts_project = { path = "<rbxts-rs>/crates/rbxts_project" }
 rbxts_transform = { path = "<rbxts-rs>/crates/rbxts_transform" }
 ```
 
-While it is on, Cargo rewrites `Cargo.lock` for the path sources, so `--locked` fails: build without it, and restore
-`Cargo.lock` (`git checkout Cargo.lock`) when you remove the patch. The local checkout must name the same tsrs as this
-workspace (`tools/check-deps.sh`). When the change lands in rbxts-rs, move the rev in `Cargo.toml` to it and update the
-lock with `cargo update -p rbxts_plugin` (which moves every crate of that source).
+After adding it, run `cargo update -p rbxts_cli -p rbxts_luau -p rbxts_luau_check -p rbxts_plugin -p rbxts_project
+-p rbxts_transform`: without that, Cargo prints "patch was not used" and silently builds the pinned rbxts-rs, so check
+that `rbxtsc-fw --build-info` names the local checkout's commit. While the patch is on, Cargo rewrites `Cargo.lock` for
+the path sources, so `--locked` fails: build without it, and restore `Cargo.lock` (`git checkout Cargo.lock`) when you
+remove the patch. The local checkout must name the same tsrs as this workspace (`tools/check-deps.sh`). When the change
+lands in rbxts-rs, move the rev in `Cargo.toml` to it and update the lock with `cargo update -p rbxts_plugin` (which
+moves every crate of that source).
 
 ## Comparing with the TS transformer
 
