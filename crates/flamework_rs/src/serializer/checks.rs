@@ -353,6 +353,10 @@ impl Gen<'_, '_, '_> {
 
     /// `warn(message)`: once per text and file.
     pub(crate) fn warn(&mut self, message: &str) {
+        #[cfg(feature = "wire-harvest")]
+        if self.g.companion {
+            return;
+        }
         let pos = self.cx.utf16_pos(self.g.diagnostic_node);
         let id = self.shared.file_id(&self.cx.file().path);
         let text = format!("{id}:{}:{} - {message}", pos.line + 1, pos.character + 1);

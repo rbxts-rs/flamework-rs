@@ -489,6 +489,10 @@ impl Gen<'_, '_, '_> {
     /// `guardFor(type)`: the member's `t` guard (F3's `buildGuardFromType`, [`crate::guards::guard_for`]), kept in a
     /// slot. Its errors are reported at the site being built.
     pub(crate) fn guard_for(&mut self, ty: P<Type>) -> GResult<E> {
+        #[cfg(feature = "wire-harvest")]
+        if self.g.companion {
+            return super::wire::guard(self, ty);
+        }
         let slot = match self.g.guards.get(&ty) {
             Some(slot) => slot.clone(),
             None => {

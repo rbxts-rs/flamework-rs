@@ -31,6 +31,8 @@ pub mod lower;
 mod order;
 mod pressure;
 pub mod typeinfo;
+#[cfg(feature = "wire-harvest")]
+pub(crate) mod wire;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -404,6 +406,9 @@ pub struct Generator {
     pub(crate) true_kind: Option<Rc<Kind>>,
     /// Ordering a macro's union ([`union_member_order`]): a failure names the macro, not a serializer.
     pub(crate) ordering_macro: bool,
+    /// A `wire-harvest` companion ([`wire`]): guards become `__fwguard(<key>)`.
+    #[cfg(feature = "wire-harvest")]
+    pub(crate) companion: bool,
 }
 
 /// `LOCAL_BUDGET`: Flamework locals a file's main chunk may take before they go into the file's table.
@@ -466,6 +471,8 @@ impl Generator {
             sticky: None,
             true_kind: None,
             ordering_macro: false,
+            #[cfg(feature = "wire-harvest")]
+            companion: false,
         }
     }
 
@@ -505,6 +512,8 @@ pub(crate) type GResult<T> = PResult<T>;
 #[derive(Default)]
 pub struct FileSerializer {
     pub generator: Option<Generator>,
+    #[cfg(feature = "wire-harvest")]
+    pub(crate) harvest: wire::Harvest,
 }
 
 // --- entry points -------------------------------------------------------------------------------------------------
@@ -518,14 +527,17 @@ fn lower_output(
     inline: &[S],
     expressions: &[&E],
 ) -> (Vec<LuauStmt>, Vec<LuauStmt>, Vec<LuauExpr>) {
-    with_lowerer(fw, cx, |lowerer| {
+    let (top, inline, values) = with_lowerer(fw, cx, |lowerer| {
         let top = lowerer.statements(top);
         let mut inline_all = lowerer.statements(inline);
         let mut prereqs = Vec::new();
         let values = expressions.iter().map(|e| lowerer.expr(e, &mut prereqs)).collect();
         inline_all.extend(prereqs);
         (top, inline_all, values)
-    })
+    });
+    #[cfg(feature = "wire-harvest")]
+    wire::hoisted(fw, &top);
+    (top, inline, values)
 }
 
 /// Runs a build of the generator and returns the hoisted statements with its result.
@@ -573,6 +585,8 @@ pub fn build_serializer(
     })?;
     let (top, _, mut values) = lower_output(fw, cx, &hoisted, &[], &[&object]);
     cx.insert_before_root_statement(top);
+    #[cfg(feature = "wire-harvest")]
+    wire::serializer(fw, cx, node, ty, &values[0]);
     Ok(values.remove(0))
 }
 
@@ -623,6 +637,10 @@ pub fn build_decoder(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<Type
     let expressions: Vec<&E> = decoder.iter().collect();
     let (top, _, mut values) = lower_output(fw, cx, &hoisted, &[], &expressions);
     cx.insert_before_root_statement(top);
+    #[cfg(feature = "wire-harvest")]
+    if let Some(decoder) = values.first() {
+        wire::decoder(fw, cx, node, ty, result, decoder);
+    }
     Ok(if values.is_empty() { rbxts_luau::create::nil() } else { values.remove(0) })
 }
 

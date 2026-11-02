@@ -387,7 +387,10 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
 
     let built = crate::serializer::call_site(fw, cx, node, &shape)?;
     if call.chain_outer {
-        return chain_function(fw, cx, node, &built).map(Claim::Take);
+        let value = chain_function(fw, cx, node, &built)?;
+        #[cfg(feature = "wire-harvest")]
+        harvest(fw, cx, node, &built);
+        return Ok(Claim::Take(value));
     }
 
     let mut statements: Vec<Stmt> = Vec::new();
@@ -431,6 +434,8 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
             create::method_call(receiver, "_setCallback", vec![create::id(callback_name), pack])
         }
     };
+    #[cfg(feature = "wire-harvest")]
+    harvest(fw, cx, node, &built);
 
     Ok(Claim::Take(match built.placement {
         Placement::Bare => {
@@ -721,6 +726,67 @@ fn lower_encoding(fw: &FwInstance, cx: &mut Cx<'_>, built: &BuiltCall) -> (Vec<S
         let blobs = built.blobs.map(|id| lowerer.expr(&ir::id(id), &mut prereqs));
         (statements, payload, blobs)
     })
+}
+
+/// `wire-harvest` ([`crate::serializer::wire`]): the site's packing as `pack(args)`, which returns `{ payload, blobs }`
+/// (a callback's packer as it is), its arguments read from `args` where the build reads them; `fixed` boxes the
+/// literal (or `undefined`) arguments the packing was built for.
+#[cfg(feature = "wire-harvest")]
+fn harvest(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &BuiltCall) {
+    use crate::serializer::wire;
+    if !wire::on() {
+        return;
+    }
+    let args = || create::id("__fwargs");
+    let at = |i: usize| create::computed_index(args(), create::number((i + 1) as f64));
+    let (ty, result, pack, fixed) = match &built.shape {
+        CallShape::Send { list, .. } => {
+            let Some(payload) = built.payload else { return };
+            let (mut fixed, mut saved) = (Vec::new(), Vec::new());
+            for (i, value) in built.packed.iter().enumerate() {
+                match (value.local, &value.ext) {
+                    (Some(_), _) => {}
+                    (None, Some(ext)) => {
+                        let compiled = ext.value.replace(at(i));
+                        if ext.literal.is_some() {
+                            fixed.push((create::number((i + 1) as f64), create::array(vec![compiled.clone()])));
+                        }
+                        saved.push((ext, compiled));
+                    }
+                    (None, None) => fixed.push((create::number((i + 1) as f64), create::array(Vec::new()))),
+                }
+            }
+            let pack = wire::relower(fw, |lowerer| {
+                let mut body = Vec::new();
+                for (i, value) in built.packed.iter().enumerate() {
+                    if let Some(local) = value.local {
+                        body.push(create::local(create::any_id(lowerer.name(local)), Some(at(i))));
+                    }
+                }
+                if let Some((table, _)) = &built.spread {
+                    body.push(create::local(create::any_id(lowerer.name(*table)), Some(args())));
+                }
+                body.extend(lowerer.statements(&built.encoding));
+                let packed = std::iter::once(payload).chain(built.blobs).map(|id| create::id(lowerer.name(id))).collect();
+                body.push(create::return_stmt(create::array(packed)));
+                create::function(vec![create::any_id("__fwargs")], false, body)
+            });
+            for (ext, compiled) in saved {
+                ext.set(compiled);
+            }
+            (*list, false, pack, fixed)
+        }
+        CallShape::Callback { function, .. } => {
+            let pack = built.pack.as_ref().expect("a callback site has its packer");
+            (*function, true, wire::relower(fw, |lowerer| lowerer.expr(pack, &mut Vec::new())), Vec::new())
+        }
+    };
+    let Some(pack) = pack else { return };
+    let mut extra = vec![("pack", pack), ("fixed", create::map(fixed))];
+    if built.spread.is_none() && !result {
+        extra.push(("arity", create::number(built.packed.len() as f64)));
+    }
+    wire::site(fw, cx, node, ty, result, extra);
 }
 
 /// What a spread argument spreads, as roblox-ts's `getAddIterableToArrayBuilder` tells it: the kinds a packed call

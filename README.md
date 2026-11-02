@@ -140,6 +140,14 @@ local, or a use that reads another local still differs. The whole file is one sc
 Without a source (`compare.cjs` without `--src`, a file no source maps to), every declared name is renamed, so a
 user's local renamed consistently goes unnoticed.
 
+## Wire identity
+
+`tools/wirediff` checks that two builds put the same bytes on the wire, on behaviour rather than on the Luau text: a
+`wire-harvest` build (`cargo build -p rbxtsc_fw --features wire-harvest`, with `FLAMEWORK_RS_WIRE_DIR` set) writes every
+serializer, network decoder and packed call site as a standalone Luau module, and
+`node tools/wirediff/wirediff.cjs <old harvest> <new harvest>` runs both builds' modules on Lune with the same seeded
+values (`tools/wirediff/README.md`).
+
 ## Differences from the TS transformer
 
 flamework-rs's output differs from the TS transformer's (TypeScript 5) in the ways below. Unless an item says

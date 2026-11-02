@@ -14,6 +14,9 @@ description = "Flamework's transformer as a compiled-in rbxts-rs plugin. F0: the
 # Parity tooling only: `FLAMEWORK_RS_LAYOUT_DUMP` names a file every versioned serializer's layout text and hash are
 # appended to (`serializer::dump_layout`). Off in every normal build.
 layout-dump = []
+# Test tooling only: `FLAMEWORK_RS_WIRE_DIR` names a folder every serializer, network decoder and packed call site is
+# also written to as a standalone Luau module, for `tools/wirediff` (`serializer::wire`). Off in every normal build.
+wire-harvest = []
 
 [dependencies]
 dragonbox_ecma.workspace = true

@@ -299,6 +299,8 @@ impl PluginInstance for FwInstance {
 
     fn end_file(&self, cx: &mut Cx<'_>) -> PResult<FwFilePart> {
         crate::serializer::check_output(self, cx);
+        #[cfg(feature = "wire-harvest")]
+        crate::serializer::wire::end_file(self, cx);
         let mut file = std::mem::take(&mut *self.file.borrow_mut());
         let mut seen = HashSet::new();
         for new in file.id_requests {

@@ -10,6 +10,8 @@ description = "`rbxtsc-fw`: the rbxtsc command line with Flamework compiled in (
 [features]
 # Parity tooling only (see flamework_rs's `layout-dump`).
 layout-dump = ["flamework_rs/layout-dump"]
+# Test tooling only (see flamework_rs's `wire-harvest`, tools/wirediff).
+wire-harvest = ["flamework_rs/wire-harvest"]
 
 [dependencies]
 rbxts_cli.workspace = true
