@@ -397,7 +397,7 @@ local function numberEdges(width: string): { number }
 	return result
 end
 
-local VARINT_EDGES = { 0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, 4294967295, 34359738367 }
+local VARINT_EDGES = { 0, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455, 268435456, 4294967295, 34359738367, 34359738368 }
 
 --- Empty, short, past each varint length step (127/128, 16383/16384) and each length prefix (255/256, 65536).
 local function stringEdges(): { string }

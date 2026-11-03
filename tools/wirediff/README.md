@@ -54,8 +54,8 @@ path, every literal and enum item) and 200 random ones (back-references followed
 - **W5** versioned serializers: the version byte leads the buffer; a changed version or hash byte, and a buffer too
   short for the header, are refused with the same message.
 
-W0 counts pairs that cannot be compared: one module loads and the other does not, their kind, layout, arity or
-literal arguments differ, or a pair did not run to the end (status `crashed`, `load`, `unparsed`, `nothing
+W0 counts pairs that cannot be compared: one module loads and the other does not, their kind, key, serializer
+version, layout, arity or literal arguments differ, or a pair did not run to the end (status `crashed`, `load`, `unparsed`, `nothing
 generated`; a non-ok status always fails the run). Messages are compared without Luau's `chunk:line:` prefix, and
 the warnings a call makes are part of its result. The summary gives pairs, statuses, values, and per check the failures
 with their first examples (`--redact`: counts and statuses only). Exit 0 means no failure: every pair ran to the end
