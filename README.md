@@ -22,10 +22,11 @@ notices are in `THIRD-PARTY-NOTICES.md`.
 
 ## Dependencies
 
-rbxts-rs (the compiler and its plugin API, `rbxts_plugin`) and tsrs are git dependencies pinned by rev in the root
-`Cargo.toml`. The tsrs URL and rev must be exactly the ones rbxts-rs's own `Cargo.toml` names at the pinned rbxts-rs
-rev: Cargo does not enforce one copy of a git dependency, so a mismatch builds a second tsrs and fails only later, with
-E0308 on a tsrs type. `bash tools/check-deps.sh` fails when any `tsrs_*` or `rbxts_*` crate is in the graph twice; run
+rbxts-rs (the compiler and its plugin API, `rbxts_plugin`) and tsrs are git dependencies in the root `Cargo.toml`:
+rbxts-rs pinned by its release tag (`tag = "v0.1.1"`), as a project's `compiler/` pins `rbxts_cli`, so the lock's
+source strings match that `compiler/`'s lock; tsrs by rev. The tsrs URL and rev must be exactly the ones rbxts-rs's own
+`Cargo.toml` names at the pinned rbxts-rs tag: Cargo does not enforce one copy of a git dependency, so a mismatch
+builds a second tsrs and fails only later, with E0308 on a tsrs type. `bash tools/check-deps.sh` fails when any `tsrs_*` or `rbxts_*` crate is in the graph twice; run
 it after changing a dependency, a `[patch]` or `Cargo.lock`. `Cargo.lock` started as a copy of rbxts-rs's.
 
 `DESIGN §n` in the code and docs refers to rbxts-rs's `docs/design.md`.
@@ -86,7 +87,7 @@ folder of its own the same way, for example `E:\Tools\rbxts\rbxtsc\`.
 
 ## Developing against a local rbxts-rs
 
-To build against a local rbxts-rs checkout instead of the pinned rev, override the git source with path dependencies
+To build against a local rbxts-rs checkout instead of the pinned tag, override the git source with path dependencies
 in an uncommitted `.cargo/config.toml` (git-ignored), one line per rbxts-rs crate in `Cargo.lock`:
 
 ```toml
@@ -104,8 +105,9 @@ rbxts_transform`: without that, if the checkout's crate versions differ from the
 not used" and silently builds the pinned rbxts-rs. Either way, check that `rbxtsc-fw --build-info` names the local
 checkout's commit. While the patch is on, Cargo rewrites `Cargo.lock` for the path sources, so `--locked` fails: build
 without it, and restore `Cargo.lock` (`git checkout Cargo.lock`) when you remove the patch. The local checkout must name
-the same tsrs as this workspace (`tools/check-deps.sh`). When the change lands in rbxts-rs, move the rev in `Cargo.toml`
-to it and update the lock with `cargo update -p rbxts_plugin` (which moves every crate of that source).
+the same tsrs as this workspace (`tools/check-deps.sh`). When the change is released in rbxts-rs, move the tag in
+`Cargo.toml` to that release and update the lock with `cargo update -p rbxts_plugin` (which moves every crate of that
+source); every other entry stays as rbxts-rs's own lock has it at that tag.
 
 ## Comparing with the TS transformer
 

@@ -9,17 +9,19 @@ rust-version = "1.99"
 publish = false
 license = "MIT"
 
-# rbxts-rs (the compiler and its plugin API) and tsrs, as git dependencies pinned by rev. The tsrs URL and rev must be
-# exactly the ones rbxts-rs's own Cargo.toml names at the pinned rbxts-rs rev: Cargo does not enforce one tsrs copy, and
-# a mismatch builds a second one that only fails later with E0308 (`tools/check-deps.sh` catches it). Never `branch =`.
+# rbxts-rs (the compiler and its plugin API) and tsrs, as git dependencies: rbxts-rs pinned by its release tag, as a
+# project's compiler/ pins rbxts_cli (the lock's source strings then match that compiler/'s lock), tsrs by rev. The tsrs
+# URL and rev must be exactly the ones rbxts-rs's own Cargo.toml names at the pinned rbxts-rs tag: Cargo does not
+# enforce one tsrs copy, and a mismatch builds a second one that only fails later with E0308 (`tools/check-deps.sh`
+# catches it). Never `branch =`.
 # To work against a local rbxts-rs checkout, see the README ("Developing against a local rbxts-rs").
 # Cargo.lock started as a copy of rbxts-rs's lock file, so the transitive versions match what rbxts-rs tests with.
 [workspace.dependencies]
-rbxts_plugin = { git = "https://github.com/rbxts-rs/rbxts-rs", rev = "0fa1528d821129133e989ab1178513a11891044e" }
-rbxts_luau = { git = "https://github.com/rbxts-rs/rbxts-rs", rev = "0fa1528d821129133e989ab1178513a11891044e" }
-rbxts_project = { git = "https://github.com/rbxts-rs/rbxts-rs", rev = "0fa1528d821129133e989ab1178513a11891044e" }
-rbxts_transform = { git = "https://github.com/rbxts-rs/rbxts-rs", rev = "0fa1528d821129133e989ab1178513a11891044e" }
-rbxts_cli = { git = "https://github.com/rbxts-rs/rbxts-rs", rev = "0fa1528d821129133e989ab1178513a11891044e" }
+rbxts_plugin = { git = "https://github.com/rbxts-rs/rbxts-rs", tag = "v0.1.1" }
+rbxts_luau = { git = "https://github.com/rbxts-rs/rbxts-rs", tag = "v0.1.1" }
+rbxts_project = { git = "https://github.com/rbxts-rs/rbxts-rs", tag = "v0.1.1" }
+rbxts_transform = { git = "https://github.com/rbxts-rs/rbxts-rs", tag = "v0.1.1" }
+rbxts_cli = { git = "https://github.com/rbxts-rs/rbxts-rs", tag = "v0.1.1" }
 tsrs_core = { git = "https://github.com/rbxts-rs/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
 tsrs_ast = { git = "https://github.com/rbxts-rs/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
 tsrs_checker = { git = "https://github.com/rbxts-rs/tsrs", rev = "7da04ddd09af482a35f0857d433855e2bd2b8a38" }
