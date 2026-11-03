@@ -59,25 +59,38 @@ FLAMEWORK_RS_RBXTS = "<project>/node_modules/@rbxts"
 the TS tests' own fixture in `tests/diagnostics/fixture`): each case's build must fail with the TS transformer's
 message. The file says how a case is written, marked or left to another test.
 
+## Releases
+
+A release is a git tag `v<version>` with a Windows x64 zip of `rbxtsc-fw.exe` on
+[GitHub Releases](https://github.com/rbxts-rs/flamework-rs/releases); on other platforms, build the tag with Cargo
+([Install](#install)). Versions are exact, never ranges. A project made from the Flamework template installs nothing by
+hand: the template carries a per-project `compiler/` (rbxts-rs's per-project compiler, with Flamework compiled in)
+whose launcher downloads the release binary, or builds it.
+
+**0.1.0** pairs with the `@flamework-experimental` 2.0.0 betas and is built on rbxts-rs v0.1.1.
+
 ## Install
 
-`rbxtsc-fw` is installed with Cargo from a pinned commit, one folder per Flamework version (the paths below are
-examples):
+Outside a project's `compiler/`, `rbxtsc-fw` is installed with Cargo from a release tag, one folder per version (the
+paths below are examples):
 
 ```sh
-cargo install --locked --git https://github.com/rbxts-rs/flamework-rs --rev <hash> rbxtsc_fw --root E:\Tools\rbxts\fw-2.0.0-beta.0
+cargo install --locked --git https://github.com/rbxts-rs/flamework-rs --tag v0.1.0 rbxtsc_fw --root E:\Tools\rbxts\fw-0.1.0
 ```
 
-`--locked` makes Cargo use the repository's `Cargo.lock`; without it, `cargo install` ignores the lock and resolves
-the dependencies again. `cargo install` builds with the release profile (fat LTO, one codegen unit), so it builds
-slowly.
+`--rev <commit>` instead of `--tag` builds an unreleased commit. `--locked` makes Cargo use the repository's
+`Cargo.lock`; without it, `cargo install` ignores the lock and resolves the dependencies again. `cargo install --git`
+builds with the toolchain of the folder it runs in, not the tag's `rust-toolchain.toml`: with an older default
+toolchain, name the tag's (`cargo +1.99.1 install ...`). `cargo install` builds with the release profile (fat LTO, one
+codegen unit), so it builds slowly.
 
-That gives `E:\Tools\rbxts\fw-2.0.0-beta.0\bin\rbxtsc-fw.exe`. The plain compiler from rbxts-rs (no Flamework) goes in a
-folder of its own the same way, for example `E:\Tools\rbxts\rbxtsc\`.
+That gives `E:\Tools\rbxts\fw-0.1.0\bin\rbxtsc-fw.exe`; its `--build-info` ends with `flamework-rs-version: 0.1.0`.
+The plain compiler from rbxts-rs (no Flamework) goes in a folder of its own the same way, for example
+`E:\Tools\rbxts\rbxtsc\`.
 
-- **A project** points its `package.json` build script at the folder that matches its `@flamework-experimental/*`
-  version (`"build": "E:/Tools/rbxts/fw-2.0.0-beta.0/bin/rbxtsc-fw.exe build"`).
-- **Upgrading** is changing that path and the npm packages together, to the folder of the new version.
+- **A project** points its `package.json` build script at the folder of the release that pairs with its
+  `@flamework-experimental/*` version (`"build": "E:/Tools/rbxts/fw-0.1.0/bin/rbxtsc-fw.exe build"`).
+- **Upgrading** is changing that path and the npm packages together, to the folder of the new release.
 - **Cleaning up** an old version is deleting its folder, or `cargo uninstall rbxtsc_fw --root <dir>`.
 - **Where the build goes:** `cargo install` builds in a temporary target directory, removed afterwards, unless
   `CARGO_TARGET_DIR` is set. A build in a checkout goes to `target/` (or `--target-dir`, or `[build] target-dir` in
