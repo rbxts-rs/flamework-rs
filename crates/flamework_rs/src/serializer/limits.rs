@@ -6,8 +6,8 @@
 //!   enclosing block and the loop variables, nested functions apart. Luau folds constant locals at optimisation level
 //!   1+ with debug level 1, which only makes the count high, the safe side; generated code binds no constants.
 //! - **Registers** are Luau's own answer: the function is compiled ([`Function::probe`]) by the compiler the load
-//!   check uses (`rbxts_luau_check`, at its [`ROBLOX_LEVELS`]), behind the file's hoisted prelude so that Luau's
-//!   inlining sees the helpers the real file has:
+//!   check uses (`rbxts_luau_check`, at its [`ROBLOX_LEVELS`]), behind the file's hoisted declarations (aliases, the
+//!   `codec` table):
 //!
 //!   ```lua
 //!   local __fwprobe = function(__fwpad1, …, __fwpadK, <parameters>) <body> end
@@ -15,7 +15,7 @@
 //!
 //!   The K padding parameters stand for K more live locals around the code. Luau's two messages ("Out of local
 //!   registers", "Out of registers") are told apart; any other refusal is an internal error. A cheap bound
-//!   ([`Function::register_bound`]) skips the compile for nearly every function.
+//!   ([`Function::surely_fits`]) skips the compile for nearly every function.
 //!
 //! The function is measured as lowered by a scratch namer ([`Scratch`]) that asks the compiler for no names: call-site
 //! arguments render as globals (`__fwarg<n>`, never `nil`, so Luau cannot fold the code reading them), and guards get
@@ -177,7 +177,7 @@ pub(crate) fn choose(plain: &Function, compact: &Function, outer: u32) -> Result
 
 // --- counting --------------------------------------------------------------------------------------------------
 
-/// The walk behind [`Function::locals`] and [`Function::register_bound`].
+/// The walk behind [`Function::locals`] and [`Function::surely_fits`].
 #[derive(Default)]
 struct Walk {
     locals: u32,

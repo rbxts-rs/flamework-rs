@@ -793,7 +793,7 @@ impl Gen<'_, '_, '_> {
             if !recording && plain.surely_fits(limits::MARGIN + outer) {
                 return Ok((body, false));
             }
-            // the file's hoisted declarations so far, so that Luau inlines the helpers as in the file
+            // the file's hoisted declarations so far (aliases, the codec table)
             let declared = self.g.declarations.len();
             plain.prelude = Rc::new(measuring.lower(&self.g.ids, &self.g.declarations));
             let keep = limits::keeps_plain(&plain, outer).map_err(|error| self.does_not_compile(what, error))?;
