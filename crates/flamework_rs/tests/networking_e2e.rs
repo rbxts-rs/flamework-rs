@@ -1,21 +1,22 @@
 //! Networking (F5) end to end, through the real compiler on `tests/fixture_f5`: the packed call sites of every shape
 //! (`fire`, `except`, `broadcast`, `invoke`, `invokeWithTimeout`, `setCallback` and the member called itself), every
 //! mode (packed by `networking.serialization`, `Unreliable`, `Raw`, `Serialized`), the declarations' decoders and
-//! middleware, arguments read where they are or bound, spreads, every place a call can stand (ahead of its statement,
-//! in a function, in a `do` block past a function's or the file's budget of locals, including a function or file so
-//! full of locals already that the packing is built as first built, `wide.ts` and `wideTop.ts`), nested sends, sends
+//! middleware, arguments read where they are or bound, spreads, every place a call can stand (a whole statement in a
+//! `do` block with its packing, ahead of its statement, in a function, including a function or file so full of locals
+//! already that the packing is built as first built, `wide.ts` and `wideTop.ts`), nested sends, sends
 //! in class members (`members.ts`, which roblox-ts does not compile in source order) and the client and server sides
 //! (`crate::networking`).
 //!
 //! `tests/fixture_f5/expected` holds rbxtsc-fw's output for every file but one, each compared whole
 //! (`UPDATE_EXPECTED=1` writes it). It is the TS5 pipeline's output (roblox-ts master with the published 2.0.0-beta.0
-//! transformer) but for the generated locals' names (checked with `tools/normalize.cjs`) and the packings and decoders,
+//! transformer) but for the generated locals' names (checked with `tools/normalize.cjs`), the packings and decoders,
 //! which flamework-rs builds as Luau of its own (README, Differences; their wire format is the TS5 pipeline's), and
-//! except `chained.ts`: sends
+//! where a packing goes (a whole-statement send in a `do` block with it; README, Differences), and except
+//! `chained.ts`: sends
 //! through `?.`, packed inside the compiler's nil check so that each operand ahead of a `?.` is read once, before the
 //! arguments (JavaScript's order; TS5 reads the chain again after them, README, Differences). The one differs from
-//! TS5's in shape only (README, Differences) and is checked on its own: `scopedReturn.ts` has a returned send past its
-//! function's budget of locals, which flamework-rs packs in a function where TS5 puts the statement in a block.
+//! TS5's in shape only (README, Differences) and is checked on its own: `scopedReturn.ts` has a returned send past
+//! TS5's budget of locals, which flamework-rs packs ahead of the return where TS5 puts the statement in a block.
 //!
 //! The project is copied to a temporary directory with a `node_modules` as an install has it (`support::project`);
 //! without the monorepo and the `@rbxts` packages the tests are skipped, saying so.
@@ -48,12 +49,13 @@ fn every_call_shape_builds_and_matches_ts5() {
     assert!(compared >= 6, "expected outputs missing ({compared})");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 
-    // A returned send past its function's budget of locals: in a function of its own, where TS5 puts the return
-    // statement in a `do` block with the packing. The sends before it are in `do` blocks, as TS5's.
+    // A returned send past TS5's budget of locals: its packing ahead of the return, which ends the block, where TS5
+    // puts the return statement in a `do` block with the packing. The sends before it are in `do` blocks, as TS5's.
     let scoped = luau(&report, "scopedReturn.luau");
     assert!(scoped.contains("\tdo\n"), "{scoped}");
-    assert!(scoped.contains("\treturn (function()\n\t\tlocal arg_40 = compute()"), "{scoped}");
-    assert!(scoped.contains("\t\treturn Events.echo:_fire(buf_22)\n\tend)()\nend"), "{scoped}");
+    assert!(!scoped.contains("(function()"), "{scoped}");
+    assert!(scoped.contains("\tlocal arg_40 = compute()"), "{scoped}");
+    assert!(scoped.contains("\tbuffer.writef64(buf_22, 73, arg_49)\n\treturn Events.echo:_fire(buf_22)\nend"), "{scoped}");
 }
 
 const NETWORK: &str = "import { Networking } from \"@flamework-experimental/networking\";\n";

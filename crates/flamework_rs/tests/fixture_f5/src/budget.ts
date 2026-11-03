@@ -2,8 +2,8 @@ import { Events } from "./client";
 
 declare function compute(): number;
 
-// Past the 64 locals a function may hold, sends are packed in a do block of their own; past the 16 of a file the
-// same. The returned send fits in what is left.
+// Sends that are whole statements, in a function and in the file: each in a do block with its packing, which leaves
+// nothing live after it; the returned send has its packing ahead of the return.
 export function many(value: number) {
 	Events.bravo.fire(`n${value + 0}`, compute());
 	Events.bravo.fire(`n${value + 1}`, compute());

@@ -278,108 +278,128 @@ local Functions = GlobalFunctions:createServer({}, {
 })
 -- Sends from the server: to one player, to all but one, to everyone, and the member called itself.
 local function sendAll(player, others, text)
-	local length_7 = #text
-	local buf_15 = buffer.create(vsize(length_7) + length_7)
-	local o_20 = 0
-	local length_8 = #text
-	o_20 = vwrite(buf_15, o_20, length_8)
-	buffer.writestring(buf_15, o_20, text)
-	o_20 += length_8
-	Events.lima:_fire(player, buf_15)
-	local length_9 = #"skipped"
-	local buf_16 = buffer.create(vsize(length_9) + length_9)
-	local o_21 = 0
-	local text_8 = "skipped"
-	local length_10 = #text_8
-	o_21 = vwrite(buf_16, o_21, length_10)
-	buffer.writestring(buf_16, o_21, text_8)
-	o_21 += length_10
-	Events.lima:_except(player, buf_16)
-	local arg_3 = `{text}!`
-	local length_11 = #arg_3
-	local buf_17 = buffer.create(vsize(length_11) + length_11)
-	local o_22 = 0
-	local length_12 = #arg_3
-	o_22 = vwrite(buf_17, o_22, length_12)
-	buffer.writestring(buf_17, o_22, arg_3)
-	o_22 += length_12
-	Events.lima:_broadcast(buf_17)
-	local arg_4 = string.upper(text)
-	local length_13 = #arg_4
-	local buf_18 = buffer.create(vsize(length_13) + length_13)
-	local o_23 = 0
-	local length_14 = #arg_4
-	o_23 = vwrite(buf_18, o_23, length_14)
-	buffer.writestring(buf_18, o_23, arg_4)
-	o_23 += length_14
-	Events.lima:_fire(player, buf_18)
-	local arg_5 = #others
-	local arg_6 = { true, false }
-	local n_3 = #arg_6
-	local buf_19 = buffer.create(vsize(n_3) + n_3 * 1 + 8)
-	local o_24 = 0
-	buffer.writef64(buf_19, o_24, arg_5)
-	o_24 = vwrite(buf_19, o_24 + 8, #arg_6)
-	for i_3 = 1, #arg_6 do
-		local item = arg_6[i_3]
-		if item == nil then
-			error(`[Flamework] the array has no value at 'mike' [1][{i_3 - 1}]`)
-		end
-		buffer.writeu8(buf_19, o_24, if item then 1 else 0)
-		o_24 += 1
+	do
+		local length_7 = #text
+		local buf_15 = buffer.create(vsize(length_7) + length_7)
+		local o_20 = 0
+		local length_8 = #text
+		o_20 = vwrite(buf_15, o_20, length_8)
+		buffer.writestring(buf_15, o_20, text)
+		o_20 += length_8
+		Events.lima:_fire(player, buf_15)
 	end
-	Events.mike:_fire(others, buf_19)
-	local buf_20 = buffer.create(8)
-	buffer.writef64(buf_20, 0, 1)
-	Events.alpha:_broadcast(buf_20)
+	do
+		local length_9 = #"skipped"
+		local buf_16 = buffer.create(vsize(length_9) + length_9)
+		local o_21 = 0
+		local text_8 = "skipped"
+		local length_10 = #text_8
+		o_21 = vwrite(buf_16, o_21, length_10)
+		buffer.writestring(buf_16, o_21, text_8)
+		o_21 += length_10
+		Events.lima:_except(player, buf_16)
+	end
+	do
+		local arg_3 = `{text}!`
+		local length_11 = #arg_3
+		local buf_17 = buffer.create(vsize(length_11) + length_11)
+		local o_22 = 0
+		local length_12 = #arg_3
+		o_22 = vwrite(buf_17, o_22, length_12)
+		buffer.writestring(buf_17, o_22, arg_3)
+		o_22 += length_12
+		Events.lima:_broadcast(buf_17)
+	end
+	do
+		local arg_4 = string.upper(text)
+		local length_13 = #arg_4
+		local buf_18 = buffer.create(vsize(length_13) + length_13)
+		local o_23 = 0
+		local length_14 = #arg_4
+		o_23 = vwrite(buf_18, o_23, length_14)
+		buffer.writestring(buf_18, o_23, arg_4)
+		o_23 += length_14
+		Events.lima:_fire(player, buf_18)
+	end
+	do
+		local arg_5 = #others
+		local arg_6 = { true, false }
+		local n_3 = #arg_6
+		local buf_19 = buffer.create(vsize(n_3) + n_3 * 1 + 8)
+		local o_24 = 0
+		buffer.writef64(buf_19, o_24, arg_5)
+		o_24 = vwrite(buf_19, o_24 + 8, #arg_6)
+		for i_3 = 1, #arg_6 do
+			local item = arg_6[i_3]
+			if item == nil then
+				error(`[Flamework] the array has no value at 'mike' [1][{i_3 - 1}]`)
+			end
+			buffer.writeu8(buf_19, o_24, if item then 1 else 0)
+			o_24 += 1
+		end
+		Events.mike:_fire(others, buf_19)
+	end
+	do
+		local buf_20 = buffer.create(8)
+		buffer.writef64(buf_20, 0, 1)
+		Events.alpha:_broadcast(buf_20)
+	end
 end
 -- Callbacks: an arrow, an identifier, a function whose result carries nothing, and a Promise.
 local function callbacks()
-	local target = Functions.november
-	local callback = function(player, a)
-		return a + 1
+	do
+		local target = Functions.november
+		local callback = function(player, a)
+			return a + 1
+		end
+		target:_setCallback(callback, function(value_11)
+			local buf_21 = buffer.create(8)
+			buffer.writef64(buf_21, 0, value_11)
+			return { buf_21 }
+		end)
 	end
-	target:_setCallback(callback, function(value_11)
-		local buf_21 = buffer.create(8)
-		buffer.writef64(buf_21, 0, value_11)
-		return { buf_21 }
-	end)
 	local answer = function(player, name)
 		return TS.Promise.resolve(`hi {name}`)
 	end
-	local target_1 = Functions.oscar
-	local callback_1 = answer
-	target_1:_setCallback(callback_1, function(value_12)
-		local length_15 = #value_12
-		local buf_22 = buffer.create(vsize(length_15) + length_15)
-		local o_25 = 0
-		local length_16 = #value_12
-		o_25 = vwrite(buf_22, o_25, length_16)
-		buffer.writestring(buf_22, o_25, value_12)
-		o_25 += length_16
-		return { buf_22 }
-	end)
-	local target_2 = Functions.papa
-	local callback_2 = function() end
-	target_2:_setCallback(callback_2, function(value_13)
-		return nil
-	end)
-	local target_3 = Functions.quebec
-	local callback_3 = function(player, coord)
-		return if coord.x > 0 then coord else nil
+	do
+		local target_1 = Functions.oscar
+		local callback_1 = answer
+		target_1:_setCallback(callback_1, function(value_12)
+			local length_15 = #value_12
+			local buf_22 = buffer.create(vsize(length_15) + length_15)
+			local o_25 = 0
+			local length_16 = #value_12
+			o_25 = vwrite(buf_22, o_25, length_16)
+			buffer.writestring(buf_22, o_25, value_12)
+			o_25 += length_16
+			return { buf_22 }
+		end)
 	end
-	target_3:_setCallback(callback_3, function(value_14)
-		local buf_23 = buffer.create(if value_14 ~= nil then 17 else 1)
-		local o_26 = 0
-		buffer.writeu8(buf_23, o_26, if value_14 ~= nil then 1 else 0)
-		o_26 += 1
-		if value_14 ~= nil then
-			buffer.writef64(buf_23, o_26, value_14.x)
-			buffer.writef64(buf_23, o_26 + 8, value_14.y)
-			o_26 += 16
+	do
+		local target_2 = Functions.papa
+		local callback_2 = function() end
+		target_2:_setCallback(callback_2, function(value_13)
+			return nil
+		end)
+	end
+	do
+		local target_3 = Functions.quebec
+		local callback_3 = function(player, coord)
+			return if coord.x > 0 then coord else nil
 		end
-		return { buf_23 }
-	end)
+		target_3:_setCallback(callback_3, function(value_14)
+			local buf_23 = buffer.create(if value_14 ~= nil then 17 else 1)
+			local o_26 = 0
+			buffer.writeu8(buf_23, o_26, if value_14 ~= nil then 1 else 0)
+			o_26 += 1
+			if value_14 ~= nil then
+				buffer.writef64(buf_23, o_26, value_14.x)
+				buffer.writef64(buf_23, o_26 + 8, value_14.y)
+				o_26 += 16
+			end
+			return { buf_23 }
+		end)
+	end
 end
 -- Invoking the client, with and without a timeout.
 local invokeClient = TS.async(function(player)

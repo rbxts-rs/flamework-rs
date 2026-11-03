@@ -37,149 +37,169 @@ codec.checkWidth = function(width, value_1, where, unit)
 	local message = `[Flamework] {width} cannot hold {value_1}{unit}, at {where}`
 	error(message, 2)
 end
--- Past the 64 locals a function may hold, sends are packed in a do block of their own; past the 16 of a file the
--- same. The returned send fits in what is left.
+-- Sends that are whole statements, in a function and in the file: each in a do block with its packing, which leaves
+-- nothing live after it; the returned send has its packing ahead of the return.
 local function many(value)
-	local arg = `n{value + 0}`
-	local arg_1 = compute()
-	local length = #arg
-	local buf_2 = buffer.create(vsize(length) + length + 1)
-	local o_2 = 0
-	local length_1 = #arg
-	o_2 = vwrite(buf_2, o_2, length_1)
-	buffer.writestring(buf_2, o_2, arg)
-	o_2 += length_1
-	if not (arg_1 >= 0 and arg_1 <= 255 and arg_1 % 1 == 0) then
-		codec.checkWidth("u8", arg_1, "'bravo' [1]")
+	do
+		local arg = `n{value + 0}`
+		local arg_1 = compute()
+		local length = #arg
+		local buf_2 = buffer.create(vsize(length) + length + 1)
+		local o_2 = 0
+		local length_1 = #arg
+		o_2 = vwrite(buf_2, o_2, length_1)
+		buffer.writestring(buf_2, o_2, arg)
+		o_2 += length_1
+		if not (arg_1 >= 0 and arg_1 <= 255 and arg_1 % 1 == 0) then
+			codec.checkWidth("u8", arg_1, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_2, o_2, arg_1)
+		Events.bravo:_fire(buf_2)
 	end
-	buffer.writeu8(buf_2, o_2, arg_1)
-	Events.bravo:_fire(buf_2)
-	local arg_2 = `n{value + 1}`
-	local arg_3 = compute()
-	local length_2 = #arg_2
-	local buf_3 = buffer.create(vsize(length_2) + length_2 + 1)
-	local o_3 = 0
-	local length_3 = #arg_2
-	o_3 = vwrite(buf_3, o_3, length_3)
-	buffer.writestring(buf_3, o_3, arg_2)
-	o_3 += length_3
-	if not (arg_3 >= 0 and arg_3 <= 255 and arg_3 % 1 == 0) then
-		codec.checkWidth("u8", arg_3, "'bravo' [1]")
+	do
+		local arg_2 = `n{value + 1}`
+		local arg_3 = compute()
+		local length_2 = #arg_2
+		local buf_3 = buffer.create(vsize(length_2) + length_2 + 1)
+		local o_3 = 0
+		local length_3 = #arg_2
+		o_3 = vwrite(buf_3, o_3, length_3)
+		buffer.writestring(buf_3, o_3, arg_2)
+		o_3 += length_3
+		if not (arg_3 >= 0 and arg_3 <= 255 and arg_3 % 1 == 0) then
+			codec.checkWidth("u8", arg_3, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_3, o_3, arg_3)
+		Events.bravo:_fire(buf_3)
 	end
-	buffer.writeu8(buf_3, o_3, arg_3)
-	Events.bravo:_fire(buf_3)
-	local arg_4 = `n{value + 2}`
-	local arg_5 = compute()
-	local length_4 = #arg_4
-	local buf_4 = buffer.create(vsize(length_4) + length_4 + 1)
-	local o_4 = 0
-	local length_5 = #arg_4
-	o_4 = vwrite(buf_4, o_4, length_5)
-	buffer.writestring(buf_4, o_4, arg_4)
-	o_4 += length_5
-	if not (arg_5 >= 0 and arg_5 <= 255 and arg_5 % 1 == 0) then
-		codec.checkWidth("u8", arg_5, "'bravo' [1]")
+	do
+		local arg_4 = `n{value + 2}`
+		local arg_5 = compute()
+		local length_4 = #arg_4
+		local buf_4 = buffer.create(vsize(length_4) + length_4 + 1)
+		local o_4 = 0
+		local length_5 = #arg_4
+		o_4 = vwrite(buf_4, o_4, length_5)
+		buffer.writestring(buf_4, o_4, arg_4)
+		o_4 += length_5
+		if not (arg_5 >= 0 and arg_5 <= 255 and arg_5 % 1 == 0) then
+			codec.checkWidth("u8", arg_5, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_4, o_4, arg_5)
+		Events.bravo:_fire(buf_4)
 	end
-	buffer.writeu8(buf_4, o_4, arg_5)
-	Events.bravo:_fire(buf_4)
-	local arg_6 = `n{value + 3}`
-	local arg_7 = compute()
-	local length_6 = #arg_6
-	local buf_5 = buffer.create(vsize(length_6) + length_6 + 1)
-	local o_5 = 0
-	local length_7 = #arg_6
-	o_5 = vwrite(buf_5, o_5, length_7)
-	buffer.writestring(buf_5, o_5, arg_6)
-	o_5 += length_7
-	if not (arg_7 >= 0 and arg_7 <= 255 and arg_7 % 1 == 0) then
-		codec.checkWidth("u8", arg_7, "'bravo' [1]")
+	do
+		local arg_6 = `n{value + 3}`
+		local arg_7 = compute()
+		local length_6 = #arg_6
+		local buf_5 = buffer.create(vsize(length_6) + length_6 + 1)
+		local o_5 = 0
+		local length_7 = #arg_6
+		o_5 = vwrite(buf_5, o_5, length_7)
+		buffer.writestring(buf_5, o_5, arg_6)
+		o_5 += length_7
+		if not (arg_7 >= 0 and arg_7 <= 255 and arg_7 % 1 == 0) then
+			codec.checkWidth("u8", arg_7, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_5, o_5, arg_7)
+		Events.bravo:_fire(buf_5)
 	end
-	buffer.writeu8(buf_5, o_5, arg_7)
-	Events.bravo:_fire(buf_5)
-	local arg_8 = `n{value + 4}`
-	local arg_9 = compute()
-	local length_8 = #arg_8
-	local buf_6 = buffer.create(vsize(length_8) + length_8 + 1)
-	local o_6 = 0
-	local length_9 = #arg_8
-	o_6 = vwrite(buf_6, o_6, length_9)
-	buffer.writestring(buf_6, o_6, arg_8)
-	o_6 += length_9
-	if not (arg_9 >= 0 and arg_9 <= 255 and arg_9 % 1 == 0) then
-		codec.checkWidth("u8", arg_9, "'bravo' [1]")
+	do
+		local arg_8 = `n{value + 4}`
+		local arg_9 = compute()
+		local length_8 = #arg_8
+		local buf_6 = buffer.create(vsize(length_8) + length_8 + 1)
+		local o_6 = 0
+		local length_9 = #arg_8
+		o_6 = vwrite(buf_6, o_6, length_9)
+		buffer.writestring(buf_6, o_6, arg_8)
+		o_6 += length_9
+		if not (arg_9 >= 0 and arg_9 <= 255 and arg_9 % 1 == 0) then
+			codec.checkWidth("u8", arg_9, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_6, o_6, arg_9)
+		Events.bravo:_fire(buf_6)
 	end
-	buffer.writeu8(buf_6, o_6, arg_9)
-	Events.bravo:_fire(buf_6)
-	local arg_10 = `n{value + 5}`
-	local arg_11 = compute()
-	local length_10 = #arg_10
-	local buf_7 = buffer.create(vsize(length_10) + length_10 + 1)
-	local o_7 = 0
-	local length_11 = #arg_10
-	o_7 = vwrite(buf_7, o_7, length_11)
-	buffer.writestring(buf_7, o_7, arg_10)
-	o_7 += length_11
-	if not (arg_11 >= 0 and arg_11 <= 255 and arg_11 % 1 == 0) then
-		codec.checkWidth("u8", arg_11, "'bravo' [1]")
+	do
+		local arg_10 = `n{value + 5}`
+		local arg_11 = compute()
+		local length_10 = #arg_10
+		local buf_7 = buffer.create(vsize(length_10) + length_10 + 1)
+		local o_7 = 0
+		local length_11 = #arg_10
+		o_7 = vwrite(buf_7, o_7, length_11)
+		buffer.writestring(buf_7, o_7, arg_10)
+		o_7 += length_11
+		if not (arg_11 >= 0 and arg_11 <= 255 and arg_11 % 1 == 0) then
+			codec.checkWidth("u8", arg_11, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_7, o_7, arg_11)
+		Events.bravo:_fire(buf_7)
 	end
-	buffer.writeu8(buf_7, o_7, arg_11)
-	Events.bravo:_fire(buf_7)
-	local arg_12 = `n{value + 6}`
-	local arg_13 = compute()
-	local length_12 = #arg_12
-	local buf_8 = buffer.create(vsize(length_12) + length_12 + 1)
-	local o_8 = 0
-	local length_13 = #arg_12
-	o_8 = vwrite(buf_8, o_8, length_13)
-	buffer.writestring(buf_8, o_8, arg_12)
-	o_8 += length_13
-	if not (arg_13 >= 0 and arg_13 <= 255 and arg_13 % 1 == 0) then
-		codec.checkWidth("u8", arg_13, "'bravo' [1]")
+	do
+		local arg_12 = `n{value + 6}`
+		local arg_13 = compute()
+		local length_12 = #arg_12
+		local buf_8 = buffer.create(vsize(length_12) + length_12 + 1)
+		local o_8 = 0
+		local length_13 = #arg_12
+		o_8 = vwrite(buf_8, o_8, length_13)
+		buffer.writestring(buf_8, o_8, arg_12)
+		o_8 += length_13
+		if not (arg_13 >= 0 and arg_13 <= 255 and arg_13 % 1 == 0) then
+			codec.checkWidth("u8", arg_13, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_8, o_8, arg_13)
+		Events.bravo:_fire(buf_8)
 	end
-	buffer.writeu8(buf_8, o_8, arg_13)
-	Events.bravo:_fire(buf_8)
-	local arg_14 = `n{value + 7}`
-	local arg_15 = compute()
-	local length_14 = #arg_14
-	local buf_9 = buffer.create(vsize(length_14) + length_14 + 1)
-	local o_9 = 0
-	local length_15 = #arg_14
-	o_9 = vwrite(buf_9, o_9, length_15)
-	buffer.writestring(buf_9, o_9, arg_14)
-	o_9 += length_15
-	if not (arg_15 >= 0 and arg_15 <= 255 and arg_15 % 1 == 0) then
-		codec.checkWidth("u8", arg_15, "'bravo' [1]")
+	do
+		local arg_14 = `n{value + 7}`
+		local arg_15 = compute()
+		local length_14 = #arg_14
+		local buf_9 = buffer.create(vsize(length_14) + length_14 + 1)
+		local o_9 = 0
+		local length_15 = #arg_14
+		o_9 = vwrite(buf_9, o_9, length_15)
+		buffer.writestring(buf_9, o_9, arg_14)
+		o_9 += length_15
+		if not (arg_15 >= 0 and arg_15 <= 255 and arg_15 % 1 == 0) then
+			codec.checkWidth("u8", arg_15, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_9, o_9, arg_15)
+		Events.bravo:_fire(buf_9)
 	end
-	buffer.writeu8(buf_9, o_9, arg_15)
-	Events.bravo:_fire(buf_9)
-	local arg_16 = `n{value + 8}`
-	local arg_17 = compute()
-	local length_16 = #arg_16
-	local buf_10 = buffer.create(vsize(length_16) + length_16 + 1)
-	local o_10 = 0
-	local length_17 = #arg_16
-	o_10 = vwrite(buf_10, o_10, length_17)
-	buffer.writestring(buf_10, o_10, arg_16)
-	o_10 += length_17
-	if not (arg_17 >= 0 and arg_17 <= 255 and arg_17 % 1 == 0) then
-		codec.checkWidth("u8", arg_17, "'bravo' [1]")
+	do
+		local arg_16 = `n{value + 8}`
+		local arg_17 = compute()
+		local length_16 = #arg_16
+		local buf_10 = buffer.create(vsize(length_16) + length_16 + 1)
+		local o_10 = 0
+		local length_17 = #arg_16
+		o_10 = vwrite(buf_10, o_10, length_17)
+		buffer.writestring(buf_10, o_10, arg_16)
+		o_10 += length_17
+		if not (arg_17 >= 0 and arg_17 <= 255 and arg_17 % 1 == 0) then
+			codec.checkWidth("u8", arg_17, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_10, o_10, arg_17)
+		Events.bravo:_fire(buf_10)
 	end
-	buffer.writeu8(buf_10, o_10, arg_17)
-	Events.bravo:_fire(buf_10)
-	local arg_18 = `n{value + 9}`
-	local arg_19 = compute()
-	local length_18 = #arg_18
-	local buf_11 = buffer.create(vsize(length_18) + length_18 + 1)
-	local o_11 = 0
-	local length_19 = #arg_18
-	o_11 = vwrite(buf_11, o_11, length_19)
-	buffer.writestring(buf_11, o_11, arg_18)
-	o_11 += length_19
-	if not (arg_19 >= 0 and arg_19 <= 255 and arg_19 % 1 == 0) then
-		codec.checkWidth("u8", arg_19, "'bravo' [1]")
+	do
+		local arg_18 = `n{value + 9}`
+		local arg_19 = compute()
+		local length_18 = #arg_18
+		local buf_11 = buffer.create(vsize(length_18) + length_18 + 1)
+		local o_11 = 0
+		local length_19 = #arg_18
+		o_11 = vwrite(buf_11, o_11, length_19)
+		buffer.writestring(buf_11, o_11, arg_18)
+		o_11 += length_19
+		if not (arg_19 >= 0 and arg_19 <= 255 and arg_19 % 1 == 0) then
+			codec.checkWidth("u8", arg_19, "'bravo' [1]")
+		end
+		buffer.writeu8(buf_11, o_11, arg_19)
+		Events.bravo:_fire(buf_11)
 	end
-	buffer.writeu8(buf_11, o_11, arg_19)
-	Events.bravo:_fire(buf_11)
 	do
 		local arg_20 = `n{value + 10}`
 		local arg_21 = compute()
@@ -1150,32 +1170,36 @@ local function many(value)
 	buffer.writeu8(buf_72, 16, 0)
 	return Events.delta:_fire(buf_72)
 end
-local arg_141 = compute()
-local length_140 = #"top0"
-local buf_73 = buffer.create(vsize(length_140) + length_140 + 17)
-local o_72 = 0
-local text = "top0"
-local length_141 = #text
-o_72 = vwrite(buf_73, o_72, length_141)
-buffer.writestring(buf_73, o_72, text)
-o_72 += length_141
-buffer.writeu8(buf_73, o_72, 2)
-buffer.writef64(buf_73, o_72 + 1, arg_141)
-buffer.writef64(buf_73, o_72 + 9, 0)
-Events.foxtrot:_fire(buf_73)
-local arg_142 = compute()
-local length_142 = #"top1"
-local buf_74 = buffer.create(vsize(length_142) + length_142 + 17)
-local o_73 = 0
-local text_1 = "top1"
-local length_143 = #text_1
-o_73 = vwrite(buf_74, o_73, length_143)
-buffer.writestring(buf_74, o_73, text_1)
-o_73 += length_143
-buffer.writeu8(buf_74, o_73, 2)
-buffer.writef64(buf_74, o_73 + 1, arg_142)
-buffer.writef64(buf_74, o_73 + 9, 1)
-Events.foxtrot:_fire(buf_74)
+do
+	local arg_141 = compute()
+	local length_140 = #"top0"
+	local buf_73 = buffer.create(vsize(length_140) + length_140 + 17)
+	local o_72 = 0
+	local text = "top0"
+	local length_141 = #text
+	o_72 = vwrite(buf_73, o_72, length_141)
+	buffer.writestring(buf_73, o_72, text)
+	o_72 += length_141
+	buffer.writeu8(buf_73, o_72, 2)
+	buffer.writef64(buf_73, o_72 + 1, arg_141)
+	buffer.writef64(buf_73, o_72 + 9, 0)
+	Events.foxtrot:_fire(buf_73)
+end
+do
+	local arg_142 = compute()
+	local length_142 = #"top1"
+	local buf_74 = buffer.create(vsize(length_142) + length_142 + 17)
+	local o_73 = 0
+	local text_1 = "top1"
+	local length_143 = #text_1
+	o_73 = vwrite(buf_74, o_73, length_143)
+	buffer.writestring(buf_74, o_73, text_1)
+	o_73 += length_143
+	buffer.writeu8(buf_74, o_73, 2)
+	buffer.writef64(buf_74, o_73 + 1, arg_142)
+	buffer.writef64(buf_74, o_73 + 9, 1)
+	Events.foxtrot:_fire(buf_74)
+end
 do
 	local arg_143 = compute()
 	local length_144 = #"top2"

@@ -1,15 +1,27 @@
 //! Where a call site's packing goes (`transformNetworkingCall.ts`: `emitWithStatements`, `hoistsCleanly`,
-//! `evaluatedBefore`; `util/luauLimits.ts`: `LocalBudget`, `localsAround`, `enclosingScope`, `enclosingStatement`,
-//! `declaredLocals`, `sureLocalsOf`). AST facts only, read off the nodes as written.
-
-use std::collections::HashMap;
+//! `evaluatedBefore`; `util/luauLimits.ts`: `enclosingScope`, `enclosingStatement`), and what the compiler does not
+//! count of the locals live there. AST facts only, read off the nodes as written.
+//!
+//! The locals live where a site's statements land come from the compiler (`Cx::live_before_statement`), exact for
+//! the Luau emitted so far. What it cannot see when the hook runs (its documented gaps) is added here
+//! ([`unseen_locals`], [`MAIN_CHUNK_LATE`]) or avoided ([`in_class_expression_static_block`]).
 
 use rbxts_plugin::ts::{Kind, Node, P};
 
-/// `FUNCTION_LOCAL_BUDGET`: Flamework locals a function may take ahead of its statements.
-pub(crate) const FUNCTION_LOCAL_BUDGET: u32 = 64;
-/// `COMPACT_LOCALS`.
-pub(crate) const COMPACT_LOCALS: u32 = 150;
+/// Locals one send may leave live ahead of its statement, past which it is packed in a function of its own.
+pub(crate) const SEND_LEAK: u32 = 8;
+/// Locals the sends of one function may leave live ahead of their statements (`FUNCTION_LOCAL_BUDGET`).
+pub(crate) const FUNCTION_LEAK: u32 = 64;
+/// The same for the file's main chunk (`LOCAL_BUDGET`).
+pub(crate) const FILE_LEAK: u32 = 16;
+/// Live locals, the leaked ones included, past which a send is not packed ahead of its statement: Luau's 200, less
+/// the margin of 20 kept everywhere ([`crate::serializer::limits::MARGIN`]).
+pub(crate) const AHEAD_LOCALS: u32 = 180;
+/// Main-chunk locals the compiler's count cannot include when a site in the main chunk is built: what the site's own
+/// build hoists ahead of the root statement once it is done (at most the file's [`crate::serializer::LOCAL_BUDGET`]
+/// slots, `codec`, three global aliases, the varint helpers and `zeros`: 24), and what the end of the file decides
+/// (a later plugin import, `local TS`).
+pub(crate) const MAIN_CHUNK_LATE: u32 = 32;
 
 /// The scope a call site's code lands in (`enclosingScope`): the function around it (a class static block counts),
 /// or the file.
@@ -17,6 +29,16 @@ pub(crate) const COMPACT_LOCALS: u32 = 150;
 pub(crate) enum Scope {
     Function(P<Node>),
     File,
+}
+
+impl Scope {
+    /// How many locals the sends of this scope may leave live ahead of their statements.
+    pub(crate) fn leak_cap(self) -> u32 {
+        match self {
+            Scope::Function(_) => FUNCTION_LEAK,
+            Scope::File => FILE_LEAK,
+        }
+    }
 }
 
 /// `enclosingScope(node)`.
@@ -43,88 +65,23 @@ pub(crate) fn enclosing_statement(node: P<Node>) -> Option<P<Node>> {
     None
 }
 
-/// Flamework's locals in each scope (`LocalBudget`), for the networking call sites' claims. The file's budget is the
-/// serializer's (`claim_file` asks it), shared with the file's hoisted helpers.
-#[derive(Debug, Default)]
-pub(crate) struct Budget {
-    used: HashMap<P<Node>, u32>,
-    /// Claims by the statement, as written, that their locals went ahead of.
-    placed: HashMap<P<Node>, u32>,
-}
-
-impl Budget {
-    /// `claim(scope, count, statement)` for a function scope.
-    pub(crate) fn claim_function(&mut self, scope: P<Node>, count: u32, statement: P<Node>) -> bool {
-        let used = self.used.get(&scope).copied().unwrap_or(0);
-        if used + count > FUNCTION_LOCAL_BUDGET {
-            return false;
-        }
-        self.used.insert(scope, used + count);
-        *self.placed.entry(statement).or_default() += count;
-        true
-    }
-
-    /// Records a claim the file's budget granted ahead of `statement`.
-    pub(crate) fn place(&mut self, count: u32, statement: P<Node>) {
-        *self.placed.entry(statement).or_default() += count;
-    }
-
-    /// `ahead(statement)`.
-    pub(crate) fn ahead(&self, statement: P<Node>) -> u32 {
-        self.placed.get(&statement).copied().unwrap_or(0)
-    }
-}
-
-/// `localsAround(node, budget)`: the locals live where code put ahead of `node`'s statement runs, as far as the
-/// source tells, Flamework's claims ahead of the statements of each block around it included.
-pub(crate) fn locals_around(node: P<Node>, budget: &Budget) -> u32 {
+/// Locals live at `node` that `Cx::live_before_statement` does not count: one for each `for … of` around it, in the
+/// same function, whose head assigns to existing targets (`for ([a = 1] of list)`, `for (obj[key()] of list)`):
+/// roblox-ts lowers such a head after the body, so its temporary is not seen yet (rbxts-rs documents it as one local
+/// and one register too few). A head that declares its variables (`for (const x of list)`) is counted in full.
+pub(crate) fn unseen_locals(node: P<Node>) -> u32 {
+    let mut count = 0;
     let mut child = node;
     let mut current = node.parent();
-    let mut count = 0;
     while let Some(parent) = current {
-        if matches!(
-            parent.kind(),
-            Kind::Block | Kind::SourceFile | Kind::ModuleBlock | Kind::CaseClause | Kind::DefaultClause
-        ) {
-            let file = parent.kind() == Kind::SourceFile;
-            for &statement in parent.statements() {
-                count += budget.ahead(statement);
-                if statement == child {
-                    break;
-                }
-                count += if file { sure_locals_of(statement) } else { declared_names(statement) };
-            }
-            if file {
-                return count;
-            }
-        }
-        if matches!(parent.kind(), Kind::ForOfStatement | Kind::ForInStatement | Kind::ForStatement)
-            && child == parent.statement()
-            && let Some(initializer) = parent.initializer()
-            && initializer.kind() == Kind::VariableDeclarationList
-        {
-            for &declaration in initializer.as_variable_declaration_list().declarations().nodes().iter() {
-                count += binding_names(declaration.name().expect("a declaration has a name"));
-            }
-        }
         if tsrs_ast::is_function_like(Some(parent)) {
-            for &parameter in parent.parameters() {
-                let name = parameter.name().expect("a parameter has a name");
-                // `this` is a type annotation, not a parameter.
-                if !(name.kind() == Kind::Identifier && name.text() == "this") {
-                    count += binding_names(name);
-                }
-            }
-            if matches!(
-                parent.kind(),
-                Kind::MethodDeclaration | Kind::GetAccessor | Kind::SetAccessor | Kind::Constructor
-            ) {
-                count += 1;
-            }
-            return count;
+            break;
         }
-        if parent.kind() == Kind::ClassStaticBlockDeclaration {
-            return count;
+        if parent.kind() == Kind::ForOfStatement
+            && parent.statement() == child
+            && parent.initializer().is_some_and(|head| head.kind() != Kind::VariableDeclarationList)
+        {
+            count += 1;
         }
         child = parent;
         current = parent.parent();
@@ -132,106 +89,20 @@ pub(crate) fn locals_around(node: P<Node>, budget: &Budget) -> u32 {
     count
 }
 
-/// `declaredNames(statement)`: the locals a statement declares in its block.
-pub(crate) fn declared_names(statement: P<Node>) -> u32 {
-    match statement.kind() {
-        Kind::VariableStatement => statement
-            .as_variable_statement()
-            .declaration_list()
-            .as_variable_declaration_list()
-            .declarations()
-            .nodes()
-            .iter()
-            .map(|d| binding_names(d.name().expect("a declaration has a name")))
-            .sum(),
-        Kind::FunctionDeclaration | Kind::ClassDeclaration => u32::from(statement.name().is_some()),
-        _ => 0,
-    }
-}
-
-/// `bindingNames(name)`.
-fn binding_names(name: P<Node>) -> u32 {
-    match name.kind() {
-        Kind::Identifier => 1,
-        Kind::ObjectBindingPattern | Kind::ArrayBindingPattern => name
-            .elements()
-            .iter()
-            .filter(|e| e.kind() != Kind::OmittedExpression)
-            .map(|e| binding_names(e.name().expect("a binding element has a name")))
-            .sum(),
-        _ => 0,
-    }
-}
-
-/// `sureLocalsOf(statement)`: the main-chunk locals a top-level statement is sure to keep.
-fn sure_locals_of(statement: P<Node>) -> u32 {
-    let flags = statement.modifier_flags();
-    if flags.intersects(tsrs_ast::ModifierFlags::Ambient) {
-        return 0;
-    }
-    let exported = flags.intersects(tsrs_ast::ModifierFlags::Export);
-    match statement.kind() {
-        Kind::VariableStatement => {
-            let list = statement.as_variable_statement().declaration_list();
-            // An exported `let` lives in the module's exports table rather than a local.
-            if exported && !list.flags().intersects(tsrs_ast::NodeFlags::Const) {
-                return 0;
-            }
-            list.as_variable_declaration_list()
-                .declarations()
-                .nodes()
-                .iter()
-                .filter(|d| d.initializer().is_some_and(is_sure_value))
-                .map(|d| binding_names(d.name().expect("a declaration has a name")))
-                .sum()
-        }
-        Kind::FunctionDeclaration => u32::from(statement.name().is_some() && statement.body().is_some()),
-        Kind::ClassDeclaration => u32::from(statement.name().is_some()),
-        Kind::EnumDeclaration => u32::from(!flags.intersects(tsrs_ast::ModifierFlags::Const)),
-        _ => 0,
-    }
-}
-
-/// Libraries whose calls on constants Luau folds (`FOLDABLE_LIBRARIES`).
-const FOLDABLE_LIBRARIES: [&str; 9] = ["math", "bit32", "string", "vector", "buffer", "type", "typeof", "tostring", "tonumber"];
-
-/// `isSureValue`: an initializer Luau keeps in a register.
-fn is_sure_value(expression: P<Node>) -> bool {
-    let mut expression = expression;
-    while matches!(
-        expression.kind(),
-        Kind::ParenthesizedExpression
-            | Kind::AsExpression
-            | Kind::NonNullExpression
-            | Kind::TypeAssertionExpression
-            | Kind::SatisfiesExpression
-    ) {
-        expression = expression.expression().expect("a wrapper has an expression");
-    }
-    if expression.kind() == Kind::CallExpression
-        && expression.arguments().iter().all(|&a| tsrs_ast::is_literal_expression(a))
-        && let Some(callee) = expression.expression()
-    {
-        let library = if callee.kind() == Kind::PropertyAccessExpression { callee.expression() } else { Some(callee) };
-        if let Some(library) = library
-            && library.kind() == Kind::Identifier
-            && FOLDABLE_LIBRARIES.contains(&library.text())
-        {
+/// `node` is in a class expression's static block (not in a function inside it): there the compiler's count misses
+/// the prerequisites the statement around the class emitted before it, so a site's code goes in a function of its own.
+pub(crate) fn in_class_expression_static_block(node: P<Node>) -> bool {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        if tsrs_ast::is_function_like(Some(parent)) {
             return false;
         }
+        if parent.kind() == Kind::ClassStaticBlockDeclaration {
+            return parent.parent().is_some_and(|class| class.kind() == Kind::ClassExpression);
+        }
+        current = parent.parent();
     }
-    matches!(
-        expression.kind(),
-        Kind::CallExpression
-            | Kind::NewExpression
-            | Kind::ObjectLiteralExpression
-            | Kind::ArrayLiteralExpression
-            | Kind::ArrowFunction
-            | Kind::FunctionExpression
-            | Kind::ClassExpression
-            | Kind::TaggedTemplateExpression
-            | Kind::AwaitExpression
-    )
+    false
 }
 
 /// `hoistsCleanly(node, hoisted)`: evaluating `hoisted` ahead of the statement that holds `node` is the same as

@@ -230,7 +230,7 @@ pub(crate) struct Encoding {
 }
 
 /// A value of a call site (`values[i]`).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum SiteValues {
     List(Vec<Expr>),
     Table(Expr),
@@ -750,7 +750,8 @@ impl Gen<'_, '_, '_> {
 
     /// [`Self::fitted`], saying which build it kept: `true` for the compact rebuild, `false` for the first build.
     /// `outer` is the locals live around the code (a call site's), `tail` statements measured after the body, and
-    /// `what` names the value in a refusal (a call site, `None`, keeps its compact build instead).
+    /// `what` names the value in a refusal (a call site, `None`, keeps its compact build instead, and sets
+    /// `site_refused`).
     #[allow(clippy::type_complexity)]
     pub(crate) fn fitted_choice(
         &mut self,
@@ -803,7 +804,11 @@ impl Gen<'_, '_, '_> {
                     Some(what) => Err(self.fail(&format!(
                         "the code for {what} {reason}, built one field at a time or not. Split the type into smaller named types"
                     ))),
-                    None => Ok((rebuilt, true)),
+                    None => {
+                        // A call site's packing is moved into a function of its own, away from the live locals.
+                        self.g.site_refused = true;
+                        Ok((rebuilt, true))
+                    }
                 },
             }
         })();

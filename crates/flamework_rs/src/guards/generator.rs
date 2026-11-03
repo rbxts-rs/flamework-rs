@@ -28,9 +28,9 @@ pub const GUARD_RECURSION_LIMIT: u32 = 1000;
 /// `TYPE_NESTING_LIMIT`: how many types deep a guard's type may nest before the build gives up on it.
 const TYPE_NESTING_LIMIT: usize = 500;
 
-/// `GUARD_LOCALS` (= `COMPACT_LOCALS`): how many guards a function that holds them keeps in locals of its own before
-/// it keeps them in a table.
-const GUARD_LOCALS: usize = 150;
+/// `GUARD_LOCALS`: how many guards a function that holds them keeps in locals of its own before it keeps them in a
+/// table: Luau's 200 locals, less a margin of 20.
+const GUARD_LOCALS: usize = 180;
 
 /// Types that compile to `t.typeof("<name>")` (`RBX_TYPES_NEW`): userdata `t` has no alias for.
 const RBX_TYPES_NEW: [&str; 2] = ["buffer", "InstanceHandle"];
@@ -1132,6 +1132,6 @@ mod tests {
     fn recursion_limit_matches_the_ts() {
         assert_eq!(GUARD_RECURSION_LIMIT, 1000);
         assert_eq!(TYPE_NESTING_LIMIT, 500);
-        assert_eq!(GUARD_LOCALS, 150);
+        assert_eq!(GUARD_LOCALS, 180);
     }
 }

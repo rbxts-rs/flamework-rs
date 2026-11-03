@@ -404,19 +404,19 @@ pub struct Generator {
     pub(crate) compact: bool,
     pub(crate) hidden_here: HashMap<String, Option<P<Symbol>>>,
     pub(crate) global_aliases: HashMap<String, Id>,
-    /// The file's budget of Flamework locals in the main chunk (`LocalBudget`, keyed by file): what the file's
-    /// hoisted helpers claimed (live to the file's end), and what its networking call sites claimed ahead of their
-    /// statements.
+    /// The main-chunk locals the file's hoisted helpers took (`LocalBudget`, keyed by file), live to the file's end.
     pub(crate) budget_used: u32,
-    pub(crate) budget_placed: u32,
-    /// The function scopes' budgets and every claim's statement, for networking's call sites.
-    pub(crate) net_budget: crate::networking::scope::Budget,
+    /// The locals networking's call sites left live ahead of their statements, by scope
+    /// ([`crate::networking::scope::Scope::leak_cap`]).
+    pub(crate) net_leaked: HashMap<crate::networking::scope::Scope, u32>,
     /// A refusal recorded while building (a hidden global), returned when the value is done.
     pub(crate) sticky: Option<rbxts_plugin::Abort>,
     /// `TRUE`: a set's values, seen as a map's.
     pub(crate) true_kind: Option<Rc<Kind>>,
     /// Ordering a macro's union ([`union_member_order`]): a failure names the macro, not a serializer.
     pub(crate) ordering_macro: bool,
+    /// A call site's packing fits Luau's limits in neither form among its live locals ([`Gen::fitted_choice`]).
+    pub(crate) site_refused: bool,
     /// A `wire-harvest` companion ([`wire`]): guards become `__fwguard(<key>)`.
     #[cfg(feature = "wire-harvest")]
     pub(crate) companion: bool,
@@ -476,11 +476,11 @@ impl Generator {
             hidden_here: HashMap::new(),
             global_aliases: HashMap::new(),
             budget_used: 0,
-            budget_placed: 0,
-            net_budget: Default::default(),
+            net_leaked: HashMap::new(),
             sticky: None,
             true_kind: None,
             ordering_macro: false,
+            site_refused: false,
             #[cfg(feature = "wire-harvest")]
             companion: false,
         }
@@ -488,20 +488,10 @@ impl Generator {
 
     /// `LocalBudget.claim(file, count)`.
     pub fn claim_locals(&mut self, count: u32) -> bool {
-        if self.budget_used + self.budget_placed + count > LOCAL_BUDGET {
+        if self.budget_used + count > LOCAL_BUDGET {
             return false;
         }
         self.budget_used += count;
-        true
-    }
-
-    /// `LocalBudget.claim(file, count, statement)`: a networking call site's locals ahead of a top-level statement.
-    pub fn claim_file_locals(&mut self, count: u32, statement: P<Node>) -> bool {
-        if self.budget_used + self.budget_placed + count > LOCAL_BUDGET {
-            return false;
-        }
-        self.budget_placed += count;
-        self.net_budget.place(count, statement);
         true
     }
 }
@@ -645,11 +635,26 @@ pub fn build_decoder(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<Type
     Ok(decoder.unwrap_or_else(rbxts_luau::create::nil))
 }
 
-/// A networking call site's code ([`crate::networking::calls`]), built at its hook; what it hoisted is placed.
+/// A networking call site's code ([`crate::networking::calls`]), built at its hook ahead of its arguments; what it
+/// hoisted is placed.
 pub(crate) fn call_site(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, shape: &CallShape) -> PResult<BuiltCall> {
     let (call, hoisted) = run(fw, cx, node, |gn| crate::networking::calls::build(gn, node, shape))?;
     hand_out(fw, cx, hoisted, None);
     Ok(call)
+}
+
+/// A send's packing ([`crate::networking::calls::pack`]), once its arguments are compiled, among `outer` live
+/// locals; what it hoisted is placed. `false` when it fits Luau's limits in neither form there.
+pub(crate) fn call_site_packing(
+    fw: &FwInstance,
+    cx: &mut Cx<'_>,
+    node: P<Node>,
+    call: &mut BuiltCall,
+    outer: u32,
+) -> PResult<bool> {
+    let (fits, hoisted) = run(fw, cx, node, |gn| crate::networking::calls::pack(gn, call, outer))?;
+    hand_out(fw, cx, hoisted, None);
+    Ok(fits)
 }
 
 /// `packingKey`: a list's wire key (a function type's result's with `result`).

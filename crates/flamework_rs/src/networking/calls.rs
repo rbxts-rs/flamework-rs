@@ -9,10 +9,17 @@
 //! the serializer's generator ([`crate::serializer`]) and the bindings as roblox-ts compiled them, from the arguments
 //! compiled by the compiler in the TS statements' order.
 //!
-//! **Where it goes** (`emitWithStatements`, decided when the site is built at its hook, with its `LocalBudget`
-//! claim): ahead of the statement around the call when that runs them exactly when the call runs
-//! (`hoistsCleanly`) and the scope's budget of Flamework locals has room; in a block with the statement past the
-//! budget; in a function called where the call is otherwise. A call reached through `?.` (`a?.b.fire(x)`) is
+//! **Where it goes** (`Route`, `place`; `emitWithStatements`): a send that is a whole statement goes in a `do`
+//! block with its statement (`do <packing>; target:_fire(...) end`), so its locals end with it; a returned send ahead
+//! of its `return`, which ends the block anyway. A send elsewhere in a statement goes ahead of the statement when
+//! that runs its code exactly when the call runs (`hoistsCleanly`) and the locals it leaves live there stay within
+//! [`scope::SEND_LEAK`] per send and its scope's cap ([`scope::Scope::leak_cap`]), counted against the compiler's
+//! live locals ([`scope::AHEAD_LOCALS`]); in a function called where the call is otherwise. The packing is fitted to
+//! Luau's limits among the locals live where it lands: the compiler's count (`Cx::live_before_statement`, asked once
+//! the arguments are compiled, so that whatever their hooks put ahead of the statement is in it), what the compiler
+//! cannot see yet ([`scope::unseen_locals`], [`scope::MAIN_CHUNK_LATE`]), and the site's own statements ahead of
+//! the packing; only those in a function of its own, where a packing with no room in either form where the call is
+//! goes instead. A call reached through `?.` (`a?.b.fire(x)`) is
 //! lowered by the compiler inside the chain's nil check, its statements there: the chain's offer of its outermost
 //! call (`Interest::calls_chain_outer`) is declined, so the compiler evaluates each operand ahead of a `?.` once,
 //! into its own local, before the arguments, and the send goes through those values, as JavaScript does. (The TS
@@ -31,13 +38,13 @@ use tsrs_checker::{ObjectFlags, TypeFlags};
 use rbxts_plugin::{CallSite, Claim, Cx, LuauExpr, PResult};
 
 pub(crate) use super::analysis::CallShape;
-use super::scope::{self, COMPACT_LOCALS, Scope};
+use super::scope::{self, Scope};
 use crate::luau_names::Names;
 use crate::plugin::FwInstance;
 use crate::serializer::codegen::SiteValues;
 use crate::serializer::lit::Lit;
 use crate::serializer::luau;
-use crate::serializer::{EncodingSite, GResult, Gen, Id, name_output};
+use crate::serializer::{EncodingSite, GResult, Gen, Id, Shape, name_output};
 
 /// Where a call site's statements go (`emitWithStatements`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,7 +53,7 @@ pub(crate) enum Placement {
     Bare,
     /// Ahead of the statement around the call (`prereqList`).
     Ahead,
-    /// Ahead of the statement, in a block with it (`scopedStatements`).
+    /// In a `do` block with its statement, the call's whole expression statement (`scopedStatements`).
     Scoped,
     /// In a function called where the call is.
     Function,
@@ -74,14 +81,6 @@ pub(crate) enum Read {
 }
 
 impl Value {
-    /// The local the value is bound to.
-    fn local(&self) -> Option<Id> {
-        match self.read {
-            Read::Local(id) => Some(id),
-            _ => None,
-        }
-    }
-
     /// The value as the packing reads it.
     fn as_e(&self) -> Expr {
         match self.read {
@@ -94,8 +93,6 @@ impl Value {
 /// A networking call site's code, built at its hook ([`crate::serializer::call_site`]).
 #[derive(Debug)]
 pub struct BuiltCall {
-    pub(crate) shape: CallShape,
-    pub(crate) placement: Placement,
     /// The target's local, when it is bound.
     target: Option<Id>,
     /// The arguments ahead of the packed ones (players, a timeout), passed through.
@@ -106,24 +103,14 @@ pub struct BuiltCall {
     spread: Option<(Id, Vec<P<Node>>)>,
     /// `setCallback`'s callback argument and its local.
     callback: Option<(P<Node>, Id)>,
-    /// The packing.
+    /// A send's packed list, the values the packing reads and the member's name, for [`pack`].
+    list: Option<(Shape, SiteValues, Option<String>)>,
+    /// The packing, built by [`pack`].
     encoding: Vec<Stmt>,
     payload: Option<Id>,
     blobs: Option<Id>,
     /// `setCallback`'s packer: `function(value) <pack>; return { payload, blobs? } end`.
     pack: Option<Expr>,
-}
-
-impl BuiltCall {
-    /// The locals it declares, in the order its statements declare them.
-    fn declared(&self) -> Vec<Id> {
-        let mut ids: Vec<Id> = self.target.into_iter().collect();
-        ids.extend(self.leading.iter().filter_map(Value::local));
-        ids.extend(self.packed.iter().filter_map(Value::local));
-        ids.extend(self.spread.as_ref().map(|(id, _)| *id));
-        ids.extend(self.callback.map(|(_, id)| id));
-        ids
-    }
 }
 
 /// `state.isUserMacro(symbol)` of the callee: such a call is the user macro's, never networking's.
@@ -136,18 +123,18 @@ fn is_user_macro_call(fw: &FwInstance, cx: &mut Cx<'_>, call: P<Node>) -> bool {
 
 // --- building ------------------------------------------------------------------------------------------------------
 
-/// Builds a call site's code with the file's generator: its bindings, its packing, and where it goes.
+/// Builds a call site's code with the file's generator, ahead of its arguments: its bindings, and a callback's packer.
+/// A send's packing is built by [`pack`] once the arguments are compiled.
 pub(crate) fn build(gn: &mut Gen<'_, '_, '_>, node: P<Node>, shape: &CallShape) -> GResult<BuiltCall> {
     match shape {
-        CallShape::Send { target, list, rest_index, .. } => build_send(gn, node, shape, *target, *list, *rest_index),
-        CallShape::Callback { target, function } => build_callback(gn, node, shape, *target, *function),
+        CallShape::Send { target, list, rest_index, .. } => build_send(gn, node, *target, *list, *rest_index),
+        CallShape::Callback { target, function } => build_callback(gn, node, *target, *function),
     }
 }
 
 fn build_send(
     gn: &mut Gen<'_, '_, '_>,
     node: P<Node>,
-    shape: &CallShape,
     target: P<Node>,
     list: P<rbxts_plugin::ts::Type>,
     rest_index: usize,
@@ -187,40 +174,37 @@ fn build_send(
         SiteValues::List(packed.iter().map(Value::as_e).collect())
     };
 
-    // The packing lands among the locals of the function the call is in: its own, those Flamework's code ahead of it
-    // holds there still, and the ones bound above.
-    let bound = u32::from(target_local.is_some())
-        + leading.iter().filter(|v| v.local().is_some()).count() as u32
-        + packed.iter().filter(|v| v.local().is_some()).count() as u32
-        + u32::from(spread.is_some());
-    let outer = live_locals(gn, node) + bound;
     let name = member_name(gn, target);
     let shape_list = gn.list_of(list, None)?;
-    let encoding = gn.encode_elements(shape_list, values, EncodingSite { name, result: false, outer })?;
-
-    let mut call = BuiltCall {
-        shape: shape.clone(),
-        placement: Placement::Bare,
+    Ok(BuiltCall {
         target: target_local,
         leading,
         packed,
         spread,
         callback: None,
-        encoding: encoding.statements,
-        payload: encoding.payload,
-        blobs: encoding.blobs,
+        list: Some((shape_list, values, name)),
+        encoding: Vec::new(),
+        payload: None,
+        blobs: None,
         pack: None,
-    };
-    let mut hoisted = vec![target];
-    hoisted.extend_from_slice(arguments);
-    place(gn, node, &mut call, &hoisted);
-    Ok(call)
+    })
+}
+
+/// A send's packing, fitted to Luau's limits among `outer` live locals (a callback's packer is built with it, a
+/// function of its own); `false` when it fits in neither form there, its compact form kept.
+pub(crate) fn pack(gn: &mut Gen<'_, '_, '_>, call: &mut BuiltCall, outer: u32) -> GResult<bool> {
+    let Some((list, values, name)) = call.list.take() else { return Ok(true) };
+    gn.g.site_refused = false;
+    let encoding = gn.encode_elements(list, values, EncodingSite { name, result: false, outer })?;
+    call.encoding = encoding.statements;
+    call.payload = encoding.payload;
+    call.blobs = encoding.blobs;
+    Ok(!std::mem::take(&mut gn.g.site_refused))
 }
 
 fn build_callback(
     gn: &mut Gen<'_, '_, '_>,
     node: P<Node>,
-    shape: &CallShape,
     target: P<Node>,
     function: P<rbxts_plugin::ts::Type>,
 ) -> GResult<BuiltCall> {
@@ -241,21 +225,18 @@ fn build_callback(
     }));
     let pack = crate::serializer::codegen::function(&[value], body);
 
-    let mut call = BuiltCall {
-        shape: shape.clone(),
-        placement: Placement::Bare,
+    Ok(BuiltCall {
         target: target_local,
         leading: Vec::new(),
         packed: Vec::new(),
         spread: None,
         callback: Some((callback, callback_local)),
+        list: None,
         encoding: Vec::new(),
         payload: None,
         blobs: None,
         pack: Some(pack),
-    };
-    place(gn, node, &mut call, &[target, callback]);
-    Ok(call)
+    })
 }
 
 /// `bindArgument`: an argument read where it is (an identifier or a literal, through a slot), else bound to a new
@@ -302,49 +283,118 @@ fn member_name(gn: &Gen<'_, '_, '_>, target: P<Node>) -> Option<String> {
     }
 }
 
-/// `liveLocals(budget, node)`: the locals live where code put ahead of the call's statement lands.
-fn live_locals(gn: &Gen<'_, '_, '_>, node: P<Node>) -> u32 {
-    let around = scope::locals_around(node, &gn.g.net_budget);
-    match scope::enclosing_scope(node) {
-        Scope::File => around + gn.g.budget_used,
-        Scope::Function(_) => around,
+/// Where a site's statements go, as far as the source tells before they are built ([`place`] decides).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Route {
+    /// Reached through `?.`: [`Placement::Chain`].
+    Chain,
+    /// Not evaluated exactly when its statement starts (`hoistsCleanly`), where the compiler's count is short (a
+    /// class expression's static block), or a packing with no room where the call is: [`Placement::Function`].
+    Function,
+    /// The call is its expression statement: [`Placement::Scoped`].
+    Whole,
+    /// In a `return` statement, which ends its block: [`Placement::Ahead`], which leaves nothing live after it.
+    Returned,
+    /// Elsewhere in a statement: [`Placement::Ahead`] within the caps, else [`Placement::Function`].
+    Ahead,
+}
+
+/// The site's [`Route`] (`emitWithStatements`' tests on the source).
+fn route(node: P<Node>, shape: &CallShape) -> Route {
+    if in_optional_chain(node, shape) {
+        return Route::Chain;
+    }
+    let target = match shape {
+        CallShape::Send { target, .. } | CallShape::Callback { target, .. } => *target,
+    };
+    let mut hoisted = vec![target];
+    hoisted.extend_from_slice(node.arguments());
+    if !scope::hoists_cleanly(node, &hoisted) || scope::in_class_expression_static_block(node) {
+        Route::Function
+    } else if is_whole_statement(node) {
+        Route::Whole
+    } else if scope::enclosing_statement(node).is_some_and(|s| s.kind() == Kind::ReturnStatement) {
+        Route::Returned
+    } else {
+        Route::Ahead
     }
 }
 
-/// `emitWithStatements`' decision, with the scope's claim.
-fn place(gn: &mut Gen<'_, '_, '_>, node: P<Node>, call: &mut BuiltCall, hoisted: &[P<Node>]) {
-    let statement = scope::enclosing_statement(node);
-    let locals = call.declared().len() as u32 + declared_locals(&call.encoding);
-    let has_statements = !call.declared().is_empty() || !call.encoding.is_empty();
-    call.placement = if !has_statements {
-        Placement::Bare
-    } else if in_optional_chain(node, &call.shape) {
-        Placement::Chain
-    } else if !scope::hoists_cleanly(node, hoisted) {
-        Placement::Function
-    } else if locals > 0 && !claims(gn, node, statement, locals) {
-        match statement.map(|s| s.kind()) {
-            Some(Kind::ExpressionStatement | Kind::ReturnStatement) => Placement::Scoped,
-            _ => Placement::Function,
-        }
-    } else {
-        Placement::Ahead
-    };
+/// The locals live where the site's statements land, before them; none in a function of its own: the compiler's count
+/// (`Cx::live_before_statement`), plus what it cannot count yet ([`scope::unseen_locals`], and
+/// [`scope::MAIN_CHUNK_LATE`] in the main chunk); in a chain, also the chain's own locals ahead of the call
+/// ([`chain_locals`]). The probe's padding stands for each as a local and a register; the registers the loops around
+/// hold besides their variables (2 to 4 a loop, against Luau's 255 registers to its 200 locals) are left to the margin.
+fn live_locals(cx: &mut Cx<'_>, node: P<Node>, route: Route) -> u32 {
+    if route == Route::Function {
+        return 0;
+    }
+    let mut live = cx.live_before_statement().locals + scope::unseen_locals(node);
+    if scope::enclosing_scope(node) == Scope::File {
+        live += scope::MAIN_CHUNK_LATE;
+    }
+    if route == Route::Chain {
+        live += chain_locals(node);
+    }
+    live
 }
 
-/// `liveLocals + locals <= COMPACT_LOCALS && budget.claim(scope, locals, statement)`.
-fn claims(gn: &mut Gen<'_, '_, '_>, node: P<Node>, statement: Option<P<Node>>, locals: u32) -> bool {
-    let Some(statement) = statement else { return false };
-    if live_locals(gn, node) + locals > COMPACT_LOCALS {
+/// An upper bound of the locals an optional chain binds ahead of a call in it: one per link, and its result.
+fn chain_locals(node: P<Node>) -> u32 {
+    let mut count = 1;
+    let mut current = node.expression();
+    while let Some(link) = current {
+        match link.kind() {
+            Kind::PropertyAccessExpression
+            | Kind::ElementAccessExpression
+            | Kind::CallExpression
+            | Kind::NonNullExpression
+            | Kind::ParenthesizedExpression => {
+                count += 1;
+                current = link.expression();
+            }
+            _ => break,
+        }
+    }
+    count
+}
+
+/// `emitWithStatements`' decision, once the site's statements are built; `live` is [`live_locals`]. A send put ahead
+/// of its statement claims the locals it leaves there from its scope's cap.
+fn place(fw: &FwInstance, node: P<Node>, route: Route, live: u32, statements: &[Stmt]) -> Placement {
+    if statements.is_empty() {
+        return Placement::Bare;
+    }
+    match route {
+        Route::Chain => Placement::Chain,
+        Route::Function => Placement::Function,
+        Route::Whole => Placement::Scoped,
+        Route::Returned => Placement::Ahead,
+        Route::Ahead => {
+            let leaked = declared_locals(statements);
+            let fits = leaked <= scope::SEND_LEAK && live + leaked <= scope::AHEAD_LOCALS;
+            if fits && claim_leak(fw, scope::enclosing_scope(node), leaked) {
+                Placement::Ahead
+            } else {
+                Placement::Function
+            }
+        }
+    }
+}
+
+/// Claims `count` locals left live ahead of a statement in `scope`, within [`Scope::leak_cap`].
+fn claim_leak(fw: &FwInstance, scope: Scope, count: u32) -> bool {
+    let mut state = fw.serializer.borrow_mut();
+    let generator = state.generator.as_mut().expect("a generator");
+    let used = generator.net_leaked.entry(scope).or_default();
+    if *used + count > scope.leak_cap() {
         return false;
     }
-    match scope::enclosing_scope(node) {
-        Scope::File => gn.g.claim_file_locals(locals, statement),
-        Scope::Function(function) => gn.g.net_budget.claim_function(function, locals, statement),
-    }
+    *used += count;
+    true
 }
 
-/// `declaredLocals` of generated statements.
+/// The locals generated statements declare at their top level.
 fn declared_locals(statements: &[Stmt]) -> u32 {
     statements
         .iter()
@@ -396,12 +446,13 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
     let mut key_of = |cx: &mut Cx<'_>, ty, result| crate::serializer::packing_key(fw, cx, node, ty, result);
     let Some(shape) = super::analysis::analyze(fw, cx, node, &mut key_of)? else { return Ok(Claim::Decline) };
 
-    let built = crate::serializer::call_site(fw, cx, node, &shape)?;
+    let mut built = crate::serializer::call_site(fw, cx, node, &shape)?;
+    let mut route = route(node, &shape);
 
     let mut statements: Vec<Stmt> = Vec::new();
     // each slot's Luau, by placeholder index
     let mut slots: HashMap<usize, Expr> = HashMap::new();
-    let mut value = match &built.shape {
+    let (mut value, live) = match &shape {
         CallShape::Send { target, target_is_callee, method, .. } => {
             let receiver = target_value(fw, cx, call, &built, *target, *target_is_callee, &mut statements)?;
             let mut arguments = Vec::with_capacity(built.leading.len() + 2);
@@ -420,12 +471,19 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
                     }
                 }
             }
+            // The arguments are compiled: what their hooks put ahead of the statement is in the compiler's count.
+            let live = live_locals(cx, node, route);
+            let outer = live + declared_locals(&statements);
+            if !crate::serializer::call_site_packing(fw, cx, node, &mut built, outer)? {
+                // No room where the call is, even for the compact packing: away from the live locals.
+                route = Route::Function;
+            }
             let mut encoding = built.encoding.clone();
             Names::substitute(&mut encoding, &slots);
             statements.extend(encoding);
             arguments.extend(built.payload.map(Id::e));
             arguments.extend(built.blobs.map(Id::e));
-            create::method_call(receiver, *method, arguments)
+            (create::method_call(receiver, *method, arguments), live)
         }
         CallShape::Callback { target, .. } => {
             let receiver = target_value(fw, cx, call, &built, *target, false, &mut statements)?;
@@ -434,14 +492,16 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
             statements.extend(prereqs);
             statements.push(luau::local(&callback.e(), Some(value)));
             let pack = built.pack.clone().expect("a callback site has its packer");
-            create::method_call(receiver, "_setCallback", vec![callback.e(), pack])
+            let live = if route == Route::Ahead { live_locals(cx, node, route) } else { 0 };
+            (create::method_call(receiver, "_setCallback", vec![callback.e(), pack]), live)
         }
     };
+    let placement = place(fw, node, route, live, &statements);
     name_output(fw, cx, &mut statements, Some(&mut value));
     #[cfg(feature = "wire-harvest")]
-    harvest(fw, cx, node, &built, &slots);
+    harvest(fw, cx, node, &shape, &built, &slots);
 
-    Ok(Claim::Take(match built.placement {
+    Ok(Claim::Take(match placement {
         Placement::Bare | Placement::Chain => {
             statements.into_iter().for_each(|s| cx.prereq(s));
             value
@@ -450,13 +510,14 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
             cx.insert_before_statement(statements);
             value
         }
-        Placement::Scoped if !call.value_used && is_whole_statement(node) => {
+        Placement::Scoped => {
+            debug_assert!(!call.value_used, "a whole statement's call");
             // The statement goes in a block of its own with its packing, which ends their locals with it.
             statements.push(create::call_statement(value));
             cx.prereq(create::do_stmt(statements));
             create::none()
         }
-        Placement::Scoped | Placement::Function => {
+        Placement::Function => {
             statements.push(create::return_stmt(value));
             create::call(create::paren(create::function(Vec::new(), false, statements)), Vec::new())
         }
@@ -576,7 +637,14 @@ fn bind_value(
 /// (a callback's packer as it is), its arguments read from `args` where the build reads them, named as the build named
 /// them; `fixed` boxes the literal (or `undefined`) arguments the packing was built for (`slots` holds their Luau).
 #[cfg(feature = "wire-harvest")]
-fn harvest(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &BuiltCall, slots: &HashMap<usize, Expr>) {
+fn harvest(
+    fw: &FwInstance,
+    cx: &mut Cx<'_>,
+    node: P<Node>,
+    shape: &CallShape,
+    built: &BuiltCall,
+    slots: &HashMap<usize, Expr>,
+) {
     use crate::serializer::wire;
     if !wire::on() {
         return;
@@ -584,7 +652,7 @@ fn harvest(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &BuiltCall, s
     let args = || create::id("__fwargs");
     let at = |i: usize| create::computed_index(args(), create::number((i + 1) as f64));
     let position = |i: usize| create::number((i + 1) as f64);
-    let (ty, result, mut pack, fixed) = match &built.shape {
+    let (ty, result, mut pack, fixed) = match shape {
         CallShape::Send { list, .. } => {
             let Some(payload) = built.payload else { return };
             let (mut fixed, mut read_args, mut body) = (Vec::new(), HashMap::new(), Vec::new());

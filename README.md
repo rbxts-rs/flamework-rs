@@ -203,8 +203,8 @@ Text and order:
 - **Guard text of a union** (`t.union(...)`, a literal union): the members are listed in the order TypeScript 7 gives
   a union's constituents.
 - **The order of a class's hoisted serializer helpers** (the codecs, `createSerializer` locals and helpers that the
-  members of one class hoist), and the order in which its networking calls claim the file's budget of locals: they
-  follow roblox-ts's compile order of the members (instance properties, constructor, methods, statics), not source
+  members of one class hoist), and the order in which its networking calls claim the locals they may leave ahead of
+  their statements: they follow roblox-ts's compile order of the members (instance properties, constructor, methods, statics), not source
   order. Each helper is still defined before the code that uses it.
 - **The order of a network's members.** The keys of a mapped type over `keyof T` (`incomingIds`, `outgoingIds`,
   `namespaceIds`, and the decoders built for them) are listed by a key of each, where the TS transformer lists them in
@@ -214,11 +214,14 @@ Text and order:
   flamework-rs decides on Luau's own counts (the function's exact locals, and its registers from Luau's compiler at
   the levels the load check uses), keeping 20 of each to spare, and refuses a type only when neither form fits Luau at
   all; the TS transformer estimated roblox-ts's output and built compactly past 150 locals or 200 registers. So a
-  function of roughly 150 to 180 locals is built plainly here, and a send packed among many live locals may then go in
-  a `do` block of its own. The wire format is the same.
-- **A returned send past its function's budget of locals** (`return events.alpha.fire(x)` in a function that already
-  holds many of Flamework's locals): the call and its packing go in a function, where the TS transformer puts the
-  `return` statement in a block of its own with the packing.
+  function of roughly 150 to 180 locals is built plainly here. A send's packing is fitted the same way among the
+  locals live where it lands, as the compiler counts them. The wire format is the same.
+- **Where a send's packing goes.** A send that is a whole statement (`events.alpha.fire(x)`) goes in a `do` block
+  with its packing, which ends the packing's locals with the statement; a returned send's packing goes ahead of its
+  `return`, which ends its block. A send elsewhere in a statement (`const p = fns.add.invoke(x)`) has its packing
+  ahead of the statement while it leaves at most 8 locals there (64 a function, 16 a file, and 180 live in all),
+  else in a function called where the call is. The TS transformer puts every packing ahead of its statement while a
+  budget of Flamework's locals (64 a function, 16 a file) has room, and the statement in a block with it past that.
 - **A send in a `for` loop's incrementor** (`for (let i = 0; i < n; events.alpha.fire(i), i++)`): the packing is not
   seen as a closure, so the loop has no per-iteration copies of `i`. The function is called where it is made, so
   nothing can see the difference.

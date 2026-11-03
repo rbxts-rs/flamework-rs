@@ -21,10 +21,10 @@
 //!
 //! **Not the TS's.**
 //! - The Luau-limits budget: the TS lets Flamework's code claim 16 locals in a file's main chunk and 64 in a
-//!   function, shared by every call site there. Here each dedup guard checks its own count against those budgets
-//!   and against the locals the compiler has counted so far ([`rbxts_plugin::Cx::locals`]): a file whose dedup
-//!   guards together pass 16 locals keeps them ahead of their statements where the TS would wrap the later ones in a
-//!   function.
+//!   function, shared by every call site there. Here each dedup guard checks its own count against those caps, and
+//!   against the locals live where its locals would go ([`rbxts_plugin::Cx::live_before_statement`]), which must stay
+//!   within 180 (Luau's 200, less a margin of 20): a file whose dedup guards together pass 16 locals keeps them ahead
+//!   of their statements where the TS would wrap the later ones in a function.
 
 mod generator;
 mod library;
@@ -99,10 +99,13 @@ pub(crate) fn guard_for_unnamed(
     Ok((guard, generator.names))
 }
 
-/// The TS's `LOCAL_BUDGET` and `FUNCTION_LOCAL_BUDGET` (`luauLimits.ts`), and `COMPACT_LOCALS`.
+/// The TS's `LOCAL_BUDGET` and `FUNCTION_LOCAL_BUDGET` (`luauLimits.ts`): the dedup locals one guard may put ahead
+/// of a statement in the main chunk and in a function.
 const FILE_LOCAL_BUDGET: usize = 16;
 const FUNCTION_LOCAL_BUDGET: usize = 64;
-const COMPACT_LOCALS: usize = 150;
+/// The live locals, the guard's included, past which its dedup locals go in a function with it: Luau's 200, less a
+/// margin of 20.
+const LIVE_LOCALS: usize = 180;
 
 /// `buildGuardFromTypeWithDedup`: the guard of `ty` for a `Generic<T, "guard">` argument at `node` (the call). With a
 /// dedup limit, the shared guards go ahead of the TS statement around the call, where the TS's `prereqList` puts
@@ -130,9 +133,9 @@ pub fn guard_for_with_dedup(cx: &mut Cx<'_>, config: GuardConfig<'_>, node: P<No
 }
 
 /// Whether `count` more locals fit ahead of the statement at `node` (see the module docs).
-fn dedup_fits(cx: &Cx<'_>, node: P<Node>, count: usize) -> bool {
+fn dedup_fits(cx: &mut Cx<'_>, node: P<Node>, count: usize) -> bool {
     let budget = if in_function(node) { FUNCTION_LOCAL_BUDGET } else { FILE_LOCAL_BUDGET };
-    count <= budget && cx.locals().function as usize + count <= COMPACT_LOCALS
+    count <= budget && cx.live_before_statement().locals as usize + count <= LIVE_LOCALS
 }
 
 /// `enclosingScope(node)` is a function (or a class static block), not the file.
