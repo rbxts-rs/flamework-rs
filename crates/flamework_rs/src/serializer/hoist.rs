@@ -29,7 +29,7 @@ pub(crate) const MALFORMED: &str = "malformed payload";
 fn global_policy(name: &str) -> Option<bool> {
     match name {
         "buffer" | "error" | "math" => Some(true),
-        "typeIs" | "$range" | "Array" | "Set" | "Enum" | "CFrame" | "warn" | "Promise" => Some(false),
+        "Enum" | "CFrame" | "warn" | "Promise" => Some(false),
         _ => None,
     }
 }
@@ -171,12 +171,6 @@ impl Gen<'_, '_, '_> {
         }
     }
 
-    /// Refuses a declaration hiding `name` where the TS generator's code named the global `name` (the Luau itself
-    /// may not).
-    pub(crate) fn uses_global(&mut self, name: &str) {
-        self.global_alias(name);
-    }
-
     /// `checkGlobalsIn(node)` for the globals a literal names: an enum item's `Enum` (refused when a declaration hides
     /// it).
     pub(crate) fn check_globals_in(&mut self, literal: &Lit) {
@@ -199,13 +193,11 @@ impl Gen<'_, '_, '_> {
 
     /// `for index = from, to do body end` (the TS generator's `for (const index of $range(from, to))`).
     pub(crate) fn for_range(&mut self, index: Id, from: Expr, to: Expr, body: Vec<Stmt>) -> Stmt {
-        self.uses_global("$range");
         luau::for_range(&index.e(), from, to, body)
     }
 
     /// `typeIs(v, name)`: `type(v) == name` for Luau's primitive types, `typeof(v) == name` otherwise.
     pub(crate) fn type_of_is(&mut self, value: Expr, name: &str) -> Expr {
-        self.uses_global("typeIs");
         let function = if PRIMITIVE_LUAU_TYPES.contains(&name) { "type" } else { "typeof" };
         luau::bin(luau::call(create::id(function), vec![value]), BinaryOperator::Eq, luau::str(name))
     }
@@ -213,11 +205,13 @@ impl Gen<'_, '_, '_> {
     /// `new Name(args)`: an empty table for an `Array` (`table.create(n)` with a length) or a `Set`, else
     /// `Name.new(args)`.
     pub(crate) fn construct(&mut self, name: &str, args: Vec<Expr>) -> Expr {
-        let class = self.global_ref(name);
         match name {
             "Array" if !args.is_empty() => luau::call(luau::prop(create::id("table"), "create"), args),
             "Array" | "Set" => create::map(Vec::<(Expr, Expr)>::new()),
-            _ => luau::call(luau::prop(class, "new"), args),
+            _ => {
+                let class = self.global_ref(name);
+                luau::call(luau::prop(class, "new"), args)
+            }
         }
     }
 

@@ -242,9 +242,10 @@ fn a_guard_s_hidden_global_is_refused() {
     );
 }
 
-/// File-level declarations named after globals the TS generator's code named but the Luau never does (`Map`, `typeOf`)
-/// build beside serializers that read a map and check types, where the TS transformer refused them; the serializers
-/// keep reading the global map type and Luau's `typeof`. (`$tuple` cannot be declared: roblox-ts refuses the name.)
+/// File-level declarations named after globals the TS generator's code named but the Luau never does (`Map`, `typeOf`,
+/// `Set`, `typeIs`, `Array`) build beside serializers that read a map, a set and an array and check types, where the
+/// TS transformer refused them; the serializers keep making plain tables and calling Luau's `typeof`. (`$tuple` and
+/// `$range` cannot be declared: roblox-ts refuses the names.)
 #[test]
 fn declarations_named_map_or_typeof_build() {
     let Some(project) = Project::new(FIXTURE, "shadows") else { return };
@@ -262,18 +263,36 @@ fn declarations_named_map_or_typeof_build() {
          function typeOf(value: unknown) {\n\
          \treturn `${value}`;\n\
          }\n\
+         class Set {\n\
+         \tconstructor(public readonly size: number) {}\n\
+         }\n\
+         function typeIs(value: unknown) {\n\
+         \treturn value !== undefined;\n\
+         }\n\
+         const Array = [typeIs(1), new Set(2)];\n\
          interface Stock {\n\
          \tname: string;\n\
          \tcounts: ReadonlyMap<string, number>;\n\
+         \ttags: ReadonlySet<string>;\n\
+         \titems: string[];\n\
          }\n\
-         export const shop = new Map(typeOf(2));\n\
+         export const shop = [new Map(typeOf(2)), Array];\n\
          export const stock = Flamework.createSerializer<Stock>();\n\
          export const stocks = Flamework.createSerializer<ReadonlyMap<string, Stock>>();\n",
     );
     let report = project.build_with(Flamework::new());
     assert_clean(&report);
     let out = luau(&report, "shadows.luau");
-    let expected = ["local Map\n", "local function typeOf(", "local got = typeof(value_1)", "local map_2 = {}", "return value_2, o_2"];
+    let expected = [
+        "local Map\n",
+        "local function typeOf(",
+        "local Set\n",
+        "local function typeIs(",
+        "local Array = {",
+        "local got = typeof(value_1)",
+        "local map_2 = {}",
+        "return value_2, o_2",
+    ];
     for text in expected {
         assert!(out.contains(text), "no `{text}` in:\n{out}");
     }

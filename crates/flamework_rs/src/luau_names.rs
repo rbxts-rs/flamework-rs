@@ -347,6 +347,29 @@ mod tests {
         assert_eq!(placeholder_index(&create::id("value")), None);
     }
 
+    /// A name given once is kept: a later piece of code reading the same placeholder (a hoisted helper, read by the
+    /// next hook's code) gets the same name, without asking for a new one.
+    #[test]
+    fn assigned_names_persist() {
+        let mut names = Names::default();
+        let helper = names.fresh("vsize");
+        let mut first = vec![create::local(declared(&helper), Some(create::number(1.0)))];
+        let mut asked = Vec::new();
+        names.assign_with(&mut first, None, |base| {
+            asked.push(base.to_owned());
+            format!("{base}_1")
+        });
+        let value = names.fresh("value");
+        let mut second = vec![create::local(declared(&value), Some(create::call(helper.clone(), Vec::new())))];
+        names.assign_with(&mut second, None, |base| {
+            asked.push(base.to_owned());
+            base.to_owned()
+        });
+        assert_eq!(rbxts_luau::render_ast(&first), "local vsize_1 = 1\n");
+        assert_eq!(rbxts_luau::render_ast(&second), "local value = vsize_1()\n");
+        assert_eq!(asked, ["vsize", "value"]);
+    }
+
     #[test]
     fn substitute_replaces_every_use() {
         let mut names = Names::default();
