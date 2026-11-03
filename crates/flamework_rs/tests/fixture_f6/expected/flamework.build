@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"flameworkVersion": "2.0.0-beta.0",
+	"flameworkVersion": "2.0.0-beta.1",
 	"identifiers": {
 		"f6-component-fixture:out/shared/accessors@GetterAttributes": "shared/accessors@GetterAttributes",
 		"f6-component-fixture:out/shared/accessors@SetterAttributes": "shared/accessors@SetterAttributes",

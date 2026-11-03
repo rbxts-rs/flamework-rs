@@ -68,7 +68,9 @@ A release is a git tag `v<version>` with a Windows x64 zip of `rbxtsc-fw.exe` on
 hand: the template carries a per-project `compiler/` (rbxts-rs's per-project compiler, with Flamework compiled in)
 whose launcher downloads the release binary, or builds it.
 
-**0.1.0** pairs with the `@flamework-experimental` 2.0.0 betas and is built on rbxts-rs v0.1.1.
+**0.1.0** pairs with `@flamework-experimental` 2.0.0-beta.1 and is built on rbxts-rs v0.1.1. Every
+`@flamework-experimental` package must be that exact version: `rbxtsc-fw` refuses packages built by another Flamework
+version.
 
 ## Install
 

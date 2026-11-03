@@ -1,6 +1,6 @@
 {
 	"version": 1,
-	"flameworkVersion": "2.0.0-beta.0",
+	"flameworkVersion": "2.0.0-beta.1",
 	"identifiers": {
 		"f2-fixture:out/shared/generic@Economy": "shared/generic@Economy",
 		"f2-fixture:out/shared/generic@Bank": "shared/generic@Bank",

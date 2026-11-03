@@ -49,7 +49,7 @@ local numberLiteral = describe("number:42")
 local booleanLiteral = describe("boolean:true")
 local kinds = describe("array<boolean>")
 local members = memberCount(3)
-local version = transformerVersion("2.0.0-beta.0")
+local version = transformerVersion("2.0.0-beta.1")
 local function later()
 	-- A second use in another statement reuses the hoisted value.
 	return fieldInfo(fieldInfo_1)

@@ -158,7 +158,7 @@
 			"name": "fresh",
 			"ops": [],
 			"results": [],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {}\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {}\n}"
 		},
 		{
 			"name": "game, full",
@@ -186,7 +186,7 @@
 				null,
 				2
 			],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {\n\t\t\"g:out/a@A\": \"out/a@A\"\n\t},\n\t\"idGenerationMode\": \"full\"\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {\n\t\t\"g:out/a@A\": \"out/a@A\"\n\t},\n\t\"idGenerationMode\": \"full\"\n}"
 		},
 		{
 			"name": "package",
@@ -221,7 +221,7 @@
 				null,
 				null
 			],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {\n\t\t\"@s/p:out/a@A\": \"@s/p:a@A\"\n\t},\n\t\"idGenerationMode\": \"full\",\n\t\"identifierPrefix\": \"@s/p\",\n\t\"metadata\": {\n\t\t\"paths\": {\n\t\t\t\"uses\": {\n\t\t\t\t\"src/x.ts\": [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"path\": \"src/a\",\n\t\t\t\t\t\t\"macro\": \"registerProviders\",\n\t\t\t\t\t\t\"line\": 3,\n\t\t\t\t\t\t\"column\": 9\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t}\n\t}\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {\n\t\t\"@s/p:out/a@A\": \"@s/p:a@A\"\n\t},\n\t\"idGenerationMode\": \"full\",\n\t\"identifierPrefix\": \"@s/p\",\n\t\"metadata\": {\n\t\t\"paths\": {\n\t\t\t\"uses\": {\n\t\t\t\t\"src/x.ts\": [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"path\": \"src/a\",\n\t\t\t\t\t\t\"macro\": \"registerProviders\",\n\t\t\t\t\t\t\"line\": 3,\n\t\t\t\t\t\t\"column\": 9\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t}\n\t}\n}"
 		},
 		{
 			"name": "globs",
@@ -301,7 +301,7 @@
 				null,
 				2
 			],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {\n\t\t\"g:out/a@A\": \"a@A{x}\"\n\t},\n\t\"idGenerationMode\": \"short\",\n\t\"metadata\": {\n\t\t\"globs\": {\n\t\t\t\"paths\": {\n\t\t\t\t\"src/a/**\": [],\n\t\t\t\t\"src/b/*.ts\": []\n\t\t\t},\n\t\t\t\"origins\": {\n\t\t\t\t\"src/x.ts\": [\n\t\t\t\t\t\"src/a/**\",\n\t\t\t\t\t\"src/b/*.ts\"\n\t\t\t\t],\n\t\t\t\t\"src/y.ts\": [\n\t\t\t\t\t\"src/a/**\"\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"uses\": {\n\t\t\t\t\"src/x.ts\": [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"glob\": \"src/a/**\",\n\t\t\t\t\t\t\"text\": \"./a/**\",\n\t\t\t\t\t\t\"macro\": \"registerProvidersGlob\",\n\t\t\t\t\t\t\"line\": 1,\n\t\t\t\t\t\t\"column\": 2\n\t\t\t\t\t}\n\t\t\t\t],\n\t\t\t\t\"src/y.ts\": [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"glob\": \"src/a/**\",\n\t\t\t\t\t\t\"text\": \"src/a/**\",\n\t\t\t\t\t\t\"macro\": \"fromGlob\",\n\t\t\t\t\t\t\"line\": 10,\n\t\t\t\t\t\t\"column\": 20\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t},\n\t\t\"paths\": {\n\t\t\t\"uses\": {}\n\t\t}\n\t}\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {\n\t\t\"g:out/a@A\": \"a@A{x}\"\n\t},\n\t\"idGenerationMode\": \"short\",\n\t\"metadata\": {\n\t\t\"globs\": {\n\t\t\t\"paths\": {\n\t\t\t\t\"src/a/**\": [],\n\t\t\t\t\"src/b/*.ts\": []\n\t\t\t},\n\t\t\t\"origins\": {\n\t\t\t\t\"src/x.ts\": [\n\t\t\t\t\t\"src/a/**\",\n\t\t\t\t\t\"src/b/*.ts\"\n\t\t\t\t],\n\t\t\t\t\"src/y.ts\": [\n\t\t\t\t\t\"src/a/**\"\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"uses\": {\n\t\t\t\t\"src/x.ts\": [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"glob\": \"src/a/**\",\n\t\t\t\t\t\t\"text\": \"./a/**\",\n\t\t\t\t\t\t\"macro\": \"registerProvidersGlob\",\n\t\t\t\t\t\t\"line\": 1,\n\t\t\t\t\t\t\"column\": 2\n\t\t\t\t\t}\n\t\t\t\t],\n\t\t\t\t\"src/y.ts\": [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"glob\": \"src/a/**\",\n\t\t\t\t\t\t\"text\": \"src/a/**\",\n\t\t\t\t\t\t\"macro\": \"fromGlob\",\n\t\t\t\t\t\t\"line\": 10,\n\t\t\t\t\t\t\"column\": 20\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t},\n\t\t\"paths\": {\n\t\t\t\"uses\": {}\n\t\t}\n\t}\n}"
 		},
 		{
 			"name": "mode change drops",
@@ -334,7 +334,7 @@
 				"b",
 				2
 			],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {\n\t\t\"a\": \"b\"\n\t},\n\t\"idGenerationMode\": \"tiny\"\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {\n\t\t\"a\": \"b\"\n\t},\n\t\"idGenerationMode\": \"tiny\"\n}"
 		},
 		{
 			"name": "unicode and escapes",
@@ -353,7 +353,7 @@
 				null,
 				null
 			],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {\n\t\t\"k\\t\": \"v\\u001f\"\n\t},\n\t\"identifierPrefix\": \"ü\\\"\\\\\\n\\u0001 😀\"\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {\n\t\t\"k\\t\": \"v\\u001f\"\n\t},\n\t\"identifierPrefix\": \"ü\\\"\\\\\\n\\u0001 😀\"\n}"
 		},
 		{
 			"name": "integer-like keys",
@@ -397,7 +397,7 @@
 				null,
 				null
 			],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {\n\t\t\"2\": \"3\",\n\t\t\"10\": \"2\",\n\t\t\"4294967294\": \"6\",\n\t\t\"b\": \"1\",\n\t\t\"01\": \"4\",\n\t\t\"4294967295\": \"5\"\n\t}\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {\n\t\t\"2\": \"3\",\n\t\t\"10\": \"2\",\n\t\t\"4294967294\": \"6\",\n\t\t\"b\": \"1\",\n\t\t\"01\": \"4\",\n\t\t\"4294967295\": \"5\"\n\t}\n}"
 		},
 		{
 			"name": "invalidate",
@@ -462,7 +462,7 @@
 				null,
 				null
 			],
-			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.0\",\n\t\"identifiers\": {},\n\t\"metadata\": {\n\t\t\"globs\": {\n\t\t\t\"paths\": {\n\t\t\t\t\"g2\": []\n\t\t\t},\n\t\t\t\"origins\": {\n\t\t\t\t\"f2\": [\n\t\t\t\t\t\"g2\"\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"uses\": {}\n\t\t},\n\t\t\"paths\": {\n\t\t\t\"uses\": {}\n\t\t}\n\t}\n}"
+			"text": "{\n\t\"version\": 1,\n\t\"flameworkVersion\": \"2.0.0-beta.1\",\n\t\"identifiers\": {},\n\t\"metadata\": {\n\t\t\"globs\": {\n\t\t\t\"paths\": {\n\t\t\t\t\"g2\": []\n\t\t\t},\n\t\t\t\"origins\": {\n\t\t\t\t\"f2\": [\n\t\t\t\t\t\"g2\"\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"uses\": {}\n\t\t},\n\t\t\"paths\": {\n\t\t\t\"uses\": {}\n\t\t}\n\t}\n}"
 		}
 	],
 	"real": [
@@ -512,7 +512,7 @@
 					"file": "node_modules/@flamework-experimental/core/flamework.build"
 				}
 			],
-			"error": "Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.0, and this package was built by another version.\n  @flamework-experimental/core 2.0.0-alpha.7 (node_modules/@flamework-experimental/core/flamework.build)\nInstall the same version of every @flamework-experimental package: update it to 2.0.0-beta.0, or install @flamework-experimental/transformer@2.0.0-alpha.7 instead, then build again."
+			"error": "Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.1, and this package was built by another version.\n  @flamework-experimental/core 2.0.0-alpha.7 (node_modules/@flamework-experimental/core/flamework.build)\nInstall the same version of every @flamework-experimental package: update it to 2.0.0-beta.1, or install @flamework-experimental/transformer@2.0.0-alpha.7 instead, then build again."
 		},
 		{
 			"packages": [
@@ -527,7 +527,7 @@
 					"file": "b/flamework.build"
 				}
 			],
-			"error": "Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.0, and these packages were built by another version.\n  @flamework-experimental/core 2.0.0-alpha.7 (a/flamework.build)\n  @flamework-experimental/networking 2.0.0-alpha.7 (b/flamework.build)\nInstall the same version of every @flamework-experimental package: update them to 2.0.0-beta.0, or install @flamework-experimental/transformer@2.0.0-alpha.7 instead, then build again."
+			"error": "Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.1, and these packages were built by another version.\n  @flamework-experimental/core 2.0.0-alpha.7 (a/flamework.build)\n  @flamework-experimental/networking 2.0.0-alpha.7 (b/flamework.build)\nInstall the same version of every @flamework-experimental package: update them to 2.0.0-beta.1, or install @flamework-experimental/transformer@2.0.0-alpha.7 instead, then build again."
 		},
 		{
 			"packages": [
@@ -542,7 +542,7 @@
 					"file": "c/flamework.build"
 				}
 			],
-			"error": "Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.0, and these packages were built by another version.\n  @flamework-experimental/core 2.0.0-alpha.6 (a/flamework.build)\n  @flamework-experimental/components 2.0.0-alpha.7 (c/flamework.build)\nInstall the same version of every @flamework-experimental package: update them to 2.0.0-beta.0, or install @flamework-experimental/transformer@<their version> instead, then build again."
+			"error": "Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.1, and these packages were built by another version.\n  @flamework-experimental/core 2.0.0-alpha.6 (a/flamework.build)\n  @flamework-experimental/components 2.0.0-alpha.7 (c/flamework.build)\nInstall the same version of every @flamework-experimental package: update them to 2.0.0-beta.1, or install @flamework-experimental/transformer@<their version> instead, then build again."
 		}
 	]
 }

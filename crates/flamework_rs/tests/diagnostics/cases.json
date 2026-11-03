@@ -881,9 +881,9 @@
 				"src/versionProbe/probe.ts": "export const value = 1;\n"
 			},
 			"contains": [
-				"Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.0, and this package was built by another version.",
+				"Flamework's packages are not all the same version: @flamework-experimental/transformer is 2.0.0-beta.1, and this package was built by another version.",
 				"  @flamework-experimental/probe 2.0.0-alpha.1 (src/versionProbe/flamework.build)",
-				"Install the same version of every @flamework-experimental package: update it to 2.0.0-beta.0, or install @flamework-experimental/transformer@2.0.0-alpha.1 instead, then build again."
+				"Install the same version of every @flamework-experimental package: update it to 2.0.0-beta.1, or install @flamework-experimental/transformer@2.0.0-alpha.1 instead, then build again."
 			]
 		},
 		{

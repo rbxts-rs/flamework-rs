@@ -6,7 +6,7 @@ copied as the project ships it.
 
 ## Flamework
 
-The v2 transformer, `@flamework-experimental/transformer` (ported at 2.0.0-beta.0, `flamework_rs::VERSION`). MIT.
+The v2 transformer, `@flamework-experimental/transformer` (ported at 2.0.0-beta.1, `flamework_rs::VERSION`). MIT.
 
 `crates/flamework_rs` as a whole is a port of Flamework's TypeScript transformer (its transformations, macros, guards, build info, config and id rules); `crates/flamework_rs/schema/*.json` are its JSON schemas, copied.
 
