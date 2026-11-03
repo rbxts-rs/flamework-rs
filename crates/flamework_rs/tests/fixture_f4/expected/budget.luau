@@ -6,7 +6,7 @@ local literalIndex = {
 	a1 = 0,
 	b1 = 1,
 }
--- More literal groups and enums than a file's budget of locals: the rest go into the file's table.
+-- More literal groups and enums than the TS transformer's 16 file locals: all of them locals here.
 local l1 = Flamework.createSerializer({
 	serialize = function(v)
 		local buf = buffer.create(1)
@@ -210,16 +210,15 @@ local l8 = Flamework.createSerializer({
 		return literal_7
 	end,
 })
-local codec = {}
-codec.literals = { "a9", "b9" }
-codec.literalIndex = {
+local literals_8 = { "a9", "b9" }
+local literalIndex_8 = {
 	a9 = 0,
 	b9 = 1,
 }
 local l9 = Flamework.createSerializer({
 	serialize = function(v_8)
 		local buf_16 = buffer.create(1)
-		local index_8 = codec.literalIndex[v_8]
+		local index_8 = literalIndex_8[v_8]
 		if index_8 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -227,7 +226,7 @@ local l9 = Flamework.createSerializer({
 		return buf_16
 	end,
 	deserialize = function(buf_17)
-		local literal_8 = codec.literals[buffer.readu8(buf_17, 0) + 1]
+		local literal_8 = literals_8[buffer.readu8(buf_17, 0) + 1]
 		if literal_8 == nil then
 			error("malformed payload")
 		end
@@ -237,12 +236,9 @@ local l9 = Flamework.createSerializer({
 		return literal_8
 	end,
 })
-do
-	local enum_Material = {}
-	for _, item in Enum.Material:GetEnumItems() do
-		enum_Material[item.Value] = item
-	end
-	codec.enum_Material = enum_Material
+local enum_Material = {}
+for _, item in Enum.Material:GetEnumItems() do
+	enum_Material[item.Value] = item
 end
 local e1 = Flamework.createSerializer({
 	serialize = function(v_9)
@@ -251,19 +247,16 @@ local e1 = Flamework.createSerializer({
 		return buf_18
 	end,
 	deserialize = function(buf_19)
-		local value = codec.enum_Material[buffer.readu16(buf_19, 0)]
+		local value = enum_Material[buffer.readu16(buf_19, 0)]
 		if buffer.len(buf_19) ~= 2 then
 			error("malformed payload")
 		end
 		return value
 	end,
 })
-do
-	local enum_KeyCode = {}
-	for _, item_1 in Enum.KeyCode:GetEnumItems() do
-		enum_KeyCode[item_1.Value] = item_1
-	end
-	codec.enum_KeyCode = enum_KeyCode
+local enum_KeyCode = {}
+for _, item_1 in Enum.KeyCode:GetEnumItems() do
+	enum_KeyCode[item_1.Value] = item_1
 end
 local e2 = Flamework.createSerializer({
 	serialize = function(v_10)
@@ -272,19 +265,16 @@ local e2 = Flamework.createSerializer({
 		return buf_20
 	end,
 	deserialize = function(buf_21)
-		local value_1 = codec.enum_KeyCode[buffer.readu16(buf_21, 0)]
+		local value_1 = enum_KeyCode[buffer.readu16(buf_21, 0)]
 		if buffer.len(buf_21) ~= 2 then
 			error("malformed payload")
 		end
 		return value_1
 	end,
 })
-do
-	local enum_UserInputType = {}
-	for _, item_2 in Enum.UserInputType:GetEnumItems() do
-		enum_UserInputType[item_2.Value] = item_2
-	end
-	codec.enum_UserInputType = enum_UserInputType
+local enum_UserInputType = {}
+for _, item_2 in Enum.UserInputType:GetEnumItems() do
+	enum_UserInputType[item_2.Value] = item_2
 end
 local e3 = Flamework.createSerializer({
 	serialize = function(v_11)
@@ -293,22 +283,22 @@ local e3 = Flamework.createSerializer({
 		return buf_22
 	end,
 	deserialize = function(buf_23)
-		local value_2 = codec.enum_UserInputType[buffer.readu16(buf_23, 0)]
+		local value_2 = enum_UserInputType[buffer.readu16(buf_23, 0)]
 		if buffer.len(buf_23) ~= 2 then
 			error("malformed payload")
 		end
 		return value_2
 	end,
 })
-codec.literals_1 = { "a10", "b10" }
-codec.literalIndex_1 = {
+local literals_9 = { "a10", "b10" }
+local literalIndex_9 = {
 	a10 = 0,
 	b10 = 1,
 }
 local l10 = Flamework.createSerializer({
 	serialize = function(v_12)
 		local buf_24 = buffer.create(1)
-		local index_9 = codec.literalIndex_1[v_12]
+		local index_9 = literalIndex_9[v_12]
 		if index_9 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -316,7 +306,7 @@ local l10 = Flamework.createSerializer({
 		return buf_24
 	end,
 	deserialize = function(buf_25)
-		local literal_9 = codec.literals_1[buffer.readu8(buf_25, 0) + 1]
+		local literal_9 = literals_9[buffer.readu8(buf_25, 0) + 1]
 		if literal_9 == nil then
 			error("malformed payload")
 		end

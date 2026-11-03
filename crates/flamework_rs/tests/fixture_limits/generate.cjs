@@ -6,7 +6,10 @@
 //   network.ts: events of N string arguments, N in ARGUMENTS;
 //   sends.ts: each event sent as a whole statement from functions already holding H locals, H in HELD, and the same
 //   inside three nested loops (whose variables count in H: `_` and `a` of the `for … of`, `i`); returned sends; and a
-//   send among 199 live locals, which leaves its packing no room there.
+//   send among 199 live locals, which leaves its packing no room there;
+//   slots.ts: more file slots than Luau's 200 locals in one main chunk (literal lists and indexes, guards telling
+//   union members apart, enum tables, dedup guards; flamework.config.json's dedup limit is 2), which the compiler
+//   spills into one table, and a whole-statement send after them.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -15,6 +18,7 @@ const WIDTHS = [40, 60, 80, 100, 110, 150, 250];
 const MEMBERS = [50, 100, 150, 200, 250];
 const ARGUMENTS = [100, 150, 200, 250];
 const HELD = [0, 100, 170, 195];
+const SLOTS = { literals: 80, unions: 40, dedup: 40 };
 const HEADER = 'import { Flamework, Serialization } from "@flamework-experimental/core";\n';
 
 function wide(file, about, field) {
@@ -68,6 +72,28 @@ function sends() {
 	return ["sends.ts", text];
 }
 
+function slots() {
+	let text = 'import { Flamework } from "@flamework-experimental/core";\nimport { Events } from "./network";\n';
+	text += "\ndeclare const text: string;\n";
+	text += "\n/** Literal groups: a list and an index each. */\nexport const literals = [\n";
+	for (let i = 0; i < SLOTS.literals; i++) text += `\tFlamework.createSerializer<"a${i}" | "b${i}" | "c${i}">(),\n`;
+	text += "];\n\n/** Unions told apart by a guard. */\nexport const unions = [\n";
+	for (let i = 0; i < SLOTS.unions; i++) {
+		text += `\tFlamework.createSerializer<Partial<{ p${i}: number }> | Partial<{ q${i}: string }>>(),\n`;
+	}
+	text += "];\n\n/** Enum tables. */\nexport const enums = [\n";
+	for (const name of ["Material", "KeyCode", "UserInputType", "Font", "PartType"]) {
+		text += `\tFlamework.createSerializer<Enum.${name}>(),\n`;
+	}
+	text += "];\n\n/** Dedup guards in the main chunk: each interface met twice. */\n";
+	for (let i = 0; i < SLOTS.dedup; i++) text += `interface D${i} {\n\tx${i}: number;\n}\n`;
+	text += "export const guards = [\n";
+	for (let i = 0; i < SLOTS.dedup; i++) text += `\tFlamework.createGuard<{ a: D${i}; b: D${i} }>(),\n`;
+	text += "];\n\n/** A whole-statement send in the main chunk, after them. */\n";
+	text += `Events.w100.fire(${Array.from({ length: 100 }, () => "text").join(", ")});\n`;
+	return ["slots.ts", text];
+}
+
 const src = path.join(__dirname, "src");
 fs.mkdirSync(src, { recursive: true });
 for (const [file, text] of [
@@ -77,6 +103,7 @@ for (const [file, text] of [
 	unions(),
 	network(),
 	sends(),
+	slots(),
 ]) {
 	fs.writeFileSync(path.join(src, file), text);
 }

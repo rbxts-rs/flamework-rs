@@ -1,10 +1,10 @@
 //! The serializer (F4) end to end, through the real compiler on `tests/fixture_f4`: `Flamework.createSerializer<T>()`
 //! and a macro of the fixture's own, both user macros whose `serializer` intrinsic reaches the generator
 //! (`crate::macros`), every kind of type, one file per family (primitives, datatypes, structures, unions, a file past
-//! its budget of locals, a user-declared serializer macro, serializer macros nested in each other's arguments, the
-//! mapped types, the types that copy or inherit a mapped type's properties (spreads, object rests, a generic
-//! interface's instantiated bases) and `as` clauses that rename keys, the properties TS5 leaves out (unique-symbol
-//! keys, private names), a guard beside the serializers' file-level locals, and guards earlier in a
+//! the TS transformer's budget of file locals, a user-declared serializer macro, serializer macros nested in each
+//! other's arguments, the mapped types, the types that copy or inherit a mapped type's properties (spreads, object
+//! rests, a generic interface's instantiated bases) and `as` clauses that rename keys, the properties TS5 leaves out
+//! (unique-symbol keys, private names), a guard beside the serializers' file-level locals, and guards earlier in a
 //! serializer's root statement than what the serializer hoisted).
 //!
 //! `tests/fixture_f4/expected` holds rbxtsc-fw's output for every file, each compared whole (`UPDATE_EXPECTED=1`

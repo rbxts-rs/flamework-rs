@@ -182,6 +182,11 @@ Text and order:
   into its own local), no copies of parameters, 1-based indexes written as such, fewer parentheses. The wire format,
   the checks and their messages are the same; `--normalize` does not hide this, so compare those files on behaviour
   ([Wire identity](#wire-identity)).
+- **Where a file keeps its slots** (a serializer's guards, literal lists and indexes and enum tables, and the dedup
+  guards of `createGuard` calls in the main chunk): in locals ahead of the statement, which the compiler moves into
+  one table (`_spill.guard`) when the main chunk would pass Luau's 200 locals. The TS transformer kept 16 of them in
+  locals and the rest in fields of the file's table (`codec.guard_1`), and put the main chunk's dedup guards past 16
+  in a function with their guard.
 - **The order things are recorded in within a file:** a file's new ids (`flamework.build`'s `identifiers` and the
   counters of `short` / `tiny` / `obfuscated` ids), its `Flamework.env` inputs and its glob and path uses (their entries
   in `flamework.build` and `include/flamework/globs.json`, and the order of the glob warnings; path warnings stay in
@@ -219,7 +224,7 @@ Text and order:
 - **Where a send's packing goes.** A send that is a whole statement (`events.alpha.fire(x)`) goes in a `do` block
   with its packing, which ends the packing's locals with the statement; a returned send's packing goes ahead of its
   `return`, which ends its block. A send elsewhere in a statement (`const p = fns.add.invoke(x)`) has its packing
-  ahead of the statement while it leaves at most 8 locals there (64 a function, 16 a file, and 180 live in all),
+  ahead of the statement while it leaves at most 8 locals there (64 a function or the main chunk, and 180 live in all),
   else in a function called where the call is. The TS transformer puts every packing ahead of its statement while a
   budget of Flamework's locals (64 a function, 16 a file) has room and, past that, an expression or return statement
   in a block with it (any other send in a function).

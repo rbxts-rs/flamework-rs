@@ -14,9 +14,12 @@
 //! - [`packing_key`]: a list's wire key, for networking's union-of-members check;
 //! - [`check_output`]: the end-of-file self-check (`checkSerializerOutput`).
 //!
-//! Each builds its site at its hook and hands the hoisted statements to `insert_before_root_statement` itself. The
-//! generated locals are placeholders of the file's [`Names`], named in render order when a hook hands its output out,
-//! with the compiler's approval (`Cx::is_usable_local_name`); a name once given is kept for the file.
+//! Each builds its site at its hook and hands the hoisted statements out itself, in their order: the file's slots
+//! (guards, literal lists and indexes, enum tables) through the compiler's spill (`Cx::hoist_spillable_named`, which
+//! moves them into one table past Luau's 200 locals in the main chunk), everything else with
+//! `insert_before_root_statement`. The generated locals are placeholders of the file's [`Names`], named in render
+//! order when a hook hands its output out, with the compiler's approval (`Cx::is_usable_local_name`; a slot by
+//! `hoist_spillable_named`); a name once given is kept for the file.
 
 mod checks;
 mod classify;
@@ -314,13 +317,6 @@ impl Id {
     }
 }
 
-/// Where a guard or table is kept.
-#[derive(Debug, Clone)]
-pub enum Slot {
-    Local(Id),
-    Field(String),
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Varint {
     pub size: Id,
@@ -378,10 +374,11 @@ pub struct Generator {
     pub(crate) function_table: Option<Id>,
     pub(crate) called: Vec<(String, P<Node>, String)>,
     pub(crate) handed_out: HashSet<String>,
-    pub(crate) guards: HashMap<P<Type>, Slot>,
-    pub(crate) enum_tables: HashMap<String, Slot>,
-    pub(crate) literal_tables: HashMap<usize, (Slot, Slot)>,
-    pub(crate) table_fields: HashMap<String, u32>,
+    /// The file's slots: main-chunk locals the compiler may spill into one table ([`hand_out`]).
+    pub(crate) slots: HashSet<Id>,
+    pub(crate) guards: HashMap<P<Type>, Id>,
+    pub(crate) enum_tables: HashMap<String, Id>,
+    pub(crate) literal_tables: HashMap<usize, (Id, Id)>,
     pub(crate) discriminants: HashMap<usize, Option<String>>,
     pub(crate) evaluations: HashMap<usize, Rc<Evaluation>>,
     pub(crate) fits: HashMap<(usize, usize), Fit>,
@@ -404,10 +401,8 @@ pub struct Generator {
     pub(crate) compact: bool,
     pub(crate) hidden_here: HashMap<String, Option<P<Symbol>>>,
     pub(crate) global_aliases: HashMap<String, Id>,
-    /// The main-chunk locals the file's hoisted helpers took (`LocalBudget`, keyed by file), live to the file's end.
-    pub(crate) budget_used: u32,
     /// The locals networking's call sites left live ahead of their statements, by scope
-    /// ([`crate::networking::scope::Scope::leak_cap`]).
+    /// ([`crate::networking::scope::SCOPE_LEAK`]).
     pub(crate) net_leaked: HashMap<crate::networking::scope::Scope, u32>,
     /// A refusal recorded while building (a hidden global), returned when the value is done.
     pub(crate) sticky: Option<rbxts_plugin::Abort>,
@@ -421,9 +416,6 @@ pub struct Generator {
     #[cfg(feature = "wire-harvest")]
     pub(crate) companion: bool,
 }
-
-/// `LOCAL_BUDGET`: Flamework locals a file's main chunk may take before they go into the file's table.
-pub const LOCAL_BUDGET: u32 = 16;
 
 impl Generator {
     pub fn new(file: P<SourceFile>, checks: Checks) -> Generator {
@@ -450,9 +442,9 @@ impl Generator {
             called: Vec::new(),
             handed_out: HashSet::new(),
             guards: HashMap::new(),
+            slots: HashSet::new(),
             enum_tables: HashMap::new(),
             literal_tables: HashMap::new(),
-            table_fields: HashMap::new(),
             discriminants: HashMap::new(),
             evaluations: HashMap::new(),
             fits: HashMap::new(),
@@ -475,7 +467,6 @@ impl Generator {
             compact: false,
             hidden_here: HashMap::new(),
             global_aliases: HashMap::new(),
-            budget_used: 0,
             net_leaked: HashMap::new(),
             sticky: None,
             true_kind: None,
@@ -486,13 +477,15 @@ impl Generator {
         }
     }
 
-    /// `LocalBudget.claim(file, count)`.
-    pub fn claim_locals(&mut self, count: u32) -> bool {
-        if self.budget_used + count > LOCAL_BUDGET {
-            return false;
+    /// The slot `statement` declares (`local <slot> = value`), if it is a slot's declaration.
+    pub(crate) fn slot_declared(&self, statement: &Stmt) -> Option<Id> {
+        let Stmt::VariableDeclaration(declaration) = statement else { return None };
+        let [rbxts_luau::AnyIdentifier::Identifier(local)] = declaration.left.as_slice() else { return None };
+        if declaration.right.len() != 1 {
+            return None;
         }
-        self.budget_used += count;
-        true
+        let index = crate::luau_names::index_of_name(&local.name)?;
+        Some(Id(index as u32)).filter(|id| self.slots.contains(id))
     }
 }
 
@@ -526,12 +519,53 @@ pub(crate) fn name_output(fw: &FwInstance, cx: &mut Cx<'_>, statements: &mut [St
     generator.names.assign(cx, statements, expr);
 }
 
-/// Names a hook's hoisted statements and its value, and places the statements before the current root statement.
-fn hand_out(fw: &FwInstance, cx: &mut Cx<'_>, mut top: Vec<Stmt>, value: Option<&mut Expr>) {
-    name_output(fw, cx, &mut top, value);
+/// Names a hook's hoisted statements and its value, and places the statements before the current root statement, in
+/// their order. A slot's declaration (`local <slot> = value`, [`Generator::slots`]) goes through the compiler's
+/// spill (`Cx::hoist_spillable_named`, which names the slot), every other statement through
+/// `insert_before_root_statement`: hoists and root insertions share one list in call order, so each slot is declared
+/// where its `local` stood among the hoisted statements, ahead of every statement that reads it (the hoisted ones
+/// come in `take_hoisted`'s order: declarations, tables, definitions, each in the order it was made), and a spilled
+/// one gets its `_spill` field there.
+fn hand_out(fw: &FwInstance, cx: &mut Cx<'_>, top: Vec<Stmt>, value: Option<&mut Expr>) {
+    let mut state = fw.serializer.borrow_mut();
+    let generator = state.generator.as_mut().expect("a generator");
+    let mut placed: Vec<Stmt> = Vec::new();
     #[cfg(feature = "wire-harvest")]
-    wire::hoisted(fw, &top);
-    cx.insert_before_root_statement(top);
+    let mut harvested: Vec<Stmt> = Vec::new();
+    for mut statement in top {
+        let Some(slot) = generator.slot_declared(&statement) else {
+            generator.names.assign(cx, std::slice::from_mut(&mut statement), None);
+            #[cfg(feature = "wire-harvest")]
+            harvested.push(statement.clone());
+            placed.push(statement);
+            continue;
+        };
+        let Stmt::VariableDeclaration(declaration) = statement else { unreachable!("a slot's declaration") };
+        let mut slot_value = declaration.right.into_iter().next().expect("a slot's value");
+        generator.names.assign(cx, &mut [], Some(&mut slot_value));
+        if !placed.is_empty() {
+            cx.insert_before_root_statement(std::mem::take(&mut placed));
+        }
+        let base = generator.names.base(slot.0 as usize).to_owned();
+        #[cfg(feature = "wire-harvest")]
+        let copy = slot_value.clone();
+        let name = match cx.hoist_spillable_named(slot_value, &base) {
+            Expr::Identifier(local) => local.name,
+            // refused: the compiler has reported it, and the build fails
+            _ => crate::luau_names::unique_name(cx, &base),
+        };
+        // A harvested module declares no slot as a local, so that no module passes Luau's 200 locals.
+        #[cfg(feature = "wire-harvest")]
+        harvested.push(luau::assign(rbxts_luau::create::id(name.clone()), copy));
+        generator.names.name(slot.0 as usize, name);
+    }
+    if !placed.is_empty() {
+        cx.insert_before_root_statement(placed);
+    }
+    generator.names.assign(cx, &mut [], value);
+    drop(state);
+    #[cfg(feature = "wire-harvest")]
+    wire::hoisted(fw, &harvested);
 }
 
 /// Runs a build of the generator and returns the hoisted statements with its result.

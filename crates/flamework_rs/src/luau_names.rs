@@ -55,6 +55,17 @@ impl Names {
         placeholder_index(expr).map(|index| self.bases[index].as_str())
     }
 
+    /// The base name placeholder `index` asks for.
+    pub(crate) fn base(&self, index: usize) -> &str {
+        &self.bases[index]
+    }
+
+    /// Gives placeholder `index` the name `name`, chosen elsewhere (a slot named by the compiler's
+    /// `hoist_spillable_named`); it is kept from then on.
+    pub(crate) fn name(&mut self, index: usize, name: String) {
+        self.named[index] = Some(name);
+    }
+
     /// Replaces each placeholder in `replacements` (by index) with its expression, everywhere in `statements`.
     pub(crate) fn substitute(statements: &mut [Stmt], replacements: &HashMap<usize, Expr>) {
         let mut visit = |expr: &mut Expr| {
@@ -131,7 +142,8 @@ pub(crate) fn placeholder_index(expr: &Expr) -> Option<usize> {
     }
 }
 
-fn index_of_name(name: &str) -> Option<usize> {
+/// The placeholder index a local's name stands for, if it is a placeholder's.
+pub(crate) fn index_of_name(name: &str) -> Option<usize> {
     name.strip_prefix(MARK)?.parse().ok()
 }
 

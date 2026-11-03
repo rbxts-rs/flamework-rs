@@ -9,7 +9,9 @@
 //! - every output compiles at every level;
 //! - no whole-statement send is packed in a function of its own: each goes in a `do` block with its statement, its
 //!   packing fitted among the live locals the compiler counts there; only a send among 199 live locals, where even
-//!   the compact packing has no room, goes in a function.
+//!   the compact packing has no room, goes in a function (and the main chunk's send in `slots.ts`, below);
+//! - a main chunk holding more file slots than Luau's 200 locals (`slots.ts`: literal tables, union members' guards,
+//!   enum tables, dedup guards) has them spilled into one table by the compiler, and loads.
 //!
 //! The project is copied to a temporary directory with a `node_modules` as an install has it (`support::project`);
 //! without the monorepo and the `@rbxts` packages the test is skipped, saying so. It is the only test of this binary:
@@ -111,10 +113,21 @@ fn compact_exactly_when_plain_does_not_fit() {
         .map(|function| function.split('(').next().unwrap_or_default())
         .collect();
     assert_eq!(wrapped, ["send100held199"], "whole-statement sends packed in a function of their own");
-    assert_eq!(refused, 1, "call sites with no room where they are");
+    // and the send in `slots.ts`'s main chunk, where the compiler counts the slots ahead of it as live locals (the
+    // spill is decided at the end of the file)
+    assert_eq!(refused, 2, "call sites with no room where they are");
+
+    // The file slots: past Luau's 200 locals in the main chunk, all of them go into one table.
+    let slots = luau(&report, "slots.luau");
+    assert!(slots.contains("\nlocal _spill = {}\n"), "{slots}");
+    let spilled = |family: &str| slots.lines().filter(|line| line.starts_with(&format!("_spill.{family}"))).count();
+    let families = ["literals", "literalIndex", "guard", "enum_", "D"].map(spilled);
+    assert_eq!(families, [80, 80, 40, 5, 40], "slots spilled, by family");
+    assert!(!slots.lines().any(|line| line.starts_with("codec.") && !line.contains("function")), "a slot in the file's table");
+    assert!(slots.contains("(function()"), "the main chunk's send in a function of its own");
 
     // Every output loads where Roblox runs it, and with constant folding off.
-    for file in ["strings.luau", "bytes.luau", "vectors.luau", "unions.luau", "network.luau", "sends.luau"] {
+    for file in ["strings.luau", "bytes.luau", "vectors.luau", "unions.luau", "network.luau", "sends.luau", "slots.luau"] {
         let source = luau(&report, file);
         for &(o, d, _) in ROBLOX_LEVELS {
             if let Err(error) = rbxts_luau_check::compile(source, o, d) {

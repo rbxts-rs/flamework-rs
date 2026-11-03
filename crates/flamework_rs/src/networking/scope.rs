@@ -10,17 +10,20 @@ use rbxts_plugin::ts::{Kind, Node, P};
 
 /// Locals one send may leave live ahead of its statement, past which it is packed in a function of its own.
 pub(crate) const SEND_LEAK: u32 = 8;
-/// Locals the sends of one function may leave live ahead of their statements (`FUNCTION_LOCAL_BUDGET`).
-pub(crate) const FUNCTION_LEAK: u32 = 64;
-/// The same for the file's main chunk (`LOCAL_BUDGET`).
-pub(crate) const FILE_LEAK: u32 = 16;
+/// Locals the sends of one scope, a function or the file's main chunk, may leave live ahead of their statements (the
+/// TS's `FUNCTION_LOCAL_BUDGET`). The TS gave the main chunk 16 (`LOCAL_BUDGET`), shared with the serializer's file
+/// slots; those go through the compiler's spill now, which also makes room in the main chunk past Luau's limit, so
+/// the main chunk's sends get a function's cap.
+pub(crate) const SCOPE_LEAK: u32 = 64;
 /// Live locals, the leaked ones included, past which a send is not packed ahead of its statement: Luau's 200, less
 /// the margin of 20 kept everywhere ([`crate::serializer::limits::MARGIN`]).
 pub(crate) const AHEAD_LOCALS: u32 = 180;
 /// Main-chunk locals the compiler's count cannot include when a site in the main chunk is built: what the site's own
-/// build hoists ahead of the root statement once it is done (at most the file's [`crate::serializer::LOCAL_BUDGET`]
-/// slots, `codec`, three global aliases, the varint helpers and `zeros`: 24), and what the end of the file decides
-/// (a later plugin import, `local TS`).
+/// build hoists ahead of the root statement once it is done (`codec`, three global aliases, the varint helpers and
+/// `zeros`: 8; the spill table, 1) and what the end of the file decides (a later plugin import, `local TS`). The
+/// site's slots (guards, literal and enum tables) are not bounded here: they stay locals only while the compiler's
+/// count of the whole main chunk, at the end of the file, is within Luau's limits, and are spilled into one table
+/// otherwise; the load check judges the file either way.
 pub(crate) const MAIN_CHUNK_LATE: u32 = 32;
 
 /// The scope a call site's code lands in (`enclosingScope`): the function around it (a class static block counts),
@@ -29,16 +32,6 @@ pub(crate) const MAIN_CHUNK_LATE: u32 = 32;
 pub(crate) enum Scope {
     Function(P<Node>),
     File,
-}
-
-impl Scope {
-    /// How many locals the sends of this scope may leave live ahead of their statements.
-    pub(crate) fn leak_cap(self) -> u32 {
-        match self {
-            Scope::Function(_) => FUNCTION_LEAK,
-            Scope::File => FILE_LEAK,
-        }
-    }
 }
 
 /// `enclosingScope(node)`.

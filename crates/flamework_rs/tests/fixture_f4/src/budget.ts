@@ -1,6 +1,6 @@
 import { Flamework } from "@flamework-experimental/core";
 
-/** More literal groups and enums than a file's budget of locals: the rest go into the file's table. */
+/** More literal groups and enums than the TS transformer's 16 file locals: all of them locals here. */
 export const l1 = Flamework.createSerializer<"a1" | "b1">();
 export const l2 = Flamework.createSerializer<"a2" | "b2">();
 export const l3 = Flamework.createSerializer<"a3" | "b3">();

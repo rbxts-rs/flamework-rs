@@ -13,7 +13,7 @@
 //! block with its statement (`do <packing>; target:_fire(...) end`), so its locals end with it; a returned send ahead
 //! of its `return`, which ends the block anyway. A send elsewhere in a statement goes ahead of the statement when
 //! that runs its code exactly when the call runs (`hoistsCleanly`) and the locals it leaves live there stay within
-//! [`scope::SEND_LEAK`] per send and its scope's cap ([`scope::Scope::leak_cap`]), counted against the compiler's
+//! [`scope::SEND_LEAK`] per send and its scope's cap ([`scope::SCOPE_LEAK`]), counted against the compiler's
 //! live locals ([`scope::AHEAD_LOCALS`]); in a function called where the call is otherwise. The packing is fitted to
 //! Luau's limits among the locals live where it lands: the compiler's count (`Cx::live_before_statement`, asked once
 //! the arguments are compiled, so that whatever their hooks put ahead of the statement is in it), what the compiler
@@ -382,12 +382,12 @@ fn place(fw: &FwInstance, node: P<Node>, route: Route, live: u32, statements: &[
     }
 }
 
-/// Claims `count` locals left live ahead of a statement in `scope`, within [`Scope::leak_cap`].
+/// Claims `count` locals left live ahead of a statement in `scope`, within [`scope::SCOPE_LEAK`].
 fn claim_leak(fw: &FwInstance, scope: Scope, count: u32) -> bool {
     let mut state = fw.serializer.borrow_mut();
     let generator = state.generator.as_mut().expect("a generator");
     let used = generator.net_leaked.entry(scope).or_default();
-    if *used + count > scope.leak_cap() {
+    if *used + count > scope::SCOPE_LEAK {
         return false;
     }
     *used += count;

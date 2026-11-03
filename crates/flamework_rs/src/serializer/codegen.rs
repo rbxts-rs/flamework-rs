@@ -777,9 +777,14 @@ impl Gen<'_, '_, '_> {
             if !recording && plain.surely_fits(limits::MARGIN + outer) {
                 return Ok((body, false));
             }
-            // what the file hoisted so far ahead of its functions, in `take_hoisted`'s order
+            // what the file hoisted so far ahead of its functions, in `take_hoisted`'s order, but the slots' declarations:
+            // they are no helpers Luau could inline, and a file may have more than Luau's 200 (the compiler spills
+            // them), so the probe reads them as globals
             let hoisted = |gn: &Self| [gn.g.declarations.len(), gn.g.tables.len()];
-            let prelude = |gn: &Self| Rc::new([gn.g.declarations.as_slice(), gn.g.tables.as_slice()].concat());
+            let prelude = |gn: &Self| {
+                let hoisted = gn.g.declarations.iter().chain(&gn.g.tables);
+                Rc::new(hoisted.filter(|s| gn.g.slot_declared(s).is_none()).cloned().collect::<Vec<_>>())
+            };
             let before = hoisted(self);
             plain.prelude = prelude(self);
             let keep = limits::keeps_plain(&plain, outer).map_err(|error| self.does_not_compile(what, error))?;

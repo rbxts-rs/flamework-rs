@@ -7,8 +7,8 @@
 //!   `flamework:return_guard`), component instance guards;
 //! - [`guard_for_with_dedup`] (`buildGuardFromTypeWithDedup`): `Modding.Generic<T, "guard">` (`createGuard<T>()`).
 //!   With `transformer.optimizations.guardGenerationDedupLimit` set, types met that many times are declared once
-//!   as locals ahead of the TS statement around the call (the TS's `prereqList`), or kept with the guard in a
-//!   function of their own when the scope has no room for them;
+//!   as locals: in the main chunk through the compiler's spill, else ahead of the TS statement around the call (the
+//!   TS's `prereqList`), or kept with the guard in a function of their own when the function has no room for them;
 //! - [`guard_fields_in_context`] (`buildGuardsFromType`): one guard per property (component attributes);
 //! - [`tuple_guards`] (`buildTupleGuardsIntrinsic`): the `tuple-guards` intrinsic, `{ { guards }, rest, { after } }`.
 //!
@@ -21,10 +21,12 @@
 //!
 //! **Not the TS's.**
 //! - The Luau-limits budget: the TS lets Flamework's code claim 16 locals in a file's main chunk and 64 in a
-//!   function, shared by every call site there. Here each dedup guard checks its own count against those caps, and
-//!   against the locals live where its locals would go ([`rbxts_plugin::Cx::live_before_statement`]), which must stay
-//!   within 180 (Luau's 200, less a margin of 20): a file whose dedup guards together pass 16 locals keeps them ahead
-//!   of their statements where the TS would wrap the later ones in a function.
+//!   function, shared by every call site there. Here dedup locals whose statement is in the main chunk (not in a
+//!   function or a class static block) go ahead of the top-level statement through the compiler's spill
+//!   (`Cx::hoist_spillable_named`), which moves them into one table when the main chunk passes Luau's limits, so they
+//!   need no budget; a dedup guard in a function checks its own count against the function's cap (64) and against
+//!   the locals live where its locals would go ([`rbxts_plugin::Cx::live_before_statement`]), which must stay within
+//!   180 (Luau's 200, less a margin of 20), else it keeps them in a function with the guard.
 
 mod generator;
 mod library;
@@ -99,27 +101,43 @@ pub(crate) fn guard_for_unnamed(
     Ok((guard, generator.names))
 }
 
-/// The TS's `LOCAL_BUDGET` and `FUNCTION_LOCAL_BUDGET` (`luauLimits.ts`): the dedup locals one guard may put ahead
-/// of a statement in the main chunk and in a function.
-const FILE_LOCAL_BUDGET: usize = 16;
+/// The TS's `FUNCTION_LOCAL_BUDGET` (`luauLimits.ts`): the dedup locals one guard may put ahead of a statement in a
+/// function. (In the main chunk the compiler's spill holds them: no budget.)
 const FUNCTION_LOCAL_BUDGET: usize = 64;
 /// The live locals, the guard's included, past which its dedup locals go in a function with it: Luau's 200, less a
 /// margin of 20.
 const LIVE_LOCALS: usize = 180;
 
 /// `buildGuardFromTypeWithDedup`: the guard of `ty` for a `Generic<T, "guard">` argument at `node` (the call). With a
-/// dedup limit, the shared guards go ahead of the TS statement around the call, where the TS's `prereqList` puts
-/// them (`cx.insert_before_statement`), or, when the scope has no room for them, into a function with the guard.
+/// dedup limit, the shared guards go ahead of the statement around the call: in the main chunk ahead of the top-level
+/// statement, each through the compiler's spill (`cx.hoist_spillable_named`, in their order, so each is declared
+/// before the ones that read it); in a function where the TS's `prereqList` puts them (`cx.insert_before_statement`),
+/// or, when the function has no room for them, into a function with the guard.
 pub fn guard_for_with_dedup(cx: &mut Cx<'_>, config: GuardConfig<'_>, node: P<Node>, ty: P<Type>) -> PResult<LuauExpr> {
     let mut generator = Generator::new(cx, config, node);
     if let Some(limit) = config.dedup_limit {
         generator.calculate_dedup(ty, limit.max(1));
     }
-    let guard = generator.build_guard(ty)?;
+    let mut guard = generator.build_guard(ty)?;
 
     let count = generator.dedup.len();
-    if count == 0 || dedup_fits(generator.cx, node, count) {
-        let mut guard = guard;
+    if count > 0 && in_main_chunk(node) {
+        for dedup in std::mem::take(&mut generator.dedup) {
+            let mut value = dedup.value;
+            generator.names.assign(generator.cx, &mut [], Some(&mut value));
+            let index = crate::luau_names::placeholder_index(&dedup.id).expect("a dedup guard's placeholder");
+            let base = generator.names.base(index).to_owned();
+            let name = match generator.cx.hoist_spillable_named(value, &base) {
+                Expr::Identifier(local) => local.name,
+                // refused: the compiler has reported it, and the build fails
+                _ => crate::luau_names::unique_name(generator.cx, &base),
+            };
+            generator.names.name(index, name);
+        }
+        generator.names.assign(generator.cx, &mut [], Some(&mut guard));
+        return Ok(guard);
+    }
+    if count == 0 || dedup_fits(generator.cx, count) {
         let mut statements: Vec<Stmt> =
             generator.dedup.drain(..).map(|d| create::local(declared(&d.id), Some(d.value))).collect();
         generator.names.assign(generator.cx, &mut statements, Some(&mut guard));
@@ -127,15 +145,21 @@ pub fn guard_for_with_dedup(cx: &mut Cx<'_>, config: GuardConfig<'_>, node: P<No
         return Ok(guard);
     }
 
-    let mut guard = generator.hold_in_function(guard);
+    guard = generator.hold_in_function(guard);
     generator.names.assign(generator.cx, &mut [], Some(&mut guard));
     Ok(guard)
 }
 
-/// Whether `count` more locals fit ahead of the statement at `node` (see the module docs).
-fn dedup_fits(cx: &mut Cx<'_>, node: P<Node>, count: usize) -> bool {
-    let budget = if in_function(node) { FUNCTION_LOCAL_BUDGET } else { FILE_LOCAL_BUDGET };
-    count <= budget && cx.live_before_statement().locals as usize + count <= LIVE_LOCALS
+/// Whether `count` more locals fit ahead of the statement around the call, in a function (see the module docs).
+fn dedup_fits(cx: &mut Cx<'_>, count: usize) -> bool {
+    count <= FUNCTION_LOCAL_BUDGET && cx.live_before_statement().locals as usize + count <= LIVE_LOCALS
+}
+
+/// The statement `cx.insert_before_statement` would put `node`'s statements ahead of is in the main chunk: in no
+/// function or class static block (in a block of the file's top level, its locals go ahead of the top-level statement
+/// instead, which is the same for a guard: it reads nothing but `t` and the other dedup guards).
+fn in_main_chunk(node: P<Node>) -> bool {
+    crate::networking::scope::enclosing_statement(node).is_some_and(|statement| !in_function(statement))
 }
 
 /// `enclosingScope(node)` is a function (or a class static block), not the file.

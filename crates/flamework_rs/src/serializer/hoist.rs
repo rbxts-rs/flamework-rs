@@ -1,6 +1,10 @@
 //! What lands at the top of the file: hoisted types' functions, the file's table, guards, literal and enum
 //! tables, the varint and check helpers; the globals the code names; the serializer's version option.
 //!
+//! Guards and literal and enum tables are the file's slots (`Gen::slot_local`): main-chunk locals the compiler
+//! moves into one table when the main chunk passes Luau's 200 locals (`super::hand_out`), so a file holds any number
+//! of them. The file's table (`codec`) holds the hoisted types' functions and the check helpers.
+//!
 //! Everything is built as Luau ([`super::luau`]), its locals placeholders of the file's [`crate::luau_names::Names`]
 //! ([`Id`]), named when a hook hands its output out.
 
@@ -17,7 +21,7 @@ use super::codegen::{Ctx, Place, function};
 use super::lit::Lit;
 use super::luau::{self, Part};
 use super::typeinfo;
-use super::{GResult, Gen, Hoisted, Id, Kind, Shape, Slot, Varint};
+use super::{GResult, Gen, Hoisted, Id, Kind, Shape, Varint};
 
 const VARINT_MAX_BYTES: u32 = 5;
 /// The types Luau's `type()` tells; any other is `typeof()`'s.
@@ -489,35 +493,14 @@ impl Gen<'_, '_, '_> {
 
     // --- slots -------------------------------------------------------------------------------------------------
 
-    /// `fileSlots(hints)`.
-    fn file_slots(&mut self, hints: &[&str]) -> Vec<Slot> {
-        if self.g.claim_locals(hints.len() as u32) {
-            return hints.iter().map(|hint| Slot::Local(self.uid(hint))).collect();
-        }
-        hints
-            .iter()
-            .map(|hint| {
-                let count = self.g.table_fields.get(*hint).copied().unwrap_or(0);
-                self.g.table_fields.insert((*hint).to_owned(), count + 1);
-                Slot::Field(if count == 0 { (*hint).to_owned() } else { format!("{hint}_{count}") })
-            })
-            .collect()
-    }
-
-    /// `readSlot(slot)`.
-    fn read_slot(&mut self, slot: &Slot) -> Expr {
-        match slot {
-            Slot::Local(id) => id.e(),
-            Slot::Field(field) => self.codec_field(field),
-        }
-    }
-
-    /// `declareSlot(slot, value)`.
-    fn declare_slot(&mut self, slot: &Slot, value: Expr) -> Stmt {
-        match slot {
-            Slot::Local(id) => luau::local(&id.e(), Some(value)),
-            Slot::Field(field) => luau::assign(self.codec_field(field), value),
-        }
+    /// A slot of the file (`fileSlots`): a main-chunk local, declared by `local <slot> = value` among the hoisted
+    /// statements and handed out through the compiler's spill (`Cx::hoist_spillable_named`, `super::hand_out`). Where
+    /// the TS generator kept 16 of them in locals and the rest in fields of the file's table, the compiler keeps them
+    /// all in locals while the main chunk is within Luau's limits, else all in one table.
+    fn slot_local(&mut self, hint: &str) -> Id {
+        let id = self.uid(hint);
+        self.g.slots.insert(id);
+        id
     }
 
     /// `guardFor(type)`: the member's `t` guard (F3's `buildGuardFromType`, [`crate::guards::guard_for`]), kept in a
@@ -528,9 +511,9 @@ impl Gen<'_, '_, '_> {
             return super::wire::guard(self, ty);
         }
         let slot = match self.g.guards.get(&ty) {
-            Some(slot) => slot.clone(),
+            Some(&slot) => slot,
             None => {
-                let slot = self.file_slots(&["guard"]).remove(0);
+                let slot = self.slot_local("guard");
                 let expression = self.at_file_level(|gn| -> GResult<Expr> {
                     let node = gn.g.diagnostic_node;
                     let (mut guard, names) =
@@ -543,61 +526,44 @@ impl Gen<'_, '_, '_> {
                     names.rebase(&mut guard, |base| gn.uid(base).0 as usize);
                     Ok(guard)
                 })?;
-                let statement = self.declare_slot(&slot, expression);
-                self.push_table(statement, None);
-                self.g.guards.insert(ty, slot.clone());
+                self.push_table(luau::local(&slot.e(), Some(expression)), None);
+                self.g.guards.insert(ty, slot);
                 slot
             }
         };
-        Ok(self.read_slot(&slot))
+        Ok(slot.e())
     }
 
     /// `enumTableFor(name)`: `Enum.<name>` items by `Value`, built once.
     pub(crate) fn enum_table_for(&mut self, name: &str) -> Expr {
         let slot = match self.g.enum_tables.get(name) {
-            Some(slot) => slot.clone(),
+            Some(&slot) => slot,
             None => {
-                let hint = format!("enum_{name}");
-                let slot = self.file_slots(&[&hint]).remove(0);
-                let id = match &slot {
-                    Slot::Local(id) => *id,
-                    Slot::Field(_) => self.uid(&hint),
-                };
+                let slot = self.slot_local(&format!("enum_{name}"));
                 let item = self.uid("item");
                 self.at_file_level(|gn| {
                     let group = luau::prop(gn.global_ref("Enum"), name);
                     let items = luau::method(group, "GetEnumItems", Vec::new());
-                    let (table, item) = (id.e(), item.e());
+                    let (table, item) = (slot.e(), item.e());
                     let by_value = luau::assign(luau::index(table.clone(), luau::prop(item.clone(), "Value")), item.clone());
-                    let mut build = vec![
-                        luau::local(&table, Some(create::map(Vec::<(Expr, Expr)>::new()))),
-                        luau::for_in(&[create::id("_"), item], items, vec![by_value]),
-                    ];
-                    if matches!(slot, Slot::Local(_)) {
-                        for s in build {
-                            gn.push_table(s, None);
-                        }
-                    } else {
-                        build.push(gn.declare_slot(&slot, table));
-                        gn.push_table(luau::do_(build), None);
-                    }
+                    gn.push_table(luau::local(&table, Some(create::map(Vec::<(Expr, Expr)>::new()))), None);
+                    gn.push_table(luau::for_in(&[create::id("_"), item], items, vec![by_value]), None);
                 });
-                self.g.enum_tables.insert(name.to_owned(), slot.clone());
+                self.g.enum_tables.insert(name.to_owned(), slot);
                 slot
             }
         };
-        self.read_slot(&slot)
+        slot.e()
     }
 
     /// `literalTablesFor(kind)`: the values as a list (decode) and as a lookup to their index (encode).
     pub(crate) fn literal_tables_for(&mut self, kind: &Rc<Kind>) -> (Expr, Expr) {
         let key = super::kind_key(kind);
         let (list, index) = match self.g.literal_tables.get(&key) {
-            Some(entry) => entry.clone(),
+            Some(&entry) => entry,
             None => {
                 let Kind::Literals(values) = &**kind else { panic!("literal tables of a literal group") };
-                let slots = self.file_slots(&["literals", "literalIndex"]);
-                let (list, index) = (slots[0].clone(), slots[1].clone());
+                let (list, index) = (self.slot_local("literals"), self.slot_local("literalIndex"));
                 self.at_file_level(|gn| {
                     for v in values {
                         gn.check_globals_in(v);
@@ -605,18 +571,14 @@ impl Gen<'_, '_, '_> {
                     let list_value = create::array(values.iter().map(Lit::to_luau).collect());
                     let pairs: Vec<(Expr, Expr)> =
                         values.iter().enumerate().map(|(i, v)| (v.to_luau(), luau::num(i as f64))).collect();
-                    let a = gn.declare_slot(&list, list_value);
-                    gn.push_table(a, None);
-                    let b = gn.declare_slot(&index, create::map(pairs));
-                    gn.push_table(b, None);
+                    gn.push_table(luau::local(&list.e(), Some(list_value)), None);
+                    gn.push_table(luau::local(&index.e(), Some(create::map(pairs))), None);
                 });
-                self.g.literal_tables.insert(key, (list.clone(), index.clone()));
+                self.g.literal_tables.insert(key, (list, index));
                 (list, index)
             }
         };
-        let list = self.read_slot(&list);
-        let index = self.read_slot(&index);
-        (list, index)
+        (list.e(), index.e())
     }
 
     // --- varints -----------------------------------------------------------------------------------------------

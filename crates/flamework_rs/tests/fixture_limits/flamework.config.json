@@ -1,4 +1,4 @@
 {
-	"transformer": { "hashPrefix": "$t" },
+	"transformer": { "hashPrefix": "$t", "optimizations": { "guardGenerationDedupLimit": 2 } },
 	"networking": { "serialization": true }
 }
