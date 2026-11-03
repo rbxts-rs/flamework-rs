@@ -13,7 +13,7 @@
 //! harvests of builds before and after it pair up.
 //!
 //! The build's slots (guards, literal and enum tables), which the compiler may spill into one table, are globals of a
-//! module (\`guard = …\`, each module runs in an environment of its own), so that no module passes Luau's 200 locals.
+//! module (`guard = …`, each module runs in an environment of its own), so that no module passes Luau's 200 locals.
 
 use rbxts_luau::{Expr, LateStrings, Stmt, create, render_ast, render_expr};
 use rbxts_plugin::ts::{Node, P, Type};
