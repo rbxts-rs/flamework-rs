@@ -183,10 +183,10 @@ Text and order:
   the checks and their messages are the same; `--normalize` does not hide this, so compare those files on behaviour
   ([Wire identity](#wire-identity)).
 - **Where a file keeps its slots** (a serializer's guards, literal lists and indexes and enum tables, and the dedup
-  guards of `createGuard` calls in the main chunk): in locals ahead of the statement, which the compiler moves into
-  one table (`_spill.guard`) when the main chunk would pass Luau's 200 locals. The TS transformer kept 16 of them in
-  locals and the rest in fields of the file's table (`codec.guard_1`), and put the main chunk's dedup guards past 16
-  in a function with their guard.
+  guards of `createGuard` calls in the main chunk): in locals ahead of the top-level statement, which the compiler
+  moves into one table (`_spill.guard`) when the main chunk would pass Luau's 200 locals. The TS transformer kept 16
+  of them in locals and the rest in fields of the file's table (`codec.guard_1`), and put the main chunk's dedup
+  guards past 16 in a function with their guard.
 - **The order things are recorded in within a file:** a file's new ids (`flamework.build`'s `identifiers` and the
   counters of `short` / `tiny` / `obfuscated` ids), its `Flamework.env` inputs and its glob and path uses (their entries
   in `flamework.build` and `include/flamework/globs.json`, and the order of the glob warnings; path warnings stay in
