@@ -793,9 +793,14 @@ impl Gen<'_, '_, '_> {
             if !recording && plain.surely_fits(limits::MARGIN + outer) {
                 return Ok((body, false));
             }
-            // the file's hoisted declarations so far (aliases, the codec table)
-            let declared = self.g.declarations.len();
-            plain.prelude = Rc::new(measuring.lower(&self.g.ids, &self.g.declarations));
+            // what the file hoisted so far ahead of its functions, in `take_hoisted`'s order
+            let hoisted = |gn: &Self| [gn.g.declarations.len(), gn.g.tables.len()];
+            let prelude = |gn: &Self, measuring: &mut Measuring| {
+                let statements = [gn.g.declarations.as_slice(), gn.g.tables.as_slice()].concat();
+                Rc::new(measuring.lower(&gn.g.ids, &statements))
+            };
+            let before = hoisted(self);
+            plain.prelude = prelude(self, &mut measuring);
             let keep = limits::keeps_plain(&plain, outer).map_err(|error| self.does_not_compile(what, error))?;
             if keep {
                 record(what, outer, &plain, None, false);
@@ -804,9 +809,9 @@ impl Gen<'_, '_, '_> {
             self.g.compact = true;
             let rebuilt = build(self)?;
             let mut compact = measure(self, &mut measuring, &rebuilt);
-            if self.g.declarations.len() > declared {
+            if hoisted(self) != before {
                 // what the rebuild hoisted
-                plain.prelude = Rc::new(measuring.lower(&self.g.ids, &self.g.declarations));
+                plain.prelude = prelude(self, &mut measuring);
             }
             compact.prelude = plain.prelude.clone();
             let choice = limits::choose(&plain, &compact, outer).map_err(|error| self.does_not_compile(what, error))?;

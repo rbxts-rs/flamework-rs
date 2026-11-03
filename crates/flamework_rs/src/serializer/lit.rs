@@ -64,8 +64,8 @@ impl Lit {
         }
     }
 
-    /// The literal as Luau, rendering exactly as [`Lit::to_ir`] lowers (the direct emission's, from round B2).
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// The literal as Luau, rendering exactly as [`Lit::to_ir`] lowers (the literal tables', and the direct emission's
+    /// from round B2).
     pub fn to_luau(&self) -> Expr {
         match self {
             Lit::Str(s) => luau::str(s),

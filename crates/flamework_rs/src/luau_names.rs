@@ -8,7 +8,8 @@
 //! built and dropped consumes no names. [`Names::substitute`] replaces placeholders by other expressions first (the
 //! `guards.Name` fields of a guard holding more locals than Luau allows).
 //!
-//! Guards (`crate::guards`) use it today; the serializer's direct emission is to (DESIGN §2.1).
+//! Guards (`crate::guards`) use it, and so do the serializer's hoisted helpers, through [`placeholder`]s of its IR ids
+//! that its lowering names, until its emitters build Luau too (DESIGN §2.1, §4).
 
 use std::collections::HashMap;
 
@@ -31,7 +32,14 @@ impl Names {
     pub(crate) fn fresh(&mut self, base: impl Into<String>) -> Expr {
         let index = self.bases.len();
         self.bases.push(base.into());
-        create::id(format!("{MARK}{index}"))
+        placeholder(index)
+    }
+
+    /// Hands the placeholders in `expr` over to another registry: each becomes the placeholder `adopt` gives for its
+    /// base name (asked once per placeholder, in index order).
+    pub(crate) fn rebase(self, expr: &mut Expr, mut adopt: impl FnMut(&str) -> usize) {
+        let adopted: Vec<String> = self.bases.iter().map(|base| placeholder_name(adopt(base))).collect();
+        name_placeholders(&mut [], Some(expr), |index| adopted[index].clone());
     }
 
     /// The base name a placeholder asks for (`local.text` of the TS identifier), if `expr` is one.
@@ -64,29 +72,48 @@ impl Names {
         mut unique: impl FnMut(&str) -> String,
     ) {
         let mut assigned: Vec<Option<String>> = vec![None; self.bases.len()];
-        let mut name_of = |index: usize| -> String {
+        name_placeholders(statements, expr, |index| {
             assigned[index].get_or_insert_with(|| unique(&self.bases[index])).clone()
-        };
-        let named = std::cell::RefCell::new(&mut name_of);
-        let mut on_expr = |expr: &mut Expr| {
-            if let Some(index) = placeholder_index(expr) {
-                let name = (named.borrow_mut())(index);
-                *expr = create::id(name);
-            }
-        };
-        let mut on_id = |id: &mut AnyIdentifier| {
-            if let AnyIdentifier::Identifier(identifier) = id
-                && let Some(index) = index_of_name(&identifier.name)
-            {
-                identifier.name = (named.borrow_mut())(index);
-            }
-        };
-        for statement in statements {
-            walk_stmt(statement, &mut on_expr, &mut on_id);
+        });
+    }
+}
+
+/// The placeholder of index `index` ([`Names::fresh`]'s, or one standing for another registry's identifier: the
+/// serializer's IR ids until its direct emission is complete).
+pub(crate) fn placeholder(index: usize) -> Expr {
+    create::id(placeholder_name(index))
+}
+
+fn placeholder_name(index: usize) -> String {
+    format!("{MARK}{index}")
+}
+
+/// Replaces every placeholder in `statements` and then `expr`, used or declared, by the name `name_of` gives for its
+/// index, in render order. `name_of` is asked at each occurrence: keeping a name is up to it.
+pub(crate) fn name_placeholders(
+    statements: &mut [Stmt],
+    expr: Option<&mut Expr>,
+    mut name_of: impl FnMut(usize) -> String,
+) {
+    let named = std::cell::RefCell::new(&mut name_of);
+    let mut on_expr = |expr: &mut Expr| {
+        if let Some(index) = placeholder_index(expr) {
+            let name = (named.borrow_mut())(index);
+            *expr = create::id(name);
         }
-        if let Some(expr) = expr {
-            walk_expr(expr, &mut on_expr, &mut on_id);
+    };
+    let mut on_id = |id: &mut AnyIdentifier| {
+        if let AnyIdentifier::Identifier(identifier) = id
+            && let Some(index) = index_of_name(&identifier.name)
+        {
+            identifier.name = (named.borrow_mut())(index);
         }
+    };
+    for statement in statements {
+        walk_stmt(statement, &mut on_expr, &mut on_id);
+    }
+    if let Some(expr) = expr {
+        walk_expr(expr, &mut on_expr, &mut on_id);
     }
 }
 
@@ -327,5 +354,23 @@ mod tests {
         Names::substitute(&mut statements, &HashMap::from([(0, replacement)]));
         let text = rbxts_luau::render_ast(&statements);
         assert_eq!(text, "guards.Tree = t.array(guards.Tree)\n");
+    }
+
+    #[test]
+    fn rebase_moves_used_and_declared_placeholders() {
+        let mut names = Names::default();
+        let depth = names.fresh("depth");
+        let value = names.fresh("value");
+        let body = vec![create::local(declared(&depth), Some(value.clone())), create::return_stmt(depth)];
+        let mut function = create::function(vec![declared(&value)], false, body);
+        let mut adopted = Vec::new();
+        names.rebase(&mut function, |base| {
+            adopted.push(base.to_owned());
+            40 + adopted.len()
+        });
+        assert_eq!(adopted, ["depth", "value"]);
+        name_placeholders(&mut [], Some(&mut function), |index| format!("n{index}"));
+        let text = rbxts_luau::render_expr(&function, &rbxts_luau::LateStrings::default());
+        assert_eq!(text, "function(n42)\n\tlocal n41 = n42\n\treturn n41\nend");
     }
 }

@@ -97,14 +97,12 @@ pub enum Op {
     /// `!==`
     Ne,
     And,
-    Or,
 }
 
 impl Op {
     /// `getBinaryOperatorPrecedence`.
     fn precedence(self) -> u8 {
         match self {
-            Op::Or => 5,
             Op::And => 6,
             Op::Eq | Op::Ne => 10,
             Op::Lt | Op::Le | Op::Gt | Op::Ge => 11,
@@ -119,7 +117,6 @@ impl Op {
 pub enum AssignOp {
     Assign,
     Add,
-    Mul,
 }
 
 /// How roblox-ts compiles a call.
@@ -154,57 +151,11 @@ pub struct Arrow {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Id,
-    /// `unit = ""`: roblox-ts tests it for nil first thing in the function.
-    pub default: Option<E>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Body {
     Block(Vec<S>),
-    Expr(E),
-}
-
-/// A guard built by F3 ([`crate::guards::guard_for_unnamed`]) with placeholders for its locals, named when the guard
-/// is lowered ([`Guard::name`]).
-#[derive(Debug)]
-pub struct Guard {
-    unnamed: rbxts_plugin::LuauExpr,
-    names: crate::luau_names::Names,
-    named: std::cell::RefCell<Option<rbxts_plugin::LuauExpr>>,
-}
-
-impl Guard {
-    pub(crate) fn new(unnamed: rbxts_plugin::LuauExpr, names: crate::luau_names::Names) -> Guard {
-        Guard { unnamed, names, named: std::cell::RefCell::new(None) }
-    }
-
-    /// Names the guard's locals with `unique`, in render order, the first time it is called.
-    pub(crate) fn name(&self, unique: impl FnMut(&str) -> String) {
-        if self.named.borrow().is_some() {
-            return;
-        }
-        let mut guard = self.unnamed.clone();
-        self.names.assign_with(&mut [], Some(&mut guard), unique);
-        *self.named.borrow_mut() = Some(guard);
-    }
-
-    /// The guard with its locals named by `unique`, in render order, without keeping the names (for measuring).
-    pub(crate) fn render_with(&self, unique: impl FnMut(&str) -> String) -> rbxts_plugin::LuauExpr {
-        let mut guard = self.unnamed.clone();
-        self.names.assign_with(&mut [], Some(&mut guard), unique);
-        guard
-    }
-
-    /// The named guard ([`Guard::name`] first).
-    pub(crate) fn named(&self) -> rbxts_plugin::LuauExpr {
-        self.named.borrow().clone().expect("a guard is named before it is lowered")
-    }
-}
-
-impl PartialEq for Guard {
-    fn eq(&self, other: &Guard) -> bool {
-        std::ptr::eq(self, other)
-    }
 }
 
 /// An expression.
@@ -215,8 +166,6 @@ pub enum E {
     Global(String),
     /// A value compiled elsewhere (a call site's argument): read like an identifier, or a literal as written.
     Ext(ExtValue),
-    /// A `t` guard (F3's), its locals named where it prints ([`Guard`]).
-    Guard(std::rc::Rc<Guard>),
     Num(f64),
     Str(String),
     Bool(bool),
@@ -237,9 +186,8 @@ pub enum E {
     Object(Vec<(Key, E)>),
     Array(Vec<E>),
     New(String, Vec<E>),
-    /// Luau built directly ([`super::luau`]), passed through by the lowering as it is: the transition to direct
-    /// emission (DESIGN §4, rounds A to B2). Read like an identifier.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Luau built directly ([`super::luau`]), passed through by the lowering, which names the placeholders in it
+    /// ([`luau_id`]) as it meets them: the transition to direct emission (DESIGN §4, rounds A to B2).
     Luau(rbxts_luau::Expr),
 }
 
@@ -302,10 +250,8 @@ pub enum S {
     If(E, Vec<S>, Option<Box<Else>>),
     Block(Vec<S>),
     ForOf(Bind, E, Vec<S>),
-    While(E, Vec<S>),
     Return(Option<E>),
     /// A Luau statement built directly, passed through by the lowering ([`E::Luau`]).
-    #[cfg_attr(not(test), allow(dead_code))]
     Luau(rbxts_luau::Stmt),
 }
 
@@ -405,6 +351,11 @@ pub fn id(id: Id) -> E {
     E::Id(id)
 }
 
+/// The identifier `id` in Luau built directly ([`E::Luau`]): a placeholder, named as the IR's identifiers are.
+pub fn luau_id(id: Id) -> rbxts_luau::Expr {
+    crate::luau_names::placeholder(id.0 as usize)
+}
+
 pub fn global(name: &str) -> E {
     E::Global(name.to_owned())
 }
@@ -499,7 +450,7 @@ pub fn arrow(params: Vec<Param>, body: Body) -> E {
 }
 
 pub fn param(id: Id) -> Param {
-    Param { id, default: None }
+    Param { id }
 }
 
 pub fn object(fields: Vec<(Key, E)>) -> E {
@@ -542,7 +493,7 @@ impl E {
     pub fn is_identifier(&self) -> bool {
         match self {
             E::Ext(value) => value.literal.is_none(),
-            _ => matches!(self, E::Id(_) | E::Global(_) | E::Guard(_) | E::Undefined),
+            _ => matches!(self, E::Id(_) | E::Global(_) | E::Undefined),
         }
     }
 

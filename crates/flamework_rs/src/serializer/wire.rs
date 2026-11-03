@@ -13,7 +13,6 @@
 //! - a site's packing: the build's own emitted statements, its argument placeholders bound to `__fwargs[i]` (instead
 //!   of lowering the encoding again with `ExtValue`s swapped);
 //! - the companion's names: a namer through the new shared `Names` that never asks the compiler (as [`Namer`] does);
-//! - [`guard`]: `__fwguard("<key>")` built as an `rbxts_luau` call;
 //! - the module contract unchanged (`kind`, `layout`, `key`, `serializer` / `deserialize` / `encode` / `pack`,
 //!   `fixed`, `arity`; ordinals in source order), so that harvests of builds before and after B2 still pair up.
 
@@ -202,5 +201,5 @@ pub(crate) fn end_file(fw: &FwInstance, cx: &mut Cx<'_>) {
 /// harness provides, so that no guard (and no `t` import) is made for the file.
 pub(crate) fn guard(gn: &mut Gen<'_, '_, '_>, ty: P<Type>) -> GResult<ir::E> {
     let key = gn.wire_key(&Shape::Type(ty), &mut Vec::new(), false)?.0;
-    Ok(ir::call(ir::global("__fwguard"), vec![ir::string(&key)]))
+    Ok(ir::E::Luau(super::luau::call(create::id("__fwguard"), vec![super::luau::str(&key)])))
 }

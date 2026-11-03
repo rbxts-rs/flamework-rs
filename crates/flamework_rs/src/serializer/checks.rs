@@ -1200,7 +1200,7 @@ impl Gen<'_, '_, '_> {
                 "CFrame" => Ty::CFrame,
                 _ => Ty::Datatype,
             },
-            E::Binary(_, Op::Eq | Op::Ne | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::And | Op::Or, _) => Ty::Boolean,
+            E::Binary(_, Op::Eq | Op::Ne | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::And, _) => Ty::Boolean,
             E::Binary(..) => Ty::Number,
             E::Call(_, _, super::ir::CallKind::Macro) => Ty::Number,
             _ => Ty::Unknown,

@@ -1,5 +1,6 @@
 //! The generated TypeScript ([`super::ir`]) compiled to Luau as roblox-ts compiled it. Each generated identifier is
-//! named when it is first lowered ([`LowerCx::local_name`]).
+//! named when it is first lowered ([`LowerCx::local_name`]), in the Luau built directly ([`E::Luau`], [`S::Luau`])
+//! too, where it is a placeholder ([`super::ir::luau_id`]).
 //!
 //! Only the shapes the generator builds are handled; the roblox-ts behaviour each one follows is named where it is
 //! done (`transformCallExpression`, the property call macros, `addOneIfArrayType`, …).
@@ -12,7 +13,7 @@ use rbxts_luau::{
 };
 use rbxts_plugin::Cx;
 
-use super::ir::{AssignOp, Bind, Body, CallKind, E, Else, ExtValue, Guard, Id, Ids, Key, Op, S, Ty};
+use super::ir::{AssignOp, Bind, Body, CallKind, E, Else, ExtValue, Id, Ids, Key, Op, S, Ty};
 use super::luau;
 
 /// What the lowering asks the compiler for.
@@ -25,11 +26,6 @@ pub trait LowerCx {
     /// A call site's argument ([`E::Ext`]): its Luau, as filled in.
     fn ext(&mut self, value: &ExtValue) -> Expr {
         value.value.borrow().clone()
-    }
-    /// An F3 guard ([`E::Guard`]), its locals named the first time it is lowered.
-    fn guard(&mut self, guard: &Guard) -> Expr {
-        guard.name(|base| self.local_name(base));
-        guard.named()
     }
 }
 
@@ -76,6 +72,11 @@ impl Lowerer<'_> {
         create::any_id(self.name(id))
     }
 
+    /// Luau built directly, with its placeholders ([`super::ir::luau_id`]) named as identifiers are.
+    fn named_luau(&mut self, statements: &mut [Stmt], expr: Option<&mut Expr>) {
+        crate::luau_names::name_placeholders(statements, expr, |index| self.name(Id(index as u32)));
+    }
+
     /// The type TypeScript gives an expression, as far as roblox-ts's choices need it.
     pub fn type_of(&self, e: &E) -> Ty {
         match e {
@@ -91,10 +92,6 @@ impl Lowerer<'_> {
                 "Set" => Ty::Set,
                 "CFrame" => Ty::CFrame,
                 _ => Ty::Datatype,
-            },
-            E::Call(callee, _, CallKind::Method) => match skip_downwards(callee) {
-                E::Prop(_, name) if name == "GetEnumItems" => Ty::Array,
-                _ => Ty::Unknown,
             },
             E::Binary(l, Op::Add, r) => {
                 if self.type_of(l) == Ty::String || self.type_of(r) == Ty::String {
@@ -147,7 +144,6 @@ impl Lowerer<'_> {
                             AssignmentOperator::Add
                         }
                     }
-                    AssignOp::Mul => AssignmentOperator::Mul,
                 };
                 out.push(create::assignment(target, operator, value_expr));
             }
@@ -160,12 +156,11 @@ impl Lowerer<'_> {
                 out.push(create::do_stmt(body));
             }
             S::ForOf(bind, iterable, body) => self.for_of(bind, iterable, body, out),
-            S::While(condition, body) => {
-                let condition = self.expr(condition, out);
-                let body = self.statements(body);
-                out.push(create::while_stmt(condition, body));
+            S::Luau(s) => {
+                let mut s = s.clone();
+                self.named_luau(std::slice::from_mut(&mut s), None);
+                out.push(s);
             }
-            S::Luau(s) => out.push(s.clone()),
             S::Return(None) => out.push(Stmt::Return(ReturnStatement { expressions: Vec::new() })),
             S::Return(Some(e)) => {
                 // `return $tuple(a, b)`: several values.
@@ -257,7 +252,6 @@ impl Lowerer<'_> {
             E::Id(id) => create::id(self.name(*id)),
             E::Global(name) => create::id(name.as_str()),
             E::Ext(value) => self.cx.ext(value),
-            E::Guard(guard) => self.cx.guard(guard),
             E::Num(value) => luau::num(*value),
             E::Str(text) => luau::str(text),
             E::Bool(value) => create::bool(*value),
@@ -299,7 +293,6 @@ impl Lowerer<'_> {
                     Op::Eq => BinaryOperator::Eq,
                     Op::Ne => BinaryOperator::Ne,
                     Op::And => BinaryOperator::And,
-                    Op::Or => BinaryOperator::Or,
                 };
                 create::binary(l, operator, r)
             }
@@ -337,26 +330,8 @@ impl Lowerer<'_> {
             }
             E::Arrow(arrow) => {
                 let parameters = arrow.params.iter().map(|p| self.any_id(p.id)).collect();
-                let mut statements = Vec::new();
-                for p in &arrow.params {
-                    if let Some(default) = &p.default {
-                        let mut body = Vec::new();
-                        let value = self.expr(default, &mut body);
-                        body.push(create::assignment(create::id(self.name(p.id)), AssignmentOperator::Assign, value));
-                        statements.push(create::if_stmt(
-                            create::binary(create::id(self.name(p.id)), BinaryOperator::Eq, create::nil()),
-                            body,
-                            ElseBody::Block(Vec::new()),
-                        ));
-                    }
-                }
-                match &arrow.body {
-                    Body::Block(list) => statements.extend(self.statements(list)),
-                    Body::Expr(e) => {
-                        let value = self.expr(e, &mut statements);
-                        statements.push(create::return_stmt(value));
-                    }
-                }
+                let Body::Block(list) = &arrow.body;
+                let statements = self.statements(list);
                 create::function(parameters, false, statements)
             }
             E::Object(fields) => {
@@ -377,11 +352,16 @@ impl Lowerer<'_> {
                 create::array(members)
             }
             E::New(class, args) => self.construct(class, args, out),
-            E::Luau(e) => e.clone(),
+            E::Luau(e) => {
+                let mut e = e.clone();
+                self.named_luau(&mut [], Some(&mut e));
+                e
+            }
         }
     }
 
-    /// `transformNewExpression`: the `Array`, `Map` and `Set` constructor macros, else `Class.new(...)`.
+    /// `transformNewExpression`: the `Array`, `Map` and `Set` constructor macros (an empty map or set), else
+    /// `Class.new(...)`.
     fn construct(&mut self, class: &str, args: &[E], out: &mut Vec<Stmt>) -> Expr {
         match class {
             "Array" => {
@@ -393,20 +373,10 @@ impl Lowerer<'_> {
                 }
             }
             "Set" => create::set(Vec::new()),
-            "Map" => match args.first() {
-                None => create::map(Vec::<(Expr, Expr)>::new()),
-                Some(E::Array(pairs)) => {
-                    let mut fields = Vec::new();
-                    for pair in pairs {
-                        let E::Array(kv) = pair else { panic!("a Map pair is an array") };
-                        let k = self.expr(&kv[0], out);
-                        let v = self.expr(&kv[1], out);
-                        fields.push((k, v));
-                    }
-                    create::map(fields)
-                }
-                Some(other) => panic!("unsupported Map argument {other:?}"),
-            },
+            "Map" => {
+                assert!(args.is_empty(), "a generated Map starts empty");
+                create::map(Vec::<(Expr, Expr)>::new())
+            }
             _ => {
                 let args = args.iter().map(|a| self.expr(a, out)).collect();
                 create::call(create::property(create::id(class), "new"), args)
@@ -418,25 +388,16 @@ impl Lowerer<'_> {
         let skipped = skip_downwards(callee);
         match kind {
             CallKind::Plain => {
-                if let E::Global(name) = skipped {
-                    match name.as_str() {
-                        // `typeIs(v, name)`: `type(v) == name` for Luau's primitive types, `typeof` otherwise.
-                        "typeIs" => {
-                            let value = self.expr(&args[0], out);
-                            let E::Str(type_name) = &args[1] else { panic!("typeIs takes a literal name") };
-                            let function = if PRIMITIVE_LUAU_TYPES.contains(&type_name.as_str()) { "type" } else { "typeof" };
-                            return create::binary(
-                                create::call(create::id(function), vec![value]),
-                                BinaryOperator::Eq,
-                                luau::str(type_name),
-                            );
-                        }
-                        "typeOf" => {
-                            let args = args.iter().map(|a| self.expr(a, out)).collect();
-                            return create::call(create::id("typeof"), args);
-                        }
-                        _ => {}
-                    }
+                // `typeIs(v, name)`: `type(v) == name` for Luau's primitive types, `typeof` otherwise.
+                if matches!(skipped, E::Global(name) if name == "typeIs") {
+                    let value = self.expr(&args[0], out);
+                    let E::Str(type_name) = &args[1] else { panic!("typeIs takes a literal name") };
+                    let function = if PRIMITIVE_LUAU_TYPES.contains(&type_name.as_str()) { "type" } else { "typeof" };
+                    return create::binary(
+                        create::call(create::id(function), vec![value]),
+                        BinaryOperator::Eq,
+                        luau::str(type_name),
+                    );
                 }
                 match skipped {
                     E::Prop(object, name) => {
@@ -522,7 +483,7 @@ const PRIMITIVE_LUAU_TYPES: [&str; 10] =
 
 #[cfg(test)]
 mod tests {
-    use super::super::ir::{self, Bind, Body, Ids, Op, S, Ty};
+    use super::super::ir::{self, Bind, Ids, Op, S, Ty};
     use super::*;
     use std::collections::HashSet;
 
@@ -585,18 +546,27 @@ mod tests {
     }
 
     #[test]
-    fn nested_conditionals_render_as_elseif() {
+    fn luau_placeholders_are_named_as_identifiers_in_render_order() {
         let mut ids = Ids::default();
         let vsize = ids.new_id("vsize", Ty::Function);
         let n = ids.new_id("n", Ty::Number);
-        let mut size = ir::num(5.0);
+        let size = ids.new_id("size", Ty::Number);
+        let result = ids.new_id("result", Ty::Number);
+        let mut value = luau::num(5.0);
         for bytes in (1..5).rev() {
-            size = ir::cond(ir::binary(ir::id(n), Op::Lt, ir::num(128f64.powi(bytes))), ir::num(f64::from(bytes)), size);
+            let below = luau::bin(ir::luau_id(n), BinaryOperator::Lt, luau::num(128f64.powi(bytes)));
+            value = luau::if_expr(below, luau::num(f64::from(bytes)), value);
         }
-        let statements = vec![S::Const(Bind::One(vsize), ir::arrow(vec![ir::param(n)], Body::Expr(size)))];
+        let function = luau::function(&[ir::luau_id(n)], vec![create::return_stmt(value)]);
+        let call = ir::call(E::Luau(ir::luau_id(vsize)), vec![ir::id(size)]);
+        let statements = vec![
+            S::Let(size, Some(ir::num(1.0))),
+            S::Luau(luau::local(&ir::luau_id(vsize), Some(function))),
+            S::Const(Bind::One(result), call),
+        ];
         assert_eq!(
             render(&ids, &statements, &["n"]),
-            "local vsize = function(n_1)\n\treturn if n_1 < 128 then 1 elseif n_1 < 16384 then 2 elseif n_1 < 2097152 then 3 elseif n_1 < 268435456 then 4 else 5\nend\n"
+            "local size = 1\nlocal vsize = function(n_1)\n\treturn if n_1 < 128 then 1 elseif n_1 < 16384 then 2 elseif n_1 < 2097152 then 3 elseif n_1 < 268435456 then 4 else 5\nend\nlocal result = vsize(size)\n"
         );
     }
 

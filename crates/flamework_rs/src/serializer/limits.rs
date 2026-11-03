@@ -6,8 +6,8 @@
 //!   enclosing block and the loop variables, nested functions apart. Luau folds constant locals at optimisation level
 //!   1+ with debug level 1, which only makes the count high, the safe side; generated code binds no constants.
 //! - **Registers** are Luau's own answer: the function is compiled ([`Function::probe`]) by the compiler the load
-//!   check uses (`rbxts_luau_check`, at its [`ROBLOX_LEVELS`]), behind the file's hoisted declarations (aliases, the
-//!   `codec` table):
+//!   check uses (`rbxts_luau_check`, at its [`ROBLOX_LEVELS`]), behind what the file hoisted so far ahead of its
+//!   functions (aliases, the `codec` table, then the helpers, guards and tables):
 //!
 //!   ```lua
 //!   local __fwprobe = function(__fwpad1, …, __fwpadK, <parameters>) <body> end
@@ -18,8 +18,7 @@
 //!   ([`Function::surely_fits`]) skips the compile for nearly every function.
 //!
 //! The function is measured as lowered by a scratch namer ([`Scratch`]) that asks the compiler for no names: call-site
-//! arguments render as globals (`__fwarg<n>`, never `nil`, so Luau cannot fold the code reading them), and guards get
-//! placeholder names that are not kept.
+//! arguments render as globals (`__fwarg<n>`, never `nil`, so Luau cannot fold the code reading them).
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -27,7 +26,7 @@ use std::rc::Rc;
 use rbxts_luau::{AnyIdentifier, ElseBody, Expr, InterpolatedStringPart, Stmt, TableField, create};
 use rbxts_luau_check::{CompileError, ROBLOX_LEVELS, Severity};
 
-use super::ir::{ExtValue, Guard, Id, Ids, S};
+use super::ir::{ExtValue, Id, Ids, S};
 use super::lower::{LowerCx, Lowerer};
 
 /// Luau's most locals in one function (`kMaxLocalCount`).
@@ -65,7 +64,8 @@ impl Fit {
 
 /// A generated function as Luau, for [`Function::probe`].
 pub(crate) struct Function {
-    /// The file's hoisted declarations, lowered with the same names (empty until a probe needs them).
+    /// What the file hoisted ahead of its functions (declarations, then tables), lowered with the same names (empty
+    /// until a probe needs them).
     pub prelude: Rc<Vec<Stmt>>,
     pub parameters: Vec<AnyIdentifier>,
     pub body: Vec<Stmt>,
@@ -328,7 +328,7 @@ fn nodes(expr: &Expr) -> u32 {
 // --- the scratch lowering --------------------------------------------------------------------------------------
 
 /// The lowering's context for measuring: names nobody approves (`__fwl<n>`), call-site arguments as globals
-/// (`__fwarg<n>`), guards named without keeping the names.
+/// (`__fwarg<n>`).
 #[derive(Default)]
 pub(crate) struct Scratch {
     temps: rbxts_luau::TempIds,
@@ -353,10 +353,6 @@ impl LowerCx for Scratch {
 
     fn ext(&mut self, _value: &ExtValue) -> Expr {
         create::id(format!("__fwarg{}", self.next()))
-    }
-
-    fn guard(&mut self, guard: &Guard) -> Expr {
-        guard.render_with(|_| format!("__fwl{}", self.next()))
     }
 }
 

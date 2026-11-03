@@ -9,7 +9,8 @@
 //! infinity), strings and template text as roblox-ts spelled a TS transformer's (`synthesized_string`, `template_text`),
 //! which TypeScript 7.1 spells the same way.
 
-// The builders are used by the direct emission (rounds B1 and B2); until then only their tests use most of them.
+// The builders are used by the direct emission: the hoisted helpers (round B1) and the emitters (B2); until B2 only
+// their tests use some of them.
 #![cfg_attr(not(test), allow(dead_code))]
 
 use rbxts_luau::{AssignmentOperator, BinaryOperator, ElseBody, Expr, InterpolatedStringPart, Stmt, UnaryOperator, create};
