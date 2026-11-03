@@ -221,7 +221,8 @@ Text and order:
   `return`, which ends its block. A send elsewhere in a statement (`const p = fns.add.invoke(x)`) has its packing
   ahead of the statement while it leaves at most 8 locals there (64 a function, 16 a file, and 180 live in all),
   else in a function called where the call is. The TS transformer puts every packing ahead of its statement while a
-  budget of Flamework's locals (64 a function, 16 a file) has room, and the statement in a block with it past that.
+  budget of Flamework's locals (64 a function, 16 a file) has room and, past that, an expression or return statement
+  in a block with it (any other send in a function).
 - **A send in a `for` loop's incrementor** (`for (let i = 0; i < n; events.alpha.fire(i), i++)`): the packing is not
   seen as a closure, so the loop has no per-iteration copies of `i`. The function is called where it is made, so
   nothing can see the difference.

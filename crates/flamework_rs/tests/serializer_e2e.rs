@@ -291,6 +291,7 @@ fn declarations_named_map_or_typeof_build() {
         "local Array = {",
         "local got = typeof(value_1)",
         "local map_2 = {}",
+        "table.create(",
         "return value_2, o_2",
     ];
     for text in expected {
