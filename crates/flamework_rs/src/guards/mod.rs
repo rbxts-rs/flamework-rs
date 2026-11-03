@@ -15,8 +15,8 @@
 //! **Text.** The Luau is what roblox-ts makes of the TS builder's output, so it matches a TS5 build but for the order
 //! of union members and the locals' names: TS7 orders a union's constituents its own way (deterministically), and the
 //! guard follows it (DESIGN §10.4, behaviour-neutral); locals are named in the guard's render order with the
-//! compiler's approval ([`names`]), not by TypeScript's printer over the whole file. Strings are the builder's
-//! synthesized literals ([`rbxts_plugin::synthesized_string`]); properties come in TypeScript 7.1's
+//! compiler's approval ([`crate::luau_names`]), not by TypeScript's printer over the whole file. Strings are
+//! the builder's synthesized literals ([`rbxts_plugin::synthesized_string`]); properties come in TypeScript 7.1's
 //! order ([`rbxts_plugin::Cx::properties_of_type`]), not TS5's (README, "Differences").
 //!
 //! **Not the TS's.**
@@ -37,7 +37,7 @@ use rbxts_plugin::{Cx, LuauExpr, PResult};
 use tsrs_checker::ElementFlags;
 
 use generator::Generator;
-use names::declared;
+use crate::luau_names::declared;
 
 use crate::setup::FwShared;
 
@@ -86,14 +86,14 @@ pub fn guard_for_in_context(
 }
 
 /// [`guard_for`] with its locals left unnamed: the guard holds placeholders, and `names` gives each its base name
-/// ([`names::Names::assign_with`]). For a guard that lands inside other generated code (the serializer's), named
-/// when that code is lowered.
+/// ([`crate::luau_names::Names::assign_with`]). For a guard that lands inside other generated code (the
+/// serializer's), named when that code is lowered.
 pub(crate) fn guard_for_unnamed(
     cx: &mut Cx<'_>,
     config: GuardConfig<'_>,
     node: P<Node>,
     ty: P<Type>,
-) -> PResult<(LuauExpr, names::Names)> {
+) -> PResult<(LuauExpr, crate::luau_names::Names)> {
     let mut generator = Generator::new(cx, config, node);
     let guard = generator.build_guard(ty)?;
     Ok((guard, generator.names))

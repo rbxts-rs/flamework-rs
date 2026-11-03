@@ -13,7 +13,8 @@ use rbxts_plugin::ts::{Node, P, Type};
 use rbxts_plugin::{Abort, Cx, PResult, PluginDiagnostic, synthesized_string};
 use tsrs_checker::{ElementFlags, TypeFlags};
 
-use super::names::{Names, declared, local_name, placeholder_index, ts_symbol_name};
+use super::names::{local_name, ts_symbol_name};
+use crate::luau_names::{Names, declared, placeholder_index};
 use super::types::{
     alias_symbol, declaration_of_type, extract_types, get_literal, global_type, has_call_signatures,
     instance_type_of, is_class_or_interface, is_instance_type, is_object, key_expr, property_key, simplify_union,

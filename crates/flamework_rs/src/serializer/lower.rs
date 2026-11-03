@@ -13,6 +13,7 @@ use rbxts_luau::{
 use rbxts_plugin::Cx;
 
 use super::ir::{AssignOp, Bind, Body, CallKind, E, Else, Id, Ids, Key, Op, S, Ty};
+use super::luau;
 
 /// What the lowering asks the compiler for.
 pub trait LowerCx {
@@ -29,7 +30,7 @@ impl LowerCx for Cx<'_> {
     }
 
     fn local_name(&mut self, hint: &str) -> String {
-        crate::guards::names::unique_name(self, hint)
+        crate::luau_names::unique_name(self, hint)
     }
 }
 
@@ -155,6 +156,7 @@ impl Lowerer<'_> {
                 let body = self.statements(body);
                 out.push(create::while_stmt(condition, body));
             }
+            S::Luau(s) => out.push(s.clone()),
             S::Return(None) => out.push(Stmt::Return(ReturnStatement { expressions: Vec::new() })),
             S::Return(Some(e)) => {
                 // `return $tuple(a, b)`: several values.
@@ -250,20 +252,20 @@ impl Lowerer<'_> {
                 guard.name(|base| self.cx.local_name(base));
                 guard.named()
             }
-            E::Num(value) => number(*value),
-            E::Str(text) => string_literal(text),
+            E::Num(value) => luau::num(*value),
+            E::Str(text) => luau::str(text),
             E::Bool(value) => create::bool(*value),
             E::Undefined => create::nil(),
             E::Prop(object, name) => {
                 let object = self.expr(object, out);
-                create::property(indexable(object), name.as_str())
+                create::property(luau::indexable(object), name.as_str())
             }
             E::Elem(object, index) => {
                 let ty = self.type_of(object);
                 let object = self.expr(object, out);
                 let index = self.expr(index, out);
-                let index = if ty.is_array() { offset(index, 1.0) } else { index };
-                create::computed_index(indexable(object), index)
+                let index = if ty.is_array() { luau::add(index, 1.0) } else { index };
+                create::computed_index(luau::indexable(object), index)
             }
             E::Call(callee, args, kind) => self.call(callee, args, *kind, out, used),
             E::Binary(left, op, right) => {
@@ -317,12 +319,12 @@ impl Lowerer<'_> {
             E::Template(head, spans) => {
                 let mut parts = Vec::new();
                 if !head.is_empty() {
-                    parts.push(InterpolatedStringPart::Text(template_text(head)));
+                    parts.push(InterpolatedStringPart::Text(luau::template_text(head)));
                 }
                 for (e, text) in spans {
                     parts.push(InterpolatedStringPart::Expression(self.expr(e, out)));
                     if !text.is_empty() {
-                        parts.push(InterpolatedStringPart::Text(template_text(text)));
+                        parts.push(InterpolatedStringPart::Text(luau::template_text(text)));
                     }
                 }
                 create::interpolated_string(parts)
@@ -355,8 +357,8 @@ impl Lowerer<'_> {
                 let mut out_fields = Vec::new();
                 for (key, value) in fields {
                     let index = match key {
-                        Key::Str(s) => string_literal(s),
-                        Key::Num(n) => number(*n),
+                        Key::Str(s) => luau::str(s),
+                        Key::Num(n) => luau::num(*n),
                         Key::Computed(e) => self.expr(e, out),
                     };
                     let value = self.expr(value, out);
@@ -369,6 +371,7 @@ impl Lowerer<'_> {
                 create::array(members)
             }
             E::New(class, args) => self.construct(class, args, out),
+            E::Luau(e) => e.clone(),
         }
     }
 
@@ -419,7 +422,7 @@ impl Lowerer<'_> {
                             return create::binary(
                                 create::call(create::id(function), vec![value]),
                                 BinaryOperator::Eq,
-                                string_literal(type_name),
+                                luau::str(type_name),
                             );
                         }
                         "typeOf" => {
@@ -433,12 +436,12 @@ impl Lowerer<'_> {
                     E::Prop(object, name) => {
                         let object = self.expr(object, out);
                         let args = args.iter().map(|a| self.expr(a, out)).collect();
-                        create::call(create::property(indexable(object), name.as_str()), args)
+                        create::call(create::property(luau::indexable(object), name.as_str()), args)
                     }
                     other => {
                         let callee = self.expr(other, out);
                         let args = args.iter().map(|a| self.expr(a, out)).collect();
-                        create::call(indexable(callee), args)
+                        create::call(luau::indexable(callee), args)
                     }
                 }
             }
@@ -446,7 +449,7 @@ impl Lowerer<'_> {
                 let E::Prop(object, name) = skipped else { panic!("a method call is on a property") };
                 let object = self.expr(object, out);
                 let args = args.iter().map(|a| self.expr(a, out)).collect();
-                create::method_call(indexable(object), name.as_str(), args)
+                create::method_call(luau::indexable(object), name.as_str(), args)
             }
             CallKind::Macro => {
                 let E::Prop(object, name) = skipped else { panic!("a macro call is on a property") };
@@ -480,13 +483,13 @@ impl Lowerer<'_> {
                     }
                     ("get", Ty::IndexMap | Ty::Map) => {
                         let key = self.expr(&args[0], out);
-                        create::computed_index(indexable(receiver), key)
+                        create::computed_index(luau::indexable(receiver), key)
                     }
                     ("set", Ty::Map | Ty::IndexMap) => {
                         let key = self.expr(&args[0], out);
                         let value = self.expr(&args[1], out);
                         out.push(create::assignment(
-                            create::computed_index(indexable(receiver.clone()), key),
+                            create::computed_index(luau::indexable(receiver.clone()), key),
                             AssignmentOperator::Assign,
                             value,
                         ));
@@ -495,7 +498,7 @@ impl Lowerer<'_> {
                     ("add", Ty::Set) => {
                         let key = self.expr(&args[0], out);
                         out.push(create::assignment(
-                            create::computed_index(indexable(receiver.clone()), key),
+                            create::computed_index(luau::indexable(receiver.clone()), key),
                             AssignmentOperator::Assign,
                             create::bool(true),
                         ));
@@ -510,182 +513,6 @@ impl Lowerer<'_> {
 
 const PRIMITIVE_LUAU_TYPES: [&str; 10] =
     ["nil", "boolean", "string", "number", "table", "userdata", "function", "thread", "vector", "buffer"];
-
-/// `convertToIndexableExpression`.
-fn indexable(e: Expr) -> Expr {
-    if e.is_indexable() { e } else { create::paren(e) }
-}
-
-/// A numeric literal as roblox-ts compiles it: its printed text (`String(value)`; an infinite key is `1e999`).
-fn number(value: f64) -> Expr {
-    if value.is_infinite() {
-        return create::number_text("1e999");
-    }
-    create::number_text(crate::js::number_to_string(value))
-}
-
-/// `getLiteralNumberValue`.
-fn literal_number(e: &Expr) -> Option<f64> {
-    match e {
-        Expr::Number(n) => Some(crate::js::string_to_number(&n.value)),
-        Expr::Unary(u) if u.operator == UnaryOperator::Neg => literal_number(&u.expression).map(|v| -v),
-        _ => None,
-    }
-}
-
-/// `offset`: `i - 1` plus one is `i`, a literal is folded.
-pub fn offset(e: Expr, value: f64) -> Expr {
-    if value == 0.0 {
-        return e;
-    }
-    if let Expr::Binary(b) = &e
-        && matches!(b.operator, BinaryOperator::Add | BinaryOperator::Sub)
-        && let Some(right) = literal_number(&b.right)
-    {
-        let sign = if b.operator == BinaryOperator::Sub { -1.0 } else { 1.0 };
-        let new_right = right + value * sign;
-        if new_right == 0.0 {
-            return b.left.clone();
-        }
-        return create::binary(b.left.clone(), b.operator, create::number(new_right));
-    }
-    if let Some(literal) = literal_number(&e) {
-        return create::number(literal + value);
-    }
-    if value > 0.0 {
-        create::binary(e, BinaryOperator::Add, create::number(value))
-    } else {
-        create::binary(e, BinaryOperator::Sub, create::number(-value))
-    }
-}
-
-// --- string literals --------------------------------------------------------------------------------------------
-
-/// A generated string literal as roblox-ts compiled it (`factory.createStringLiteral`: `rbxts_plugin::synthesized_string`).
-pub fn string_literal(text: &str) -> Expr {
-    rbxts_plugin::synthesized_string(text)
-}
-
-/// A template part, likewise (backtick-escaped, with `${` escaped).
-fn template_text(text: &str) -> String {
-    let escaped = ts_escape(text, '`').replace("${", "\\${");
-    from_literal_source(&escaped, false)
-}
-
-/// TypeScript's `escapeNonAsciiString(text, quote)`.
-fn ts_escape(text: &str, quote: char) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let mut out = String::new();
-    let mut i = 0;
-    while i < units.len() {
-        let u = units[i];
-        let next = units.get(i + 1).copied();
-        let escape = |out: &mut String, u: u16| out.push_str(&format!("\\u{:04X}", u));
-        match u {
-            0x0D if quote == '`' && next == Some(0x0A) => {
-                out.push_str("\\r\\n");
-                i += 2;
-                continue;
-            }
-            0 => {
-                if next.is_some_and(|n| (0x30..=0x39).contains(&n)) {
-                    out.push_str("\\x00");
-                } else {
-                    out.push_str("\\0");
-                }
-            }
-            0x09 => out.push_str("\\t"),
-            0x0B => out.push_str("\\v"),
-            0x0C => out.push_str("\\f"),
-            0x08 => out.push_str("\\b"),
-            0x0D => out.push_str("\\r"),
-            0x0A if quote == '"' => out.push_str("\\n"),
-            0x5C => out.push_str("\\\\"),
-            0x22 if quote == '"' => out.push_str("\\\""),
-            0x60 if quote == '`' => out.push_str("\\`"),
-            0x2028 | 0x2029 | 0x85 => escape(&mut out, u),
-            u if u < 0x20 => escape(&mut out, u),
-            u if u > 0x7F => escape(&mut out, u),
-            u => out.push(char::from_u32(u32::from(u)).unwrap()),
-        }
-        i += 1;
-    }
-    out
-}
-
-/// `createStringFromLiteral` on a literal's text between its delimiters.
-fn from_literal_source(text: &str, is_string_literal: bool) -> String {
-    let text = text.replace("\r\n", "\n").replace('\r', "\n");
-    let bytes = text.as_bytes();
-    // Surrogate pairs as one code point.
-    let mut combined = String::with_capacity(text.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' {
-            if bytes.get(i + 1) == Some(&b'\\') {
-                combined.push_str("\\\\");
-                i += 2;
-                continue;
-            }
-            if let Some((high, low)) = surrogate_pair_at(bytes, i + 1) {
-                let code_point = char::decode_utf16([high, low]).next().and_then(Result::ok).map_or(0, u32::from);
-                combined.push_str(&format!("\\u{{{code_point:x}}}"));
-                i += 12;
-                continue;
-            }
-        }
-        let c = text[i..].chars().next().unwrap();
-        combined.push(c);
-        i += c.len_utf8();
-    }
-    let bytes = combined.as_bytes();
-    let mut out = String::with_capacity(combined.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] != b'\\' || i + 1 >= bytes.len() {
-            let c = combined[i..].chars().next().unwrap();
-            out.push(c);
-            i += c.len_utf8();
-            continue;
-        }
-        if bytes[i + 1] == b'u' && bytes.len() >= i + 6 && bytes[i + 2..i + 6].iter().all(u8::is_ascii_hexdigit) {
-            out.push_str("\\u{");
-            out.push_str(&combined[i + 2..i + 6]);
-            out.push('}');
-            i += 6;
-            continue;
-        }
-        let character = combined[i + 1..].chars().next().unwrap();
-        let escape_len = 1 + character.len_utf8();
-        if matches!(character, '\n' | '\u{2028}' | '\u{2029}') {
-        } else if "0bfnrtvux\\\"'".contains(character) || (character == '`' && !is_string_literal) {
-            out.push_str(&combined[i..i + escape_len]);
-        } else {
-            out.push(character);
-        }
-        i += escape_len;
-    }
-    out
-}
-
-fn surrogate_pair_at(bytes: &[u8], i: usize) -> Option<(u16, u16)> {
-    let s = bytes.get(i..i + 11)?;
-    if s[0] != b'u' || s[5] != b'\\' || s[6] != b'u' {
-        return None;
-    }
-    let high = &s[1..5];
-    let low = &s[7..11];
-    if !high.iter().chain(low).all(u8::is_ascii_hexdigit) {
-        return None;
-    }
-    let ok_high = matches!(high[0], b'd' | b'D') && matches!(high[1], b'8' | b'9' | b'a' | b'A' | b'b' | b'B');
-    let ok_low = matches!(low[0], b'd' | b'D') && matches!(low[1], b'c'..=b'f' | b'C'..=b'F');
-    if !(ok_high && ok_low) {
-        return None;
-    }
-    let parse = |h: &[u8]| u16::from_str_radix(std::str::from_utf8(h).unwrap(), 16).unwrap();
-    Some((parse(high), parse(low)))
-}
 
 #[cfg(test)]
 mod tests {
@@ -782,13 +609,6 @@ mod tests {
     }
 
     #[test]
-    fn strings_take_the_printers_escapes() {
-        assert_eq!(ts_escape("a\"b\\c\n\u{e9}", '"'), "a\\\"b\\\\c\\n\\u00E9");
-        assert_eq!(from_literal_source("a\\\"b\\u00E9", true), "a\\\"b\\u{00E9}");
-        assert_eq!(template_text("x`${y}"), "x\\`${y}");
-    }
-
-    #[test]
     fn set_sizes_count_in_a_loop_between_comments() {
         let mut ids = Ids::default();
         let set = ids.new_id("set", Ty::Set);
@@ -800,4 +620,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn luau_passes_through() {
+        let mut ids = Ids::default();
+        let n = ids.new_id("n", Ty::Number);
+        let length = rbxts_luau::create::unary(UnaryOperator::Len, rbxts_luau::create::id("s"));
+        let statements = vec![
+            S::Luau(rbxts_luau::create::local(rbxts_luau::create::any_id("s"), Some(luau::str("ab")))),
+            S::Const(Bind::One(n), ir::binary(E::Luau(length), Op::Add, ir::num(1.0))),
+            S::Luau(rbxts_luau::create::call_statement(luau::call(
+                rbxts_luau::create::id("print"),
+                vec![luau::num(-2.0)],
+            ))),
+        ];
+        assert_eq!(render(&ids, &statements, &[]), "local s = \"ab\"\nlocal n = #s + 1\nprint(-2)\n");
+    }
 }

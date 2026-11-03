@@ -5,7 +5,7 @@
 //!
 //! The helpers F3 (guards) asks the same question with are F3's (`crate::guards::types`, `crate::guards::names`):
 //! `resolveName`, `aliasSymbol`, `extractTypes`, `isInstanceType`, `getPropertyKey` and `localName`. `getLiteral` and
-//! `simplifyUnion` stay here: the serializer needs their values as its own expressions ([`ir::E`]), which it ranks,
+//! `simplifyUnion` stay here: the serializer needs their values as its own literals ([`Lit`]), which it ranks,
 //! prints in layout texts and compares, where F3's are Luau.
 //!
 //! Every property listing the serializer's layout depends on comes from [`Cx::properties_of_type`]: TypeScript 7.1's
@@ -17,6 +17,7 @@ use tsrs_ast::{CheckFlags, SymbolFlags};
 use tsrs_checker::{LiteralValue, ObjectFlags, TypeFlags};
 
 use super::ir::{self, E};
+use super::lit::Lit;
 
 /// A property's key in a Luau table: a string, or a number.
 #[derive(Clone, Debug, PartialEq)]
@@ -82,19 +83,19 @@ pub fn intrinsic_name(ty: P<Type>) -> Option<&'static str> {
     Some(ty.as_intrinsic_type().intrinsic_name())
 }
 
-/// `getLiteral(type, withoutEnums)`: the value(s) of a literal type as expressions.
-pub fn get_literal(cx: &mut Cx<'_>, ty: P<Type>, without_enums: bool) -> Option<Vec<E>> {
+/// `getLiteral(type, withoutEnums)`: the value(s) of a literal type.
+pub fn get_literal(cx: &mut Cx<'_>, ty: P<Type>, without_enums: bool) -> Option<Vec<Lit>> {
     if let Some(s) = string_literal(ty) {
-        return Some(vec![ir::string(s)]);
+        return Some(vec![Lit::Str(s.to_owned())]);
     }
     if let Some(n) = number_literal(ty) {
-        return Some(vec![ir::num(n)]);
+        return Some(vec![Lit::Num(n)]);
     }
     // `trueType` / `regularTrueType` and the false ones: TS7's four boolean literal types.
     if ty.flags().intersects(TypeFlags::BooleanLiteral)
         && let Some(crate::macro_type::Literal::Bool(value)) = crate::macro_type::literal_of(ty)
     {
-        return Some(vec![ir::bool(value)]);
+        return Some(vec![Lit::Bool(value)]);
     }
 
     if ty.flags().intersects(TypeFlags::Enum) {
@@ -107,8 +108,8 @@ pub fn get_literal(cx: &mut Cx<'_>, ty: P<Type>, without_enums: bool) -> Option<
         let mut values = Vec::new();
         for member in members {
             match cx.checker().get_constant_value(member)? {
-                LiteralValue::String(s) => values.push(ir::string(s)),
-                LiteralValue::Number(n) => values.push(ir::num(n.0)),
+                LiteralValue::String(s) => values.push(Lit::Str(s.to_owned())),
+                LiteralValue::Number(n) => values.push(Lit::Num(n.0)),
                 _ => return None,
             }
         }
@@ -129,9 +130,9 @@ pub fn get_literal(cx: &mut Cx<'_>, ty: P<Type>, without_enums: bool) -> Option<
     None
 }
 
-/// `f.field(f.field("Enum", group), item)`: `Enum["Material"]["Plastic"]`.
-pub fn enum_item(group: &str, item: &str) -> E {
-    ir::elem(ir::elem(ir::global("Enum"), ir::string(group)), ir::string(item))
+/// `f.field(f.field("Enum", group), item)`: `Enum.Material.Plastic`.
+pub fn enum_item(group: &str, item: &str) -> Lit {
+    Lit::EnumItem { group: group.to_owned(), item: item.to_owned() }
 }
 
 /// A TypeScript enum member a literal is: the merged enum and the member's index.
@@ -191,7 +192,7 @@ fn enum_member_index(enum_symbol: P<Symbol>, member: P<Symbol>) -> usize {
 pub struct Simplified {
     pub enums: Vec<String>,
     pub types: Vec<P<Type>>,
-    pub literals: Vec<E>,
+    pub literals: Vec<Lit>,
     pub literal_origins: Vec<Option<EnumMemberOrigin>>,
 }
 

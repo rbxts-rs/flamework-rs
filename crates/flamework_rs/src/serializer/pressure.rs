@@ -97,8 +97,16 @@ fn identifier<'e>(ids: &Ids, e: &'e E) -> Option<std::borrow::Cow<'e, str>> {
         E::Id(id) => Some(std::borrow::Cow::Owned(ids.hint(*id).to_owned())),
         E::Global(name) => Some(std::borrow::Cow::Borrowed(name.as_str())),
         E::Ext(value) if value.literal.is_some() => None,
-        E::Ext(_) | E::Guard(_) => Some(std::borrow::Cow::Borrowed("$value")),
+        E::Ext(_) | E::Guard(_) | E::Luau(_) => Some(std::borrow::Cow::Borrowed("$value")),
         _ => None,
+    }
+}
+
+/// The locals a passed-through Luau statement ([`S::Luau`]) declares at its own level.
+fn luau_locals(s: &rbxts_luau::Stmt) -> u32 {
+    match s {
+        rbxts_luau::Stmt::VariableDeclaration(declaration) => declaration.left.len() as u32,
+        _ => 0,
     }
 }
 
@@ -297,6 +305,7 @@ impl<'i> Temporaries<'i> {
                 }
             }
             S::Expr(e) | S::Return(Some(e)) => self.visit_expr(e, constants, names),
+            S::Luau(_) => {}
             S::Assign(t, _, v) => {
                 self.visit_expr(t, constants, names);
                 self.visit_expr(v, constants, names);
@@ -369,7 +378,7 @@ impl<'i> Temporaries<'i> {
                 constants.insert(format!("s{name}"));
                 self.visit_expr(object, constants, names);
             }
-            E::Id(_) | E::Global(_) | E::Ext(..) | E::Guard(_) | E::Undefined => {
+            E::Id(_) | E::Global(_) | E::Ext(..) | E::Guard(_) | E::Luau(_) | E::Undefined => {
                 if let Some(name) = identifier(self.ids, e) {
                     names.insert(name.into_owned());
                 } else {
@@ -468,6 +477,10 @@ impl<'i> Temporaries<'i> {
                 Pressure { locals: live + 1, registers: live + registers.max(1) }
             }
             S::Expr(e) => flat(self.registers(e)),
+            S::Luau(s) => {
+                let names = luau_locals(s);
+                Pressure { locals: live + names, registers: live + names }
+            }
             S::Assign(t, op, v) => flat(self.registers_of_assignment(t, *op, v)),
             S::Return(e) => flat(e.as_ref().map_or(0, |e| self.registers(e))),
             S::Block(list) => self.block(list, before),
@@ -540,7 +553,7 @@ impl<'i> Temporaries<'i> {
             S::Expr(e) => self.of(e).count,
             S::Assign(t, _, v) => self.assignment(t, v, true).count,
             S::If(c, ..) | S::While(c, _) => self.condition(c).count,
-            S::Block(_) => 0,
+            S::Block(_) | S::Luau(_) => 0,
             S::ForOf(_, e, _) => self.of(e).count,
             S::Return(e) => e.as_ref().map_or(0, |e| self.of(e).count),
         }

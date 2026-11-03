@@ -11,6 +11,7 @@ use tsrs_checker::TypeFlags;
 use super::classify::datatype;
 use super::codegen::{Ctx, Place};
 use super::ir::{self, Body, Bind, E, Else, Id, Op, Param, S, Ty};
+use super::lit::Lit;
 use super::typeinfo;
 use super::{GResult, Gen, Hoisted, Kind, Shape, Slot, Varint};
 
@@ -127,20 +128,11 @@ impl Gen<'_, '_, '_> {
         ir::id(alias)
     }
 
-    /// `checkGlobalsIn(node)` for the globals a literal names (`Enum`, a datatype).
-    pub(crate) fn check_globals_in(&mut self, e: &E) {
-        match e {
-            E::Global(name) => {
-                if global_policy(name).is_some() || datatype(name).is_some() {
-                    self.global_ref(name);
-                }
-            }
-            E::Prop(object, _) => self.check_globals_in(object),
-            E::Elem(object, index) => {
-                self.check_globals_in(object);
-                self.check_globals_in(index);
-            }
-            _ => {}
+    /// `checkGlobalsIn(node)` for the globals a literal names: an enum item's `Enum` (refused when a declaration hides
+    /// it).
+    pub(crate) fn check_globals_in(&mut self, literal: &Lit) {
+        if let Lit::EnumItem { .. } = literal {
+            self.global_ref("Enum");
         }
     }
 
@@ -568,8 +560,8 @@ impl Gen<'_, '_, '_> {
                     for v in values {
                         gn.check_globals_in(v);
                     }
-                    let pairs = values.iter().enumerate().map(|(i, v)| ir::array(vec![v.clone(), ir::num(i as f64)])).collect();
-                    let list_value = ir::array(values.clone());
+                    let pairs = values.iter().enumerate().map(|(i, v)| ir::array(vec![v.to_ir(), ir::num(i as f64)])).collect();
+                    let list_value = ir::array(values.iter().map(Lit::to_ir).collect());
                     let map = gn.construct("Map", vec![ir::array(pairs)]);
                     let a = gn.declare_slot(&list, list_value);
                     gn.push_table(a, None);

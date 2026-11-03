@@ -1724,7 +1724,7 @@ impl Gen<'_, '_, '_> {
             }
             Kind::Constant(value) => {
                 self.check_globals_in(value);
-                Ok(value.clone())
+                Ok(value.to_ir())
             }
             Kind::Nothing => Ok(ir::nil()),
             Kind::Literals(values) => {

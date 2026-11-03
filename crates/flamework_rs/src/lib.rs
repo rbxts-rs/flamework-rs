@@ -91,6 +91,7 @@ pub mod hashids;
 pub mod ids;
 pub mod inputs;
 pub(crate) mod js;
+pub(crate) mod luau_names;
 pub mod json;
 pub mod jsonc;
 pub mod macro_type;

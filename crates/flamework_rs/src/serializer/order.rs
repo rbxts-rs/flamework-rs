@@ -8,7 +8,7 @@ use rbxts_plugin::ts::{Kind as SyntaxKind, Node, P, Symbol, Type};
 use tsrs_ast::{CheckFlags, SymbolFlags};
 use tsrs_checker::{ElementFlags, ObjectFlags, SignatureKind, TypeFlags, TypeFormatFlags};
 
-use super::ir::E;
+use super::lit::Lit;
 use super::typeinfo::{self, EnumMemberOrigin, alias_symbol, alias_type_arguments, check_flags, json_string};
 use super::{Alternative, GResult, Gen, Kind, Shape};
 use crate::js::{number_to_string, utf16_cmp};
@@ -88,33 +88,25 @@ pub(crate) enum LiteralValueRef<'a> {
     Str(&'a str),
 }
 
-/// `printLiteral(expression)`.
-pub(crate) fn print_literal(e: &E) -> String {
-    match e {
-        E::Str(s) => json_string(s),
-        E::Num(n) => number_to_string(*n),
-        E::Neg(inner) => format!("-{}", print_literal(inner)),
-        E::Bool(true) => "true".into(),
-        E::Bool(false) => "false".into(),
-        E::Ext(value) if value.literal.is_some() => print_literal(&value.as_literal().expect("a literal")),
-        E::Undefined | E::Global(_) | E::Id(_) | E::Ext(..) | E::Guard(_) => "#80".into(),
-        E::Prop(..) => "#212".into(),
-        E::Elem(..) => "#213".into(),
-        _ => "#0".into(),
+/// `printLiteral(expression)` of a literal's expression (an enum item is a TS element access, `#213`; `undefined` an
+/// identifier, `#80`).
+pub(crate) fn print_literal(literal: &Lit) -> String {
+    match literal {
+        Lit::Str(s) => json_string(s),
+        Lit::Num(n) => number_to_string(*n),
+        Lit::Bool(true) => "true".into(),
+        Lit::Bool(false) => "false".into(),
+        Lit::Nil => "#80".into(),
+        Lit::EnumItem { .. } => "#213".into(),
     }
 }
 
-/// `literalKey(expression)`.
-pub(crate) fn literal_key(e: &E) -> String {
-    match e {
-        E::Prop(object, name) => format!("{}.{}", literal_key(object), name),
-        E::Elem(object, index) => match &**index {
-            E::Str(s) => format!("{}.{}", literal_key(object), s),
-            _ => print_literal(e),
-        },
-        E::Global(name) => name.clone(),
-        E::Undefined => "undefined".into(),
-        _ => print_literal(e),
+/// `literalKey(expression)`: `Enum.Material.Plastic` for an enum item, `undefined` for nil.
+pub(crate) fn literal_key(literal: &Lit) -> String {
+    match literal {
+        Lit::EnumItem { group, item } => format!("Enum.{group}.{item}"),
+        Lit::Nil => "undefined".into(),
+        _ => print_literal(literal),
     }
 }
 
@@ -561,8 +553,8 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `sortLiterals(values, origins)`.
-    pub(crate) fn sort_literals(&mut self, values: Vec<E>, origins: &[Option<EnumMemberOrigin>]) -> Vec<E> {
-        let mut ranked: Vec<(E, [RankPart; 3], String)> = values
+    pub(crate) fn sort_literals(&mut self, values: Vec<Lit>, origins: &[Option<EnumMemberOrigin>]) -> Vec<Lit> {
+        let mut ranked: Vec<(Lit, [RankPart; 3], String)> = values
             .into_iter()
             .enumerate()
             .map(|(i, value)| {
@@ -573,12 +565,10 @@ impl Gen<'_, '_, '_> {
                         RankPart::Num(origin.index as f64),
                     ],
                     None => match &value {
-                        E::Bool(b) => value_rank(LiteralValueRef::Bool(*b)),
-                        E::Str(s) => value_rank(LiteralValueRef::Str(s)),
-                        other => match other.literal_number() {
-                            Some(n) => value_rank(LiteralValueRef::Num(n)),
-                            None => [RankPart::Num(4.0), RankPart::Str(literal_key(other)), RankPart::Num(0.0)],
-                        },
+                        Lit::Bool(b) => value_rank(LiteralValueRef::Bool(*b)),
+                        Lit::Str(s) => value_rank(LiteralValueRef::Str(s)),
+                        Lit::Num(n) => value_rank(LiteralValueRef::Num(*n)),
+                        other => [RankPart::Num(4.0), RankPart::Str(literal_key(other)), RankPart::Num(0.0)],
                     },
                 };
                 let text = literal_key(&value);

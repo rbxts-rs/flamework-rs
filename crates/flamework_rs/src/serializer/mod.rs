@@ -27,7 +27,9 @@ pub(crate) mod codegen;
 mod hoist;
 pub mod ir;
 mod layout;
+pub(crate) mod lit;
 pub mod lower;
+pub(crate) mod luau;
 mod order;
 mod pressure;
 pub mod typeinfo;
@@ -44,6 +46,7 @@ use crate::networking::calls::{BuiltCall, CallShape};
 use crate::plugin::FwInstance;
 use crate::setup::FwShared;
 use ir::{E, Id, Ids, S};
+use lit::Lit;
 pub use typeinfo::TableKey;
 
 // --- the generator's model ---------------------------------------------------------------------------------------
@@ -188,8 +191,8 @@ pub enum Kind {
     Boolean,
     String { length: LengthWidth, implicit: bool },
     Buffer { length: LengthWidth, implicit: bool },
-    Constant(E),
-    Literals(Vec<E>),
+    Constant(Lit),
+    Literals(Vec<Lit>),
     Nothing,
     Blob { typeof_name: Option<String> },
     Datatype(&'static str),

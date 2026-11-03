@@ -169,12 +169,12 @@ pub enum Body {
 #[derive(Debug)]
 pub struct Guard {
     unnamed: rbxts_plugin::LuauExpr,
-    names: crate::guards::names::Names,
+    names: crate::luau_names::Names,
     named: std::cell::RefCell<Option<rbxts_plugin::LuauExpr>>,
 }
 
 impl Guard {
-    pub(crate) fn new(unnamed: rbxts_plugin::LuauExpr, names: crate::guards::names::Names) -> Guard {
+    pub(crate) fn new(unnamed: rbxts_plugin::LuauExpr, names: crate::luau_names::Names) -> Guard {
         Guard { unnamed, names, named: std::cell::RefCell::new(None) }
     }
 
@@ -230,6 +230,10 @@ pub enum E {
     Object(Vec<(Key, E)>),
     Array(Vec<E>),
     New(String, Vec<E>),
+    /// Luau built directly ([`super::luau`]), passed through by the lowering as it is: the transition to direct
+    /// emission (DESIGN §4, rounds A to B2). Read like an identifier.
+    #[cfg_attr(not(test), allow(dead_code))]
+    Luau(rbxts_luau::Expr),
 }
 
 /// A call site's value ([`E::Ext`]): its Luau, filled in when the site is compiled (the generator builds the site's
@@ -293,6 +297,9 @@ pub enum S {
     ForOf(Bind, E, Vec<S>),
     While(E, Vec<S>),
     Return(Option<E>),
+    /// A Luau statement built directly, passed through by the lowering ([`E::Luau`]).
+    #[cfg_attr(not(test), allow(dead_code))]
+    Luau(rbxts_luau::Stmt),
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -6,6 +6,7 @@ use rbxts_plugin::ts::{P, Type};
 
 use super::codegen::{Ctx, Out, Place, push};
 use super::ir::{self, E, Op, S, Ty};
+use super::lit::Lit;
 use super::order::{literal_key, print_literal};
 use super::typeinfo::TableKey;
 use super::{Evaluation, Fit, GResult, Gen, Kind, LengthWidth, Shape, Width, kind_key};
@@ -91,17 +92,12 @@ pub(crate) fn primitive_type(kind: &Kind) -> Option<String> {
     })
 }
 
-fn constant_primitive(value: &E) -> Option<String> {
-    if let E::Ext(ext) = value
-        && let Some(literal) = ext.as_literal()
-    {
-        return constant_primitive(&literal);
-    }
+fn constant_primitive(value: &Lit) -> Option<String> {
     Some(match value {
-        E::Str(_) => "string".into(),
-        E::Num(_) | E::Neg(_) => "number".into(),
-        E::Bool(_) => "boolean".into(),
-        _ => "EnumItem".into(),
+        Lit::Str(_) => "string".into(),
+        Lit::Num(_) => "number".into(),
+        Lit::Bool(_) => "boolean".into(),
+        Lit::Nil | Lit::EnumItem { .. } => "EnumItem".into(),
     })
 }
 
@@ -113,7 +109,7 @@ pub(crate) fn fits_statically(n: f64, (minimum, maximum, whole): (f64, f64, bool
     n >= minimum && n <= maximum && n % 1.0 == 0.0
 }
 
-fn literal_range(values: &[E]) -> Option<(f64, f64, bool)> {
+fn literal_range(values: &[Lit]) -> Option<(f64, f64, bool)> {
     let numbers: Vec<f64> = values.iter().map(|v| crate::js::string_to_number(&literal_key(v))).collect();
     if numbers.iter().any(|n| n.is_nan()) {
         return None;
@@ -236,7 +232,7 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `objectKey(union, kind)`: the discriminant compared, or a required field only this member declares.
-    pub(crate) fn object_key(&mut self, union: &Rc<Kind>, kind: &Rc<Kind>) -> GResult<Option<(String, TableKey, Option<E>)>> {
+    pub(crate) fn object_key(&mut self, union: &Rc<Kind>, kind: &Rc<Kind>) -> GResult<Option<(String, TableKey, Option<Lit>)>> {
         let Kind::Union { alternatives, .. } = &**union else { unreachable!() };
         let Kind::Object { fields } = &**kind else { return Ok(None) };
         let discriminant = self.discriminant_of(union)?;
@@ -550,7 +546,7 @@ impl Gen<'_, '_, '_> {
         if let Some(t) = &self.g.true_kind {
             return Shape::Kind(t.clone());
         }
-        let k = self.kind(Kind::Constant(ir::bool(true)));
+        let k = self.kind(Kind::Constant(Lit::Bool(true)));
         self.g.true_kind = Some(k.clone());
         Shape::Kind(k)
     }
@@ -630,7 +626,7 @@ impl Gen<'_, '_, '_> {
         if left.is_none() || right.is_none() || left != right {
             return Some(Fit::None);
         }
-        let values = |kind: &Kind| -> Option<Vec<E>> {
+        let values = |kind: &Kind| -> Option<Vec<Lit>> {
             match kind {
                 Kind::Constant(v) => Some(vec![v.clone()]),
                 Kind::Literals(vs) => Some(vs.clone()),
@@ -938,7 +934,7 @@ impl Gen<'_, '_, '_> {
             Kind::Enum(name) => self.enum_test(name, value),
             Kind::Constant(constant) => {
                 self.check_globals_in(constant);
-                ir::binary(ir::cast(value, Ty::Unknown), Op::Eq, constant.clone())
+                ir::binary(ir::cast(value, Ty::Unknown), Op::Eq, constant.to_ir())
             }
             Kind::Blob { typeof_name } => self.type_of_is(value, typeof_name.as_deref().unwrap_or("")),
             _ => self.type_of_is(value, "table"),
@@ -985,8 +981,10 @@ impl Gen<'_, '_, '_> {
 
     /// `emitTypeCheck(kind, value, out, place)`.
     pub(crate) fn emit_type_check(&mut self, kind: &Rc<Kind>, value: E, out: &Out, place: &Place) -> GResult<()> {
-        if let Some(literal) = literal_type(&value) {
-            if !literal_passes(kind, &value, literal) {
+        if let Some(literal) = Lit::of(&value)
+            && let Some(ty) = literal.type_name()
+        {
+            if !literal_passes(kind, &literal, ty) {
                 let call = self.call_type_check(kind, value, place)?;
                 push(out, ir::stmt(call));
             }
@@ -1127,7 +1125,7 @@ impl Gen<'_, '_, '_> {
             let test = match constant {
                 Some(c) => {
                     self.check_globals_in(&c);
-                    ir::binary(field, Op::Eq, c)
+                    ir::binary(field, Op::Eq, c.to_ir())
                 }
                 None => ir::binary(field, Op::Ne, ir::nil()),
             };
@@ -1161,7 +1159,7 @@ impl Gen<'_, '_, '_> {
             }
             Kind::Constant(c) => {
                 self.check_globals_in(c);
-                ir::binary(value, Op::Eq, c.clone())
+                ir::binary(value, Op::Eq, c.to_ir())
             }
             Kind::Nothing => ir::binary(value, Op::Eq, ir::nil()),
             Kind::Blob { typeof_name } => match typeof_name {
@@ -1210,26 +1208,13 @@ impl Gen<'_, '_, '_> {
     }
 }
 
-/// `literalType(expression)`.
+/// `literalType(expression)`: a literal value's type name.
 pub(crate) fn literal_type(e: &E) -> Option<&'static str> {
-    if e.literal_number().is_some() {
-        return Some("number");
-    }
-    if let E::Ext(ext) = e
-        && let Some(literal) = ext.as_literal()
-    {
-        return literal_type(&literal);
-    }
-    match e {
-        E::Str(_) => Some("string"),
-        E::Bool(_) => Some("boolean"),
-        E::Undefined => Some("nil"),
-        _ => None,
-    }
+    Lit::of(e)?.type_name()
 }
 
 /// `literalPasses(kind, value, type)`.
-fn literal_passes(kind: &Kind, value: &E, ty: &str) -> bool {
+fn literal_passes(kind: &Kind, value: &Lit, ty: &str) -> bool {
     if let Kind::Constant(c) = kind {
         return ty != "nil" && print_literal(value) == print_literal(c);
     }
