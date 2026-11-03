@@ -206,10 +206,16 @@ errors, where the TS transformer reports the Flamework error. The build fails ei
 
 On purpose:
 
-- **A packed send followed by more of its optional chain** (`maybe?.fns.add.invoke(x).andThen(f)`): packed inside the
-  compiler's nil check, so the rest of the chain runs only when `maybe` is defined. The TS transformer's output fails
-  its own type check there (TS2532). A send that ends its chain (`maybe?.alpha.fire(x)`) is compiled as the TS
-  transformer compiles it.
+- **A packed send through `?.`** (`maybe?.alpha.fire(x)`, `box.ev?.alpha.fire(x)`, `fns?.add.invoke(x)`,
+  `fns?.ask.setCallback(f)`): packed inside the compiler's nil check, so each operand ahead of a `?.` is read once,
+  before the arguments, and the send goes through the values read, as JavaScript evaluates it. The TS transformer
+  checks the operands, evaluates the arguments and packs, then reads the chain again for the send: an argument that
+  clears an operand (`box.ev?.alpha.fire(f())` where `f` sets `box.ev = undefined`) makes its send fail, one that
+  replaces it sends through the new value. A send followed by more of its chain
+  (`maybe?.fns.add.invoke(x).andThen(f)`) runs the rest of the chain only when `maybe` is defined; the TS
+  transformer's output fails its own type check there (TS2532). As outside a chain (and as the TS transformer), the
+  members after the last `?.` (`.alpha` above) are read after the arguments when the target is plain reads (one with
+  a call or a computed key in it is bound before them).
 - **Obfuscated keys through an optional chain** (`maybe?.alpha.fire(x)` with `transformer.obfuscation`): the member
   name is obfuscated as outside a chain. The TS transformer leaves it as written there, so its send reaches no remote.
 - **`middleware` written as a shorthand property, a method or an accessor** (`createServer({ middleware })`): a build

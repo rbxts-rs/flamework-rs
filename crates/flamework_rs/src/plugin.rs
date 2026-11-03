@@ -228,7 +228,7 @@ impl PluginInstance for FwInstance {
     fn interest(&self, interest: &mut Interest) {
         interest.calls_by_symbol();
         // An optional chain's outermost call, before the chain is compiled: inlined and rewritten macros take the
-        // chain's place, and packed sends through `?.` get nil checks of their own.
+        // chain's place (networking declines it: its sends are packed inside the compiler's nil check).
         interest.calls_chain_outer();
         // Metadata is decided by JSDoc, not by a decorator, so every class is offered.
         interest.classes(ClassFilter::All);

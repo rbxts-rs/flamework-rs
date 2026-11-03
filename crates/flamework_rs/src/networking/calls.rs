@@ -1,5 +1,5 @@
 //! Networking call sites (`transformNetworkingCall.ts`): `transformSend`, `transformReceiverCallback`,
-//! `guardOptionalChain`, `bindArgument` and `emitWithStatements`.
+//! `bindArgument` and `emitWithStatements` (`guardOptionalChain` is not ported: see [`call_hook`]).
 //!
 //! **What a site becomes.** The TS transformer emitted TypeScript statements that roblox-ts compiled ahead of the
 //! call: the target bound to a local when it is more than a plain read, each argument that is more than an identifier
@@ -12,12 +12,12 @@
 //! **Where it goes** (`emitWithStatements`, decided when the site is built at its hook, with its `LocalBudget`
 //! claim): ahead of the statement around the call when that runs them exactly when the call runs
 //! (`hoistsCleanly`) and the scope's budget of Flamework locals has room; in a block with the statement past the
-//! budget; in a function called where the call is otherwise. A call reached through `?.` (`a?.b.fire(x)`) goes in a
-//! function with nil checks of its own (`guardOptionalChain`), taken when the compiler offers the chain's outermost
-//! call before compiling the chain (`Interest::calls_chain_outer`): the operands ahead of each `?.` checked (or the
-//! target bound and checked), the arguments and the packing, then the target read again for the send.
-//! Only a call followed by more of its chain (`a?.fn.invoke(x).andThen(...)`), which is not that outermost call, is
-//! lowered by the compiler inside the chain's nil check, its statements there (README, Differences).
+//! budget; in a function called where the call is otherwise. A call reached through `?.` (`a?.b.fire(x)`) is
+//! lowered by the compiler inside the chain's nil check, its statements there: the chain's offer of its outermost
+//! call (`Interest::calls_chain_outer`) is declined, so the compiler evaluates each operand ahead of a `?.` once,
+//! into its own local, before the arguments, and the send goes through those values, as JavaScript does. (The TS
+//! transformer's `guardOptionalChain` checked the operands, packed, then read the chain again for the send: an
+//! argument that clears or replaces an operand changed or broke the send; README, Differences.)
 //!
 //! **Names.** Each local is named when the hook first emits it ([`crate::serializer::local_name`]).
 
@@ -43,8 +43,7 @@ pub(crate) enum Placement {
     Scoped,
     /// In a function called where the call is.
     Function,
-    /// Reached through `?.`: in a function with nil checks of its own when the call is the chain's outermost
-    /// ([`chain_function`]), else where the call is evaluated, inside the compiler's nil check.
+    /// Reached through `?.`: where the call is evaluated, inside the compiler's nil check.
     Chain,
 }
 
@@ -378,7 +377,9 @@ fn in_optional_chain(node: P<Node>, shape: &CallShape) -> bool {
 /// The call hook for calls on networking members ([`super::TAG_RECEIVER`], [`super::TAG_CALLEE`]): packs a call to a
 /// packed member, declines anything else before compiling anything.
 pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PResult<Claim<LuauExpr>> {
-    if call.node.kind() != Kind::CallExpression || is_user_macro_call(fw, cx, call.node) {
+    // A chain's outermost call, offered before the chain is compiled: declined, so the compiler binds the operands
+    // ahead of each `?.` once and offers the call again inside the chain's nil check (`Placement::Chain`).
+    if call.chain_outer || call.node.kind() != Kind::CallExpression || is_user_macro_call(fw, cx, call.node) {
         return Ok(Claim::Decline);
     }
     let node = call.node;
@@ -386,12 +387,6 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
     let Some(shape) = super::analysis::analyze(fw, cx, node, &mut key_of)? else { return Ok(Claim::Decline) };
 
     let built = crate::serializer::call_site(fw, cx, node, &shape)?;
-    if call.chain_outer {
-        let value = chain_function(fw, cx, node, &built)?;
-        #[cfg(feature = "wire-harvest")]
-        harvest(fw, cx, node, &built);
-        return Ok(Claim::Take(value));
-    }
 
     let mut statements: Vec<Stmt> = Vec::new();
     let value = match &built.shape {
@@ -438,11 +433,7 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
     harvest(fw, cx, node, &built);
 
     Ok(Claim::Take(match built.placement {
-        Placement::Bare => {
-            statements.into_iter().for_each(|s| cx.prereq(s));
-            value
-        }
-        Placement::Chain => {
+        Placement::Bare | Placement::Chain => {
             statements.into_iter().for_each(|s| cx.prereq(s));
             value
         }
@@ -461,155 +452,6 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
             create::call(create::paren(create::function(Vec::new(), false, statements)), Vec::new())
         }
     }))
-}
-
-/// The chain's outermost call (`guardOptionalChain` and `emitWithStatements` with `wrap`): in a function, the
-/// operands ahead of each `?.` nil-checked when each is a reference (else the target bound and checked), the target
-/// bound where the TS bound it, the arguments and the packing, and the call, which reads an unbound target again.
-fn chain_function(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &BuiltCall) -> PResult<Expr> {
-    let (target, optional_target) = match &built.shape {
-        CallShape::Send { target, target_is_callee: true, .. } => (*target, node.question_dot_token().is_some()),
-        CallShape::Send { target, .. } | CallShape::Callback { target, .. } => {
-            let callee = node.expression().expect("a call has a callee");
-            (*target, callee.question_dot_token().is_some())
-        }
-    };
-    let compile = |cx: &mut Cx<'_>, node: P<Node>, statements: &mut Vec<Stmt>| -> PResult<Expr> {
-        let (value, prereqs) = cx.capture(|cx| cx.compile_expr(node))?;
-        statements.extend(prereqs);
-        Ok(value)
-    };
-    // A chain bound to a local (`const target = a?.b`): roblox-ts names the chain's temporary after the local.
-    let compile_named = |cx: &mut Cx<'_>, node: P<Node>, name: &str, statements: &mut Vec<Stmt>| -> PResult<Expr> {
-        let (value, prereqs) = cx.capture(|cx| cx.compile_expr_named(node, name))?;
-        statements.extend(prereqs);
-        Ok(value)
-    };
-    let short_circuit = |value: Expr| {
-        create::if_stmt(
-            create::binary(value, BinaryOperator::Eq, create::nil()),
-            vec![create::return_stmt(create::nil())],
-            rbxts_luau::ElseBody::Block(Vec::new()),
-        )
-    };
-
-    let mut statements: Vec<Stmt> = Vec::new();
-    let operands = optional_operands(target, optional_target);
-    let receiver = if operands.iter().all(|&operand| is_reference(operand)) {
-        for operand in operands {
-            let value = compile(cx, operand, &mut statements)?;
-            statements.push(short_circuit(value));
-        }
-        match built.target {
-            Some(local) => {
-                let name = local_name(fw, cx, local);
-                let value = compile_named(cx, target, &name, &mut statements)?;
-                statements.push(create::local(create::any_id(name.clone()), Some(value)));
-                Some(create::id(name))
-            }
-            // Read where the call is.
-            None => None,
-        }
-    } else {
-        // The TS binds the target whatever it is; one the site did not bind (a pure target behind an operand that is
-        // not a reference) gets a temporary.
-        let name = match built.target {
-            Some(local) => create::any_id(local_name(fw, cx, local)),
-            None => rbxts_luau::AnyIdentifier::from(cx.temp_id("target")),
-        };
-        let value = match &name {
-            rbxts_luau::AnyIdentifier::Identifier(id) => compile_named(cx, target, &id.name.clone(), &mut statements)?,
-            rbxts_luau::AnyIdentifier::Temporary(_) => compile(cx, target, &mut statements)?,
-        };
-        statements.push(create::local(name.clone(), Some(value)));
-        let receiver = Expr::from(name);
-        statements.push(short_circuit(receiver.clone()));
-        Some(receiver)
-    };
-
-    let value = match &built.shape {
-        CallShape::Send { method, .. } => {
-            let mut arguments = Vec::with_capacity(built.leading.len() + 2);
-            for value in &built.leading {
-                arguments.push(bind_value(fw, cx, value, &mut statements)?);
-            }
-            match &built.spread {
-                Some((table, nodes)) => {
-                    let (array, prereqs) = cx.capture(|cx| spread_array(cx, nodes))?;
-                    statements.extend(prereqs);
-                    statements.push(create::local(create::any_id(local_name(fw, cx, *table)), Some(array)));
-                }
-                None => {
-                    for value in &built.packed {
-                        bind_value(fw, cx, value, &mut statements)?;
-                    }
-                }
-            }
-            let (encoding, payload, blobs) = lower_encoding(fw, cx, built);
-            statements.extend(encoding);
-            arguments.extend(payload);
-            arguments.extend(blobs);
-            let receiver = match receiver {
-                Some(receiver) => receiver,
-                None => compile(cx, target, &mut statements)?,
-            };
-            create::method_call(receiver, *method, arguments)
-        }
-        CallShape::Callback { .. } => {
-            let receiver = match receiver {
-                Some(receiver) => receiver,
-                None => compile(cx, target, &mut statements)?,
-            };
-            let (callback_node, callback) = built.callback.expect("a callback site has its callback");
-            let (value, prereqs) = cx.capture(|cx| cx.compile_expr(callback_node))?;
-            statements.extend(prereqs);
-            let callback_name = local_name(fw, cx, callback);
-            statements.push(create::local(create::any_id(callback_name.clone()), Some(value)));
-            let pack = built.pack.as_ref().expect("a callback site has its packer");
-            let pack = crate::serializer::with_lowerer(fw, cx, |lowerer| {
-                let mut prereqs = Vec::new();
-                lowerer.expr(pack, &mut prereqs)
-            });
-            create::method_call(receiver, "_setCallback", vec![create::id(callback_name), pack])
-        }
-    };
-    statements.push(create::return_stmt(value));
-    Ok(create::call(create::paren(create::function(Vec::new(), false, statements)), Vec::new()))
-}
-
-/// `optionalOperands(target, optionalTarget)`: the operands ahead of each `?.` in `target`, outermost first, then
-/// `target` itself when the access after it is the optional one (`handler.x?.fire(...)`).
-fn optional_operands(target: P<Node>, optional_target: bool) -> Vec<P<Node>> {
-    let mut operands = Vec::new();
-    let mut current = target;
-    while matches!(
-        current.kind(),
-        Kind::PropertyAccessExpression | Kind::ElementAccessExpression | Kind::CallExpression | Kind::NonNullExpression
-    ) {
-        let expression = current.expression().expect("a link has an expression");
-        if current.kind() != Kind::NonNullExpression && current.question_dot_token().is_some() {
-            operands.insert(0, expression);
-        }
-        current = expression;
-    }
-    if optional_target {
-        operands.push(target);
-    }
-    operands
-}
-
-/// `isReference`: an identifier, `this`, or a property (or literal index) of one.
-fn is_reference(node: P<Node>) -> bool {
-    match node.kind() {
-        Kind::Identifier | Kind::ThisKeyword => true,
-        Kind::ParenthesizedExpression | Kind::PropertyAccessExpression => node.expression().is_some_and(is_reference),
-        Kind::ElementAccessExpression => {
-            let index = node.as_element_access_expression().argument_expression;
-            matches!(index.kind(), Kind::StringLiteral | Kind::NumericLiteral)
-                && node.expression().is_some_and(is_reference)
-        }
-        _ => false,
-    }
 }
 
 /// The call is its expression statement's whole expression.
