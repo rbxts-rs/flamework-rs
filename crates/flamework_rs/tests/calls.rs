@@ -8,7 +8,8 @@
 //!
 //! `tests/fixture_calls/expected/out` holds rbxtsc-fw's output, each file compared whole (`UPDATE_EXPECTED=1` writes
 //! it). It is the TS5 pipeline's output (roblox-ts master with the published 2.0.0-beta.0 transformer,
-//! `fieldInfoPlugin.cjs` as its plugin) but for the generated locals' names (checked with `tools/normalize.cjs`).
+//! `fieldInfoPlugin.cjs` as its plugin) but for the generated locals' names (checked with `tools/normalize.cjs`) and
+//! the serializers' code, which flamework-rs builds as Luau of its own (README, Differences).
 //!
 //! `tests/fixture_chains` holds inlined and rewritten macro calls that end optional chains, which TS5 compiles by
 //! replacing the call node (the `crate::macros` docs): `ts5-reference/chaingaps.luau` is TS5's output for the source,
@@ -38,7 +39,7 @@ fn expected_files(dir: &std::path::Path, relative: &str, out: &mut Vec<(String, 
 
 /// Every call shape and marker equals the expected output byte for byte.
 #[test]
-fn every_shape_matches_ts5() {
+fn every_shape_matches_expected() {
     let Some(project) = Project::new(FIXTURE, "shapes") else { return };
     let report = project.build_with(flamework_with_fixture_macros());
     assert_clean(&report);

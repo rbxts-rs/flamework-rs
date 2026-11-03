@@ -9,7 +9,9 @@
 //!
 //! `tests/fixture_f5/expected` holds rbxtsc-fw's output for every file but one, each compared whole
 //! (`UPDATE_EXPECTED=1` writes it). It is the TS5 pipeline's output (roblox-ts master with the published 2.0.0-beta.0
-//! transformer) but for the generated locals' names (checked with `tools/normalize.cjs`), except `chained.ts`: sends
+//! transformer) but for the generated locals' names (checked with `tools/normalize.cjs`) and the packings and decoders,
+//! which flamework-rs builds as Luau of its own (README, Differences; their wire format is the TS5 pipeline's), and
+//! except `chained.ts`: sends
 //! through `?.`, packed inside the compiler's nil check so that each operand ahead of a `?.` is read once, before the
 //! arguments (JavaScript's order; TS5 reads the chain again after them, README, Differences). The one differs from
 //! TS5's in shape only (README, Differences) and is checked on its own: `scopedReturn.ts` has a returned send past its

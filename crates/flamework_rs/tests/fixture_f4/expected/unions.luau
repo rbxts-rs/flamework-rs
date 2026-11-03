@@ -32,12 +32,11 @@ local vread = function(buf_1, o_1)
 	end
 end
 codec.s_Wallet = function(v_1)
-	local v_2 = v_1
 	local size = 1
-	if v_2.Coins ~= nil then
+	if v_1.Coins ~= nil then
 		size += 8
-	elseif v_2.Items ~= nil then
-		local array = v_2.Items
+	elseif v_1.Items ~= nil then
+		local array = v_1.Items
 		local n_4 = #array
 		local size_1 = vsize(n_4)
 		for i = 1, n_4 do
@@ -53,14 +52,13 @@ codec.s_Wallet = function(v_1)
 	return size
 end
 codec.w_Wallet = function(buf_2, o_2, v_1)
-	local v_3 = v_1
-	if v_3.Coins ~= nil then
+	if v_1.Coins ~= nil then
 		buffer.writeu8(buf_2, o_2, 0)
-		buffer.writef64(buf_2, o_2 + 1, v_3.Coins)
+		buffer.writef64(buf_2, o_2 + 1, v_1.Coins)
 		o_2 += 9
-	elseif v_3.Items ~= nil then
+	elseif v_1.Items ~= nil then
 		buffer.writeu8(buf_2, o_2, 1)
-		local array_1 = v_3.Items
+		local array_1 = v_1.Items
 		o_2 = vwrite(buf_2, o_2 + 1, #array_1)
 		for i_1 = 1, #array_1 do
 			local item_1 = array_1[i_1]
@@ -106,9 +104,9 @@ codec.r_Wallet = function(buf_2, o_2)
 	return value_1, o_2
 end
 local wallet = Flamework.createSerializer({
-	serialize = function(v_4)
-		local buf_3 = buffer.create(codec.s_Wallet(v_4))
-		codec.w_Wallet(buf_3, 0, v_4)
+	serialize = function(v_2)
+		local buf_3 = buffer.create(codec.s_Wallet(v_2))
+		codec.w_Wallet(buf_3, 0, v_2)
 		return buf_3
 	end,
 	deserialize = function(buf_4)
@@ -119,26 +117,24 @@ local wallet = Flamework.createSerializer({
 		return value_2
 	end,
 })
-codec.s_Shape = function(v_5)
-	local v_6 = v_5
+codec.s_Shape = function(v_3)
 	local size_2 = 1
-	if v_6.kind == "circle" then
+	if v_3.kind == "circle" then
 		size_2 += 8
-	elseif v_6.kind == "rect" then
+	elseif v_3.kind == "rect" then
 		size_2 += 16
 	end
 	return size_2
 end
-codec.w_Shape = function(buf_5, o_6, v_5)
-	local v_7 = v_5
-	if v_7.kind == "circle" then
+codec.w_Shape = function(buf_5, o_6, v_3)
+	if v_3.kind == "circle" then
 		buffer.writeu8(buf_5, o_6, 0)
-		buffer.writef64(buf_5, o_6 + 1, v_7.radius)
+		buffer.writef64(buf_5, o_6 + 1, v_3.radius)
 		o_6 += 9
-	elseif v_7.kind == "rect" then
+	elseif v_3.kind == "rect" then
 		buffer.writeu8(buf_5, o_6, 1)
-		buffer.writef64(buf_5, o_6 + 1, v_7.w)
-		buffer.writef64(buf_5, o_6 + 9, v_7.h)
+		buffer.writef64(buf_5, o_6 + 1, v_3.w)
+		buffer.writef64(buf_5, o_6 + 9, v_3.h)
 		o_6 += 17
 	else
 		error("value matches none of the union's members")
@@ -171,9 +167,9 @@ codec.r_Shape = function(buf_5, o_6)
 	return value_3, o_6
 end
 local shape = Flamework.createSerializer({
-	serialize = function(v_8)
-		local buf_6 = buffer.create(codec.s_Shape(v_8))
-		codec.w_Shape(buf_6, 0, v_8)
+	serialize = function(v_4)
+		local buf_6 = buffer.create(codec.s_Shape(v_4))
+		codec.w_Shape(buf_6, 0, v_4)
 		return buf_6
 	end,
 	deserialize = function(buf_7)
@@ -189,67 +185,65 @@ local literalIndex = {
 	[5] = 0,
 	lit = 1,
 }
-codec.s_Mixed = function(v_9)
-	local v_10 = v_9
+codec.s_Mixed = function(v_5)
 	local size_3 = 1
-	if typeof(v_10) == "Instance" then
+	if typeof(v_5) == "Instance" then
 		size_3 += 4
-	elseif typeof(v_10) == "Vector3" then
+	elseif typeof(v_5) == "Vector3" then
 		size_3 += 12
-	elseif type(v_10) == "table" and v_10.kind == "a" then
+	elseif type(v_5) == "table" and v_5.kind == "a" then
 		size_3 += 8
-	elseif type(v_10) == "table" and v_10.kind == "b" then
-		local length_3 = #(v_10.s)
+	elseif type(v_5) == "table" and v_5.kind == "b" then
+		local length_3 = #v_5.s
 		size_3 += vsize(length_3) + length_3
-	elseif literalIndex[v_10] ~= nil then
+	elseif literalIndex[v_5] ~= nil then
 		size_3 += 1
-	elseif type(v_10) == "table" then
-		local n_5 = #v_10
+	elseif type(v_5) == "table" then
+		local n_5 = #v_5
 		size_3 += vsize(n_5) + n_5 * 8
 	end
 	return size_3
 end
-codec.w_Mixed = function(buf_8, o_8, v_9, blobs)
-	local v_11 = v_9
-	if typeof(v_11) == "Instance" then
+codec.w_Mixed = function(buf_8, o_8, v_5, blobs)
+	if typeof(v_5) == "Instance" then
 		buffer.writeu8(buf_8, o_8, 0)
-		if v_11 ~= nil then
-			table.insert(blobs, v_11)
+		if v_5 ~= nil then
+			table.insert(blobs, v_5)
 			buffer.writeu32(buf_8, o_8 + 1, #blobs)
 		else
 			buffer.writeu32(buf_8, o_8 + 1, 0)
 		end
 		o_8 += 5
-	elseif typeof(v_11) == "Vector3" then
+	elseif typeof(v_5) == "Vector3" then
 		buffer.writeu8(buf_8, o_8, 1)
-		buffer.writef32(buf_8, o_8 + 1, v_11.X)
-		buffer.writef32(buf_8, o_8 + 5, v_11.Y)
-		buffer.writef32(buf_8, o_8 + 9, v_11.Z)
+		buffer.writef32(buf_8, o_8 + 1, v_5.X)
+		buffer.writef32(buf_8, o_8 + 5, v_5.Y)
+		buffer.writef32(buf_8, o_8 + 9, v_5.Z)
 		o_8 += 13
-	elseif type(v_11) == "table" and v_11.kind == "a" then
+	elseif type(v_5) == "table" and v_5.kind == "a" then
 		buffer.writeu8(buf_8, o_8, 2)
-		buffer.writef64(buf_8, o_8 + 1, v_11.v)
+		buffer.writef64(buf_8, o_8 + 1, v_5.v)
 		o_8 += 9
-	elseif type(v_11) == "table" and v_11.kind == "b" then
+	elseif type(v_5) == "table" and v_5.kind == "b" then
 		buffer.writeu8(buf_8, o_8, 3)
-		local text_1 = v_11.s
+		local text_1 = v_5.s
 		local length_4 = #text_1
 		o_8 = vwrite(buf_8, o_8 + 1, length_4)
 		buffer.writestring(buf_8, o_8, text_1)
 		o_8 += length_4
-	elseif literalIndex[v_11] ~= nil then
+	elseif literalIndex[v_5] ~= nil then
 		buffer.writeu8(buf_8, o_8, 5)
-		local index = literalIndex[v_11]
+		local index = literalIndex[v_5]
 		if index == nil then
 			error("value is not one of the literals its type allows")
 		end
 		buffer.writeu8(buf_8, o_8 + 1, index)
 		o_8 += 2
-	elseif type(v_11) == "table" then
+	elseif type(v_5) == "table" then
 		buffer.writeu8(buf_8, o_8, 4)
-		o_8 = vwrite(buf_8, o_8 + 1, #v_11)
-		for i_3 = 1, #v_11 do
-			local item_2 = v_11[i_3]
+		o_8 = vwrite(buf_8, o_8 + 1, #v_5)
+		for i_3 = 1, #v_5 do
+			local item_2 = v_5[i_3]
 			if item_2 == nil then
 				error(`[Flamework] the array has no value at Mixed[{i_3 - 1}]`)
 			end
@@ -272,10 +266,10 @@ codec.r_Mixed = function(buf_8, o_8, blobs)
 		value_5 = Vector3.new(buffer.readf32(buf_8, o_8), buffer.readf32(buf_8, o_8 + 4), buffer.readf32(buf_8, o_8 + 8))
 		o_8 += 12
 	elseif tag_2 == 2 then
-		local v_12 = buffer.readf64(buf_8, o_8)
+		local v_6 = buffer.readf64(buf_8, o_8)
 		value_5 = {
 			kind = "a",
-			v = v_12,
+			v = v_6,
 		}
 		o_8 += 8
 	elseif tag_2 == 3 then
@@ -311,10 +305,10 @@ codec.r_Mixed = function(buf_8, o_8, blobs)
 	return value_5, o_8
 end
 local mixed = Flamework.createSerializer({
-	serialize = function(v_13)
-		local buf_9 = buffer.create(codec.s_Mixed(v_13))
+	serialize = function(v_7)
+		local buf_9 = buffer.create(codec.s_Mixed(v_7))
 		local blobs_1 = {}
-		codec.w_Mixed(buf_9, 0, v_13, blobs_1)
+		codec.w_Mixed(buf_9, 0, v_7, blobs_1)
 		return buf_9, blobs_1
 	end,
 	deserialize = function(buf_10, blobs_2)
@@ -326,32 +320,30 @@ local mixed = Flamework.createSerializer({
 	end,
 })
 local sortOf = Flamework.createSerializer({
-	serialize = function(v_14)
-		local v_15 = v_14
+	serialize = function(v_8)
 		local size_4 = 1
-		if type(v_15) == "number" then
-			size_4 += if v_15 < 34359738368 and 1 / v_15 > 0 and v_15 % 1 == 0 then vsize(v_15) else 8
-		elseif type(v_15) == "string" then
-			local length_6 = #v_15
+		if type(v_8) == "number" then
+			size_4 += if v_8 < 34359738368 and 1 / v_8 > 0 and v_8 % 1 == 0 then vsize(v_8) else 8
+		elseif type(v_8) == "string" then
+			local length_6 = #v_8
 			size_4 += vsize(length_6) + length_6
 		end
 		local buf_11 = buffer.create(size_4)
 		local o_12 = 0
-		local v_16 = v_14
-		if type(v_16) == "number" then
-			if v_16 < 34359738368 and 1 / v_16 > 0 and v_16 % 1 == 0 then
+		if type(v_8) == "number" then
+			if v_8 < 34359738368 and 1 / v_8 > 0 and v_8 % 1 == 0 then
 				buffer.writeu8(buf_11, o_12, 2)
-				o_12 = vwrite(buf_11, o_12 + 1, v_16)
+				o_12 = vwrite(buf_11, o_12 + 1, v_8)
 			else
 				buffer.writeu8(buf_11, o_12, 0)
-				buffer.writef64(buf_11, o_12 + 1, v_16)
+				buffer.writef64(buf_11, o_12 + 1, v_8)
 				o_12 += 9
 			end
-		elseif type(v_16) == "string" then
+		elseif type(v_8) == "string" then
 			buffer.writeu8(buf_11, o_12, 1)
-			local length_7 = #v_16
+			local length_7 = #v_8
 			o_12 = vwrite(buf_11, o_12 + 1, length_7)
-			buffer.writestring(buf_11, o_12, v_16)
+			buffer.writestring(buf_11, o_12, v_8)
 			o_12 += length_7
 		else
 			error("value matches none of the union's members")
@@ -385,31 +377,29 @@ local sortOf = Flamework.createSerializer({
 	end,
 })
 local sortOfReversed = Flamework.createSerializer({
-	serialize = function(v_17)
-		local v_18 = v_17
+	serialize = function(v_9)
 		local size_5 = 1
-		if type(v_18) == "string" then
-			local length_9 = #v_18
+		if type(v_9) == "string" then
+			local length_9 = #v_9
 			size_5 += vsize(length_9) + length_9
-		elseif type(v_18) == "number" then
-			size_5 += if v_18 < 34359738368 and 1 / v_18 > 0 and v_18 % 1 == 0 then vsize(v_18) else 8
+		elseif type(v_9) == "number" then
+			size_5 += if v_9 < 34359738368 and 1 / v_9 > 0 and v_9 % 1 == 0 then vsize(v_9) else 8
 		end
 		local buf_13 = buffer.create(size_5)
 		local o_16 = 0
-		local v_19 = v_17
-		if type(v_19) == "string" then
+		if type(v_9) == "string" then
 			buffer.writeu8(buf_13, o_16, 0)
-			local length_10 = #v_19
+			local length_10 = #v_9
 			o_16 = vwrite(buf_13, o_16 + 1, length_10)
-			buffer.writestring(buf_13, o_16, v_19)
+			buffer.writestring(buf_13, o_16, v_9)
 			o_16 += length_10
-		elseif type(v_19) == "number" then
-			if v_19 < 34359738368 and 1 / v_19 > 0 and v_19 % 1 == 0 then
+		elseif type(v_9) == "number" then
+			if v_9 < 34359738368 and 1 / v_9 > 0 and v_9 % 1 == 0 then
 				buffer.writeu8(buf_13, o_16, 2)
-				o_16 = vwrite(buf_13, o_16 + 1, v_19)
+				o_16 = vwrite(buf_13, o_16 + 1, v_9)
 			else
 				buffer.writeu8(buf_13, o_16, 1)
-				buffer.writef64(buf_13, o_16 + 1, v_19)
+				buffer.writef64(buf_13, o_16 + 1, v_9)
 				o_16 += 9
 			end
 		else
@@ -444,28 +434,26 @@ local sortOfReversed = Flamework.createSerializer({
 	end,
 })
 local narrow = Flamework.createSerializer({
-	serialize = function(v_20)
-		local v_21 = v_20
+	serialize = function(v_10)
 		local size_6 = 1
-		if type(v_21) == "number" and (v_21 >= 0 and v_21 <= 65535 and v_21 % 1 == 0) then
+		if type(v_10) == "number" and (v_10 >= 0 and v_10 <= 65535 and v_10 % 1 == 0) then
 			size_6 += 2
-		elseif type(v_21) == "number" then
-			size_6 += if v_21 < 34359738368 and 1 / v_21 > 0 and v_21 % 1 == 0 then vsize(v_21) else 8
+		elseif type(v_10) == "number" then
+			size_6 += if v_10 < 34359738368 and 1 / v_10 > 0 and v_10 % 1 == 0 then vsize(v_10) else 8
 		end
 		local buf_15 = buffer.create(size_6)
 		local o_20 = 0
-		local v_22 = v_20
-		if type(v_22) == "number" and (v_22 >= 0 and v_22 <= 65535 and v_22 % 1 == 0) then
+		if type(v_10) == "number" and (v_10 >= 0 and v_10 <= 65535 and v_10 % 1 == 0) then
 			buffer.writeu8(buf_15, o_20, 0)
-			buffer.writeu16(buf_15, o_20 + 1, v_22)
+			buffer.writeu16(buf_15, o_20 + 1, v_10)
 			o_20 += 3
-		elseif type(v_22) == "number" then
-			if v_22 < 34359738368 and 1 / v_22 > 0 and v_22 % 1 == 0 then
+		elseif type(v_10) == "number" then
+			if v_10 < 34359738368 and 1 / v_10 > 0 and v_10 % 1 == 0 then
 				buffer.writeu8(buf_15, o_20, 2)
-				o_20 = vwrite(buf_15, o_20 + 1, v_22)
+				o_20 = vwrite(buf_15, o_20 + 1, v_10)
 			else
 				buffer.writeu8(buf_15, o_20, 1)
-				buffer.writef64(buf_15, o_20 + 1, v_22)
+				buffer.writef64(buf_15, o_20 + 1, v_10)
 				o_20 += 9
 			end
 		else
@@ -498,27 +486,25 @@ local narrow = Flamework.createSerializer({
 	end,
 })
 local narrowOnly = Flamework.createSerializer({
-	serialize = function(v_23)
-		local v_24 = v_23
+	serialize = function(v_11)
 		local size_7 = 1
-		if type(v_24) == "number" and (v_24 >= 0 and v_24 <= 255 and v_24 % 1 == 0) then
+		if type(v_11) == "number" and (v_11 >= 0 and v_11 <= 255 and v_11 % 1 == 0) then
 			size_7 += 1
-		elseif type(v_24) == "string" then
-			local length_12 = #v_24
+		elseif type(v_11) == "string" then
+			local length_12 = #v_11
 			size_7 += vsize(length_12) + length_12
 		end
 		local buf_17 = buffer.create(size_7)
 		local o_23 = 0
-		local v_25 = v_23
-		if type(v_25) == "number" and (v_25 >= 0 and v_25 <= 255 and v_25 % 1 == 0) then
+		if type(v_11) == "number" and (v_11 >= 0 and v_11 <= 255 and v_11 % 1 == 0) then
 			buffer.writeu8(buf_17, o_23, 0)
-			buffer.writeu8(buf_17, o_23 + 1, v_25)
+			buffer.writeu8(buf_17, o_23 + 1, v_11)
 			o_23 += 2
-		elseif type(v_25) == "string" then
+		elseif type(v_11) == "string" then
 			buffer.writeu8(buf_17, o_23, 1)
-			local length_13 = #v_25
+			local length_13 = #v_11
 			o_23 = vwrite(buf_17, o_23 + 1, length_13)
-			buffer.writestring(buf_17, o_23, v_25)
+			buffer.writestring(buf_17, o_23, v_11)
 			o_23 += length_13
 		else
 			error("value matches none of the union's members")
@@ -547,39 +533,37 @@ local narrowOnly = Flamework.createSerializer({
 		return value_10
 	end,
 })
-codec.s_Choice = function(v_26)
-	local v_27 = v_26
+codec.s_Choice = function(v_12)
 	local size_8 = 1
-	if type(v_27) == "string" then
-		local length_15 = #v_27
+	if type(v_12) == "string" then
+		local length_15 = #v_12
 		size_8 += vsize(length_15) + length_15
-	elseif type(v_27) == "number" then
-		size_8 += if v_27 < 34359738368 and 1 / v_27 > 0 and v_27 % 1 == 0 then vsize(v_27) else 8
-	elseif type(v_27) == "table" and v_27.alpha ~= nil then
+	elseif type(v_12) == "number" then
+		size_8 += if v_12 < 34359738368 and 1 / v_12 > 0 and v_12 % 1 == 0 then vsize(v_12) else 8
+	elseif type(v_12) == "table" and v_12.alpha ~= nil then
 		size_8 += 8
 	end
 	return size_8
 end
-codec.w_Choice = function(buf_19, o_26, v_26)
-	local v_28 = v_26
-	if type(v_28) == "string" then
+codec.w_Choice = function(buf_19, o_26, v_12)
+	if type(v_12) == "string" then
 		buffer.writeu8(buf_19, o_26, 0)
-		local length_16 = #v_28
+		local length_16 = #v_12
 		o_26 = vwrite(buf_19, o_26 + 1, length_16)
-		buffer.writestring(buf_19, o_26, v_28)
+		buffer.writestring(buf_19, o_26, v_12)
 		o_26 += length_16
-	elseif type(v_28) == "number" then
-		if v_28 < 34359738368 and 1 / v_28 > 0 and v_28 % 1 == 0 then
+	elseif type(v_12) == "number" then
+		if v_12 < 34359738368 and 1 / v_12 > 0 and v_12 % 1 == 0 then
 			buffer.writeu8(buf_19, o_26, 3)
-			o_26 = vwrite(buf_19, o_26 + 1, v_28)
+			o_26 = vwrite(buf_19, o_26 + 1, v_12)
 		else
 			buffer.writeu8(buf_19, o_26, 1)
-			buffer.writef64(buf_19, o_26 + 1, v_28)
+			buffer.writef64(buf_19, o_26 + 1, v_12)
 			o_26 += 9
 		end
-	elseif type(v_28) == "table" and v_28.alpha ~= nil then
+	elseif type(v_12) == "table" and v_12.alpha ~= nil then
 		buffer.writeu8(buf_19, o_26, 2)
-		buffer.writef64(buf_19, o_26 + 1, v_28.alpha)
+		buffer.writef64(buf_19, o_26 + 1, v_12.alpha)
 		o_26 += 9
 	else
 		error("value matches none of the union's members")
@@ -614,9 +598,9 @@ codec.r_Choice = function(buf_19, o_26)
 	return value_11, o_26
 end
 local choice = Flamework.createSerializer({
-	serialize = function(v_29)
-		local buf_20 = buffer.create(codec.s_Choice(v_29))
-		codec.w_Choice(buf_20, 0, v_29)
+	serialize = function(v_13)
+		local buf_20 = buffer.create(codec.s_Choice(v_13))
+		codec.w_Choice(buf_20, 0, v_13)
 		return buf_20
 	end,
 	deserialize = function(buf_21)
@@ -627,25 +611,25 @@ local choice = Flamework.createSerializer({
 		return value_12
 	end,
 })
-codec.s_Box = function(v_30)
-	local v_31 = v_30.value
+codec.s_Box = function(v_14)
+	local v_15 = v_14.value
 	local size_9 = 1
-	if v_31.alpha ~= nil then
+	if v_15.alpha ~= nil then
 		size_9 += 8
-	elseif v_31.zed ~= nil then
+	elseif v_15.zed ~= nil then
 		size_9 += 1
 	end
 	return size_9
 end
-codec.w_Box = function(buf_22, o_30, v_30)
-	local v_32 = v_30.value
-	if v_32.alpha ~= nil then
+codec.w_Box = function(buf_22, o_30, v_14)
+	local v_16 = v_14.value
+	if v_16.alpha ~= nil then
 		buffer.writeu8(buf_22, o_30, 0)
-		buffer.writef64(buf_22, o_30 + 1, v_32.alpha)
+		buffer.writef64(buf_22, o_30 + 1, v_16.alpha)
 		o_30 += 9
-	elseif v_32.zed ~= nil then
+	elseif v_16.zed ~= nil then
 		buffer.writeu8(buf_22, o_30, 1)
-		buffer.writeu8(buf_22, o_30 + 1, if v_32.zed then 1 else 0)
+		buffer.writeu8(buf_22, o_30 + 1, if v_16.zed then 1 else 0)
 		o_30 += 2
 	else
 		error("value matches none of the union's members")
@@ -677,9 +661,9 @@ codec.r_Box = function(buf_22, o_30)
 	return value_14, o_30
 end
 local boxes = Flamework.createSerializer({
-	serialize = function(v_33)
-		local buf_23 = buffer.create(codec.s_Box(v_33))
-		codec.w_Box(buf_23, 0, v_33)
+	serialize = function(v_17)
+		local buf_23 = buffer.create(codec.s_Box(v_17))
+		codec.w_Box(buf_23, 0, v_17)
 		return buf_23
 	end,
 	deserialize = function(buf_24)
@@ -691,11 +675,11 @@ local boxes = Flamework.createSerializer({
 	end,
 })
 local unwritten = Flamework.createSerializer({
-	serialize = function(v_34)
-		local n_10 = #v_34
+	serialize = function(v_18)
+		local n_10 = #v_18
 		local size_10 = vsize(n_10)
 		for i_5 = 1, n_10 do
-			local item_3 = v_34[i_5]
+			local item_3 = v_18[i_5]
 			if item_3 == nil then
 				error(`[Flamework] the array has no value at value[{i_5 - 1}]`)
 			end
@@ -709,9 +693,9 @@ local unwritten = Flamework.createSerializer({
 		end
 		local buf_25 = buffer.create(size_10)
 		local o_32 = 0
-		o_32 = vwrite(buf_25, o_32, #v_34)
-		for i_6 = 1, #v_34 do
-			local item_4 = v_34[i_6]
+		o_32 = vwrite(buf_25, o_32, #v_18)
+		for i_6 = 1, #v_18 do
+			local item_4 = v_18[i_6]
 			if item_4.alpha ~= nil then
 				buffer.writeu8(buf_25, o_32, 0)
 				buffer.writef64(buf_25, o_32 + 1, item_4.alpha)
@@ -762,35 +746,33 @@ local unwritten = Flamework.createSerializer({
 	end,
 })
 local withBoolean = Flamework.createSerializer({
-	serialize = function(v_35)
-		local v_36 = v_35
+	serialize = function(v_19)
 		local size_12 = 1
-		if type(v_36) == "boolean" then
+		if type(v_19) == "boolean" then
 			size_12 += 1
-		elseif type(v_36) == "string" then
-			local length_18 = #v_36
+		elseif type(v_19) == "string" then
+			local length_18 = #v_19
 			size_12 += vsize(length_18) + length_18
-		elseif typeof(v_36) == "Vector3" then
+		elseif typeof(v_19) == "Vector3" then
 			size_12 += 12
 		end
 		local buf_27 = buffer.create(size_12)
 		local o_35 = 0
-		local v_37 = v_35
-		if type(v_37) == "boolean" then
+		if type(v_19) == "boolean" then
 			buffer.writeu8(buf_27, o_35, 0)
-			buffer.writeu8(buf_27, o_35 + 1, if v_37 then 1 else 0)
+			buffer.writeu8(buf_27, o_35 + 1, if v_19 then 1 else 0)
 			o_35 += 2
-		elseif type(v_37) == "string" then
+		elseif type(v_19) == "string" then
 			buffer.writeu8(buf_27, o_35, 1)
-			local length_19 = #v_37
+			local length_19 = #v_19
 			o_35 = vwrite(buf_27, o_35 + 1, length_19)
-			buffer.writestring(buf_27, o_35, v_37)
+			buffer.writestring(buf_27, o_35, v_19)
 			o_35 += length_19
-		elseif typeof(v_37) == "Vector3" then
+		elseif typeof(v_19) == "Vector3" then
 			buffer.writeu8(buf_27, o_35, 2)
-			buffer.writef32(buf_27, o_35 + 1, v_37.X)
-			buffer.writef32(buf_27, o_35 + 5, v_37.Y)
-			buffer.writef32(buf_27, o_35 + 9, v_37.Z)
+			buffer.writef32(buf_27, o_35 + 1, v_19.X)
+			buffer.writef32(buf_27, o_35 + 5, v_19.Y)
+			buffer.writef32(buf_27, o_35 + 9, v_19.Z)
 			o_35 += 13
 		else
 			error("value matches none of the union's members")
@@ -827,28 +809,26 @@ for _, item_5 in Enum.KeyCode:GetEnumItems() do
 	enum_KeyCode[item_5.Value] = item_5
 end
 local withEnum = Flamework.createSerializer({
-	serialize = function(v_38)
-		local v_39 = v_38
+	serialize = function(v_20)
 		local size_13 = 1
-		if typeof(v_39) == "EnumItem" and v_39.EnumType == Enum.KeyCode then
+		if typeof(v_20) == "EnumItem" and v_20.EnumType == Enum.KeyCode then
 			size_13 += 2
-		elseif type(v_39) == "number" then
-			size_13 += if v_39 < 34359738368 and 1 / v_39 > 0 and v_39 % 1 == 0 then vsize(v_39) else 8
+		elseif type(v_20) == "number" then
+			size_13 += if v_20 < 34359738368 and 1 / v_20 > 0 and v_20 % 1 == 0 then vsize(v_20) else 8
 		end
 		local buf_29 = buffer.create(size_13)
 		local o_38 = 0
-		local v_40 = v_38
-		if typeof(v_40) == "EnumItem" and v_40.EnumType == Enum.KeyCode then
+		if typeof(v_20) == "EnumItem" and v_20.EnumType == Enum.KeyCode then
 			buffer.writeu8(buf_29, o_38, 0)
-			buffer.writeu16(buf_29, o_38 + 1, v_40.Value)
+			buffer.writeu16(buf_29, o_38 + 1, v_20.Value)
 			o_38 += 3
-		elseif type(v_40) == "number" then
-			if v_40 < 34359738368 and 1 / v_40 > 0 and v_40 % 1 == 0 then
+		elseif type(v_20) == "number" then
+			if v_20 < 34359738368 and 1 / v_20 > 0 and v_20 % 1 == 0 then
 				buffer.writeu8(buf_29, o_38, 2)
-				o_38 = vwrite(buf_29, o_38 + 1, v_40)
+				o_38 = vwrite(buf_29, o_38 + 1, v_20)
 			else
 				buffer.writeu8(buf_29, o_38, 1)
-				buffer.writef64(buf_29, o_38 + 1, v_40)
+				buffer.writef64(buf_29, o_38 + 1, v_20)
 				o_38 += 9
 			end
 		else
@@ -880,39 +860,39 @@ local withEnum = Flamework.createSerializer({
 		return value_18
 	end,
 })
-codec.s_Partial = function(v_41)
-	local v_42 = v_41.n
+codec.s_Partial = function(v_21)
+	local v_22 = v_21.n
 	local size_14 = 1
-	if v_42 ~= nil then
-		local length_21 = #v_42
+	if v_22 ~= nil then
+		local length_21 = #v_22
 		size_14 += vsize(length_21) + length_21
 	end
-	local v_43 = v_41.at
-	local v_44 = v_41.s
-	return size_14 + (if v_43 ~= nil then 9 else 1) + (if v_44 ~= nil then 2 else 1)
+	local v_23 = v_21.at
+	local v_24 = v_21.s
+	return size_14 + (if v_23 ~= nil then 9 else 1) + (if v_24 ~= nil then 2 else 1)
 end
-codec.w_Partial = function(buf_31, o_41, v_41)
-	local v_45 = v_41.n
-	buffer.writeu8(buf_31, o_41, if v_45 ~= nil then 1 else 0)
+codec.w_Partial = function(buf_31, o_41, v_21)
+	local v_25 = v_21.n
+	buffer.writeu8(buf_31, o_41, if v_25 ~= nil then 1 else 0)
 	o_41 += 1
-	if v_45 ~= nil then
-		local length_22 = #v_45
+	if v_25 ~= nil then
+		local length_22 = #v_25
 		o_41 = vwrite(buf_31, o_41, length_22)
-		buffer.writestring(buf_31, o_41, v_45)
+		buffer.writestring(buf_31, o_41, v_25)
 		o_41 += length_22
 	end
-	local v_46 = v_41.at
-	buffer.writeu8(buf_31, o_41, if v_46 ~= nil then 1 else 0)
+	local v_26 = v_21.at
+	buffer.writeu8(buf_31, o_41, if v_26 ~= nil then 1 else 0)
 	o_41 += 1
-	if v_46 ~= nil then
-		buffer.writef64(buf_31, o_41, v_46)
+	if v_26 ~= nil then
+		buffer.writef64(buf_31, o_41, v_26)
 		o_41 += 8
 	end
-	local v_47 = v_41.s
-	buffer.writeu8(buf_31, o_41, if v_47 ~= nil then 1 else 0)
+	local v_27 = v_21.s
+	buffer.writeu8(buf_31, o_41, if v_27 ~= nil then 1 else 0)
 	o_41 += 1
-	if v_47 ~= nil then
-		buffer.writeu8(buf_31, o_41, if v_47 then 1 else 0)
+	if v_27 ~= nil then
+		buffer.writeu8(buf_31, o_41, if v_27 then 1 else 0)
 		o_41 += 1
 	end
 	return o_41
@@ -948,23 +928,21 @@ codec.r_Partial = function(buf_31, o_41)
 	}
 	return value_22, o_41
 end
-codec.s_PatchOrNone = function(v_48)
-	local v_49 = v_48
+codec.s_PatchOrNone = function(v_28)
 	local size_15 = 1
-	if v_49.__none ~= nil then
-	elseif type(v_49) == "table" then
-		size_15 += codec.s_Partial(v_49)
+	if v_28.__none ~= nil then
+	elseif type(v_28) == "table" then
+		size_15 += codec.s_Partial(v_28)
 	end
 	return size_15
 end
-codec.w_PatchOrNone = function(buf_32, o_43, v_48)
-	local v_50 = v_48
-	if v_50.__none ~= nil then
+codec.w_PatchOrNone = function(buf_32, o_43, v_28)
+	if v_28.__none ~= nil then
 		buffer.writeu8(buf_32, o_43, 1)
 		o_43 += 1
-	elseif type(v_50) == "table" then
+	elseif type(v_28) == "table" then
 		buffer.writeu8(buf_32, o_43, 0)
-		o_43 = codec.w_Partial(buf_32, o_43 + 1, v_50)
+		o_43 = codec.w_Partial(buf_32, o_43 + 1, v_28)
 	else
 		error("value matches none of the union's members")
 	end
@@ -988,9 +966,9 @@ codec.r_PatchOrNone = function(buf_32, o_43)
 	return value_23, o_43
 end
 local patchOrNone = Flamework.createSerializer({
-	serialize = function(v_51)
-		local buf_33 = buffer.create(codec.s_PatchOrNone(v_51))
-		codec.w_PatchOrNone(buf_33, 0, v_51)
+	serialize = function(v_29)
+		local buf_33 = buffer.create(codec.s_PatchOrNone(v_29))
+		codec.w_PatchOrNone(buf_33, 0, v_29)
 		return buf_33
 	end,
 	deserialize = function(buf_34)
@@ -1004,23 +982,23 @@ local patchOrNone = Flamework.createSerializer({
 local guard = t.interface({
 	a = t.optional(t.number),
 })
-codec.s_Partial_1 = function(v_52)
-	local v_53 = v_52.b
+codec.s_Partial_1 = function(v_30)
+	local v_31 = v_30.b
 	local size_16 = 1
-	if v_53 ~= nil then
-		local length_24 = #v_53
+	if v_31 ~= nil then
+		local length_24 = #v_31
 		size_16 += vsize(length_24) + length_24
 	end
 	return size_16
 end
-codec.w_Partial_1 = function(buf_35, o_46, v_52)
-	local v_54 = v_52.b
-	buffer.writeu8(buf_35, o_46, if v_54 ~= nil then 1 else 0)
+codec.w_Partial_1 = function(buf_35, o_46, v_30)
+	local v_32 = v_30.b
+	buffer.writeu8(buf_35, o_46, if v_32 ~= nil then 1 else 0)
 	o_46 += 1
-	if v_54 ~= nil then
-		local length_25 = #v_54
+	if v_32 ~= nil then
+		local length_25 = #v_32
 		o_46 = vwrite(buf_35, o_46, length_25)
-		buffer.writestring(buf_35, o_46, v_54)
+		buffer.writestring(buf_35, o_46, v_32)
 		o_46 += length_25
 	end
 	return o_46
@@ -1040,16 +1018,16 @@ codec.r_Partial_1 = function(buf_35, o_46)
 	}
 	return value_27, o_46
 end
-codec.s_Partial_2 = function(v_55)
-	local v_56 = v_55.a
-	return if v_56 ~= nil then 9 else 1
+codec.s_Partial_2 = function(v_33)
+	local v_34 = v_33.a
+	return if v_34 ~= nil then 9 else 1
 end
-codec.w_Partial_2 = function(buf_36, o_48, v_55)
-	local v_57 = v_55.a
-	buffer.writeu8(buf_36, o_48, if v_57 ~= nil then 1 else 0)
+codec.w_Partial_2 = function(buf_36, o_48, v_33)
+	local v_35 = v_33.a
+	buffer.writeu8(buf_36, o_48, if v_35 ~= nil then 1 else 0)
 	o_48 += 1
-	if v_57 ~= nil then
-		buffer.writef64(buf_36, o_48, v_57)
+	if v_35 ~= nil then
+		buffer.writef64(buf_36, o_48, v_35)
 		o_48 += 8
 	end
 	return o_48
@@ -1067,24 +1045,22 @@ codec.r_Partial_2 = function(buf_36, o_48)
 	}
 	return value_29, o_48
 end
-codec.s_Ambiguous = function(v_58)
-	local v_59 = v_58
+codec.s_Ambiguous = function(v_36)
 	local size_17 = 1
-	if guard(v_59) then
-		size_17 += codec.s_Partial_2(v_59)
-	elseif type(v_59) == "table" then
-		size_17 += codec.s_Partial_1(v_59)
+	if guard(v_36) then
+		size_17 += codec.s_Partial_2(v_36)
+	elseif type(v_36) == "table" then
+		size_17 += codec.s_Partial_1(v_36)
 	end
 	return size_17
 end
-codec.w_Ambiguous = function(buf_37, o_49, v_58)
-	local v_60 = v_58
-	if guard(v_60) then
+codec.w_Ambiguous = function(buf_37, o_49, v_36)
+	if guard(v_36) then
 		buffer.writeu8(buf_37, o_49, 0)
-		o_49 = codec.w_Partial_2(buf_37, o_49 + 1, v_60)
-	elseif type(v_60) == "table" then
+		o_49 = codec.w_Partial_2(buf_37, o_49 + 1, v_36)
+	elseif type(v_36) == "table" then
 		buffer.writeu8(buf_37, o_49, 1)
-		o_49 = codec.w_Partial_1(buf_37, o_49 + 1, v_60)
+		o_49 = codec.w_Partial_1(buf_37, o_49 + 1, v_36)
 	else
 		error("value matches none of the union's members")
 	end
@@ -1108,9 +1084,9 @@ codec.r_Ambiguous = function(buf_37, o_49)
 	return value_30, o_49
 end
 local ambiguous = Flamework.createSerializer({
-	serialize = function(v_61)
-		local buf_38 = buffer.create(codec.s_Ambiguous(v_61))
-		codec.w_Ambiguous(buf_38, 0, v_61)
+	serialize = function(v_37)
+		local buf_38 = buffer.create(codec.s_Ambiguous(v_37))
+		codec.w_Ambiguous(buf_38, 0, v_37)
 		return buf_38
 	end,
 	deserialize = function(buf_39)
@@ -1128,15 +1104,14 @@ local guard_1 = t.interface({
 		z = t.number,
 	}),
 })
-codec.s_MapOrHolder = function(v_62)
-	local v_63 = v_62
+codec.s_MapOrHolder = function(v_38)
 	local size_18 = 1
-	if guard_1(v_63) then
+	if guard_1(v_38) then
 		size_18 += 24
-	elseif type(v_63) == "table" then
+	elseif type(v_38) == "table" then
 		local size_19 = 0
 		local n_12 = 0
-		for key, entry in v_63 do
+		for key, entry in v_38 do
 			n_12 += 1
 			local length_27 = #key
 			size_19 += vsize(length_27) + length_27 + 8
@@ -1146,26 +1121,22 @@ codec.s_MapOrHolder = function(v_62)
 	end
 	return size_18
 end
-codec.w_MapOrHolder = function(buf_40, o_53, v_62)
-	local v_64 = v_62
-	if guard_1(v_64) then
+codec.w_MapOrHolder = function(buf_40, o_53, v_38)
+	if guard_1(v_38) then
 		buffer.writeu8(buf_40, o_53, 1)
-		local object = v_64.pos
+		local object = v_38.pos
 		buffer.writef64(buf_40, o_53 + 1, object.x)
 		buffer.writef64(buf_40, o_53 + 9, object.y)
 		buffer.writef64(buf_40, o_53 + 17, object.z)
 		o_53 += 25
-	elseif type(v_64) == "table" then
+	elseif type(v_38) == "table" then
 		buffer.writeu8(buf_40, o_53, 0)
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
-		for _ in v_64 do
-			_size += 1
+		local n_13 = 0
+		for _ in v_38 do
+			n_13 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_13 = _size
 		o_53 = vwrite(buf_40, o_53 + 1, n_13)
-		for key_1, entry_1 in v_64 do
+		for key_1, entry_1 in v_38 do
 			local length_28 = #key_1
 			o_53 = vwrite(buf_40, o_53, length_28)
 			buffer.writestring(buf_40, o_53, key_1)
@@ -1220,9 +1191,9 @@ codec.r_MapOrHolder = function(buf_40, o_53)
 	return value_34, o_53
 end
 local mapOrHolder = Flamework.createSerializer({
-	serialize = function(v_65)
-		local buf_41 = buffer.create(codec.s_MapOrHolder(v_65))
-		codec.w_MapOrHolder(buf_41, 0, v_65)
+	serialize = function(v_39)
+		local buf_41 = buffer.create(codec.s_MapOrHolder(v_39))
+		codec.w_MapOrHolder(buf_41, 0, v_39)
 		return buf_41
 	end,
 	deserialize = function(buf_42)
@@ -1234,32 +1205,30 @@ local mapOrHolder = Flamework.createSerializer({
 	end,
 })
 local optionalUnion = Flamework.createSerializer({
-	serialize = function(v_66)
-		local v_67 = v_66
+	serialize = function(v_40)
 		local size_20 = 1
-		if v_67 ~= nil then
+		if v_40 ~= nil then
 			local size_21 = 1
-			if v_67.kind == "circle" then
+			if v_40.kind == "circle" then
 				size_21 += 8
-			elseif v_67.kind == "rect" then
+			elseif v_40.kind == "rect" then
 				size_21 += 16
 			end
 			size_20 += size_21
 		end
 		local buf_43 = buffer.create(size_20)
 		local o_57 = 0
-		local v_68 = v_66
-		buffer.writeu8(buf_43, o_57, if v_68 ~= nil then 1 else 0)
+		buffer.writeu8(buf_43, o_57, if v_40 ~= nil then 1 else 0)
 		o_57 += 1
-		if v_68 ~= nil then
-			if v_68.kind == "circle" then
+		if v_40 ~= nil then
+			if v_40.kind == "circle" then
 				buffer.writeu8(buf_43, o_57, 0)
-				buffer.writef64(buf_43, o_57 + 1, v_68.radius)
+				buffer.writef64(buf_43, o_57 + 1, v_40.radius)
 				o_57 += 9
-			elseif v_68.kind == "rect" then
+			elseif v_40.kind == "rect" then
 				buffer.writeu8(buf_43, o_57, 1)
-				buffer.writef64(buf_43, o_57 + 1, v_68.w)
-				buffer.writef64(buf_43, o_57 + 9, v_68.h)
+				buffer.writef64(buf_43, o_57 + 1, v_40.w)
+				buffer.writef64(buf_43, o_57 + 9, v_40.h)
 				o_57 += 17
 			else
 				error("value matches none of the union's members")
@@ -1303,8 +1272,8 @@ local optionalUnion = Flamework.createSerializer({
 		return value_36
 	end,
 })
-codec.s_Wallet_1 = function(v_69)
-	local array_5 = v_69.Items
+codec.s_Wallet_1 = function(v_41)
+	local array_5 = v_41.Items
 	local n_14 = #array_5
 	local size_22 = vsize(n_14)
 	for i_8 = 1, n_14 do
@@ -1317,8 +1286,8 @@ codec.s_Wallet_1 = function(v_69)
 	end
 	return size_22
 end
-codec.w_Wallet_1 = function(buf_45, o_59, v_69)
-	local array_6 = v_69.Items
+codec.w_Wallet_1 = function(buf_45, o_59, v_41)
+	local array_6 = v_41.Items
 	o_59 = vwrite(buf_45, o_59, #array_6)
 	for i_9 = 1, #array_6 do
 		local item_7 = array_6[i_9]
@@ -1348,11 +1317,11 @@ codec.r_Wallet_1 = function(buf_45, o_59)
 	return value_38, o_59
 end
 local nestedUnion = Flamework.createSerializer({
-	serialize = function(v_70)
-		local n_15 = #v_70
+	serialize = function(v_42)
+		local n_15 = #v_42
 		local size_23 = vsize(n_15)
 		for i_11 = 1, n_15 do
-			local item_8 = v_70[i_11]
+			local item_8 = v_42[i_11]
 			if item_8 == nil then
 				error(`[Flamework] the array has no value at value[{i_11 - 1}]`)
 			end
@@ -1370,9 +1339,9 @@ local nestedUnion = Flamework.createSerializer({
 		end
 		local buf_46 = buffer.create(size_23)
 		local o_62 = 0
-		o_62 = vwrite(buf_46, o_62, #v_70)
-		for i_12 = 1, #v_70 do
-			local item_9 = v_70[i_12]
+		o_62 = vwrite(buf_46, o_62, #v_42)
+		for i_12 = 1, #v_42 do
+			local item_9 = v_42[i_12]
 			if item_9.Coins ~= nil then
 				buffer.writeu8(buf_46, o_62, 0)
 				buffer.writef64(buf_46, o_62 + 1, item_9.Coins)
@@ -1445,31 +1414,29 @@ local nestedUnion = Flamework.createSerializer({
 	end,
 })
 local blobUnion = Flamework.createSerializer({
-	serialize = function(v_71)
-		local v_72 = v_71
+	serialize = function(v_43)
 		local size_25 = 1
-		if type(v_72) == "string" then
-			local length_33 = #v_72
+		if type(v_43) == "string" then
+			local length_33 = #v_43
 			size_25 += vsize(length_33) + length_33
-		elseif type(v_72) == "table" then
-			local n_16 = #v_72
+		elseif type(v_43) == "table" then
+			local n_16 = #v_43
 			size_25 += vsize(n_16) + n_16 * 4
 		end
 		local buf_48 = buffer.create(size_25)
 		local blobs_3 = {}
 		local o_66 = 0
-		local v_73 = v_71
-		if type(v_73) == "string" then
+		if type(v_43) == "string" then
 			buffer.writeu8(buf_48, o_66, 1)
-			local length_34 = #v_73
+			local length_34 = #v_43
 			o_66 = vwrite(buf_48, o_66 + 1, length_34)
-			buffer.writestring(buf_48, o_66, v_73)
+			buffer.writestring(buf_48, o_66, v_43)
 			o_66 += length_34
-		elseif type(v_73) == "table" then
+		elseif type(v_43) == "table" then
 			buffer.writeu8(buf_48, o_66, 0)
-			o_66 = vwrite(buf_48, o_66 + 1, #v_73)
-			for i_14 = 1, #v_73 do
-				local item_10 = v_73[i_14]
+			o_66 = vwrite(buf_48, o_66 + 1, #v_43)
+			for i_14 = 1, #v_43 do
+				local item_10 = v_43[i_14]
 				if item_10 ~= nil then
 					table.insert(blobs_3, item_10)
 					buffer.writeu32(buf_48, o_66, #blobs_3)
@@ -1515,10 +1482,10 @@ local blobUnion = Flamework.createSerializer({
 	end,
 })
 local cframes = Flamework.createSerializer({
-	serialize = function(v_74)
+	serialize = function(v_44)
 		local size_26 = 0
 		local n_17 = 0
-		for item_11 in v_74 do
+		for item_11 in v_44 do
 			n_17 += 1
 			local size_27 = 1
 			if typeof(item_11) == "CFrame" then
@@ -1532,15 +1499,12 @@ local cframes = Flamework.createSerializer({
 		size_26 += vsize(n_17)
 		local buf_50 = buffer.create(size_26)
 		local o_70 = 0
-		-- ▼ ReadonlySet.size ▼
-		local _size = 0
-		for _ in v_74 do
-			_size += 1
+		local n_18 = 0
+		for _ in v_44 do
+			n_18 += 1
 		end
-		-- ▲ ReadonlySet.size ▲
-		local n_18 = _size
 		o_70 = vwrite(buf_50, o_70, n_18)
-		for item_12 in v_74 do
+		for item_12 in v_44 do
 			if typeof(item_12) == "CFrame" then
 				buffer.writeu8(buf_50, o_70, 0)
 				local c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11 = item_12:GetComponents()

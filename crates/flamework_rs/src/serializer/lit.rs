@@ -3,7 +3,6 @@
 
 use rbxts_luau::Expr;
 
-use super::ir::{self, E, ExtLiteral};
 use super::luau;
 
 /// A literal: a string, a number, a boolean, `nil`, or a Roblox enum item (`Enum.Material.Plastic`).
@@ -18,27 +17,6 @@ pub enum Lit {
 }
 
 impl Lit {
-    /// The literal a generated value is, if it is one (`isLiteral`, with its value): a string, a number (`-7`
-    /// included), a boolean, `undefined`, or a call site's literal argument. An enum item is never read back.
-    pub fn of(e: &E) -> Option<Lit> {
-        Some(match e {
-            E::Str(s) => Lit::Str(s.clone()),
-            E::Num(n) => Lit::Num(*n),
-            E::Neg(inner) => match &**inner {
-                E::Num(n) => Lit::Num(-*n),
-                _ => return None,
-            },
-            E::Bool(b) => Lit::Bool(*b),
-            E::Undefined => Lit::Nil,
-            E::Ext(ext) => match ext.literal.as_ref()? {
-                ExtLiteral::Num(n) => Lit::Num(*n),
-                ExtLiteral::Str(s) => Lit::Str(s.clone()),
-                ExtLiteral::Bool(b) => Lit::Bool(*b),
-            },
-            _ => return None,
-        })
-    }
-
     /// `literalType`: Luau's `type()` of the value (an enum item is no literal type: `None`).
     pub fn type_name(&self) -> Option<&'static str> {
         match self {
@@ -50,22 +28,7 @@ impl Lit {
         }
     }
 
-    /// The literal as the generator's own node, as `getLiteral` built it (`f.number`, `f.string`, …,
-    /// `Enum["Material"]["Plastic"]`), for emission through the IR until it is gone.
-    pub fn to_ir(&self) -> E {
-        match self {
-            Lit::Str(s) => ir::string(s),
-            Lit::Num(n) => ir::num(*n),
-            Lit::Bool(b) => ir::bool(*b),
-            Lit::Nil => ir::nil(),
-            Lit::EnumItem { group, item } => {
-                ir::elem(ir::elem(ir::global("Enum"), ir::string(group)), ir::string(item))
-            }
-        }
-    }
-
-    /// The literal as Luau, rendering exactly as [`Lit::to_ir`] lowers (the literal tables', and the direct emission's
-    /// from round B2).
+    /// The literal as Luau.
     pub fn to_luau(&self) -> Expr {
         match self {
             Lit::Str(s) => luau::str(s),
@@ -75,34 +38,29 @@ impl Lit {
             Lit::EnumItem { group, item } => luau::prop(luau::prop(rbxts_luau::create::id("Enum"), group), item),
         }
     }
+
+    /// The literal a generated value is, if it is one: `nil`, a boolean or a number (`-7` included). Strings are only
+    /// ever read back from a call site's arguments (`Gen::literal`).
+    pub fn of(e: &Expr) -> Option<Lit> {
+        Some(match e {
+            Expr::Nil => Lit::Nil,
+            Expr::True => Lit::Bool(true),
+            Expr::False => Lit::Bool(false),
+            _ => Lit::Num(luau::literal_number(e)?),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use super::super::ir::Ids;
-    use super::super::lower::{LowerCx, Lowerer};
     use super::*;
-
-    struct NoNames;
-
-    impl LowerCx for NoNames {
-        fn temp_id(&mut self, _: &str) -> rbxts_luau::TemporaryIdentifier {
-            unreachable!("a literal has no temporaries")
-        }
-
-        fn local_name(&mut self, _: &str) -> String {
-            unreachable!("a literal has no locals")
-        }
-    }
 
     fn render(e: &Expr) -> String {
         rbxts_luau::render_expr(e, &rbxts_luau::LateStrings::default())
     }
 
     #[test]
-    fn luau_renders_as_the_lowered_ir() {
+    fn literals_render_as_luau() {
         let literals = [
             Lit::Str("a\"b\u{e9}".into()),
             Lit::Str(String::new()),
@@ -117,22 +75,11 @@ mod tests {
             Lit::Nil,
             Lit::EnumItem { group: "Material".into(), item: "Plastic".into() },
         ];
-        let ids = Ids::default();
-        let mut names = HashMap::new();
-        let mut cx = NoNames;
-        let mut lowerer = Lowerer { ids: &ids, names: &mut names, cx: &mut cx };
-        let mut texts = Vec::new();
-        for literal in &literals {
-            let mut prereqs = Vec::new();
-            let lowered = lowerer.expr(&literal.to_ir(), &mut prereqs);
-            assert!(prereqs.is_empty());
-            assert_eq!(render(&literal.to_luau()), render(&lowered), "{literal:?}");
-            texts.push(render(&lowered));
-        }
+        let texts: Vec<String> = literals.iter().map(|l| render(&l.to_luau())).collect();
         assert_eq!(
             texts,
             [
-                "\"a\\\"b\\u{00E9}\"",
+                r#""a\"b\u{00E9}""#,
                 "\"\"",
                 "7",
                 "-7.5",
@@ -150,13 +97,10 @@ mod tests {
 
     #[test]
     fn values_read_back_as_literals() {
-        assert_eq!(Lit::of(&ir::num(-3.0)), Some(Lit::Num(-3.0)));
-        assert_eq!(Lit::of(&ir::string("x")), Some(Lit::Str("x".into())));
-        assert_eq!(Lit::of(&ir::nil()), Some(Lit::Nil));
-        let ext = ir::ExtValue::new(false, Some(ExtLiteral::Bool(true)));
-        assert_eq!(Lit::of(&E::Ext(ext)), Some(Lit::Bool(true)));
-        assert_eq!(Lit::of(&E::Ext(ir::ExtValue::new(true, None))), None);
-        assert_eq!(Lit::of(&ir::global("x")), None);
-        assert_eq!(Lit::of(&Lit::EnumItem { group: "A".into(), item: "B".into() }.to_ir()), None);
+        assert_eq!(Lit::of(&luau::num(-3.0)), Some(Lit::Num(-3.0)));
+        assert_eq!(Lit::of(&rbxts_luau::create::nil()), Some(Lit::Nil));
+        assert_eq!(Lit::of(&rbxts_luau::create::bool(true)), Some(Lit::Bool(true)));
+        assert_eq!(Lit::of(&rbxts_luau::create::id("x")), None);
+        assert_eq!(Lit::of(&Lit::EnumItem { group: "A".into(), item: "B".into() }.to_luau()), None);
     }
 }

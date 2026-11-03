@@ -10,8 +10,7 @@ local literalIndex = {
 local l1 = Flamework.createSerializer({
 	serialize = function(v)
 		local buf = buffer.create(1)
-		local v_1 = v
-		local index = literalIndex[v_1]
+		local index = literalIndex[v]
 		if index == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -35,10 +34,9 @@ local literalIndex_1 = {
 	b2 = 1,
 }
 local l2 = Flamework.createSerializer({
-	serialize = function(v_2)
+	serialize = function(v_1)
 		local buf_2 = buffer.create(1)
-		local v_3 = v_2
-		local index_1 = literalIndex_1[v_3]
+		local index_1 = literalIndex_1[v_1]
 		if index_1 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -62,10 +60,9 @@ local literalIndex_2 = {
 	b3 = 1,
 }
 local l3 = Flamework.createSerializer({
-	serialize = function(v_4)
+	serialize = function(v_2)
 		local buf_4 = buffer.create(1)
-		local v_5 = v_4
-		local index_2 = literalIndex_2[v_5]
+		local index_2 = literalIndex_2[v_2]
 		if index_2 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -89,10 +86,9 @@ local literalIndex_3 = {
 	b4 = 1,
 }
 local l4 = Flamework.createSerializer({
-	serialize = function(v_6)
+	serialize = function(v_3)
 		local buf_6 = buffer.create(1)
-		local v_7 = v_6
-		local index_3 = literalIndex_3[v_7]
+		local index_3 = literalIndex_3[v_3]
 		if index_3 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -116,10 +112,9 @@ local literalIndex_4 = {
 	b5 = 1,
 }
 local l5 = Flamework.createSerializer({
-	serialize = function(v_8)
+	serialize = function(v_4)
 		local buf_8 = buffer.create(1)
-		local v_9 = v_8
-		local index_4 = literalIndex_4[v_9]
+		local index_4 = literalIndex_4[v_4]
 		if index_4 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -143,10 +138,9 @@ local literalIndex_5 = {
 	b6 = 1,
 }
 local l6 = Flamework.createSerializer({
-	serialize = function(v_10)
+	serialize = function(v_5)
 		local buf_10 = buffer.create(1)
-		local v_11 = v_10
-		local index_5 = literalIndex_5[v_11]
+		local index_5 = literalIndex_5[v_5]
 		if index_5 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -170,10 +164,9 @@ local literalIndex_6 = {
 	b7 = 1,
 }
 local l7 = Flamework.createSerializer({
-	serialize = function(v_12)
+	serialize = function(v_6)
 		local buf_12 = buffer.create(1)
-		local v_13 = v_12
-		local index_6 = literalIndex_6[v_13]
+		local index_6 = literalIndex_6[v_6]
 		if index_6 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -197,10 +190,9 @@ local literalIndex_7 = {
 	b8 = 1,
 }
 local l8 = Flamework.createSerializer({
-	serialize = function(v_14)
+	serialize = function(v_7)
 		local buf_14 = buffer.create(1)
-		local v_15 = v_14
-		local index_7 = literalIndex_7[v_15]
+		local index_7 = literalIndex_7[v_7]
 		if index_7 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -225,10 +217,9 @@ codec.literalIndex = {
 	b9 = 1,
 }
 local l9 = Flamework.createSerializer({
-	serialize = function(v_16)
+	serialize = function(v_8)
 		local buf_16 = buffer.create(1)
-		local v_17 = v_16
-		local index_8 = (codec.literalIndex)[v_17]
+		local index_8 = codec.literalIndex[v_8]
 		if index_8 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -236,7 +227,7 @@ local l9 = Flamework.createSerializer({
 		return buf_16
 	end,
 	deserialize = function(buf_17)
-		local literal_8 = (codec.literals)[buffer.readu8(buf_17, 0) + 1]
+		local literal_8 = codec.literals[buffer.readu8(buf_17, 0) + 1]
 		if literal_8 == nil then
 			error("malformed payload")
 		end
@@ -254,13 +245,13 @@ do
 	codec.enum_Material = enum_Material
 end
 local e1 = Flamework.createSerializer({
-	serialize = function(v_18)
+	serialize = function(v_9)
 		local buf_18 = buffer.create(2)
-		buffer.writeu16(buf_18, 0, v_18.Value)
+		buffer.writeu16(buf_18, 0, v_9.Value)
 		return buf_18
 	end,
 	deserialize = function(buf_19)
-		local value = (codec.enum_Material)[buffer.readu16(buf_19, 0)]
+		local value = codec.enum_Material[buffer.readu16(buf_19, 0)]
 		if buffer.len(buf_19) ~= 2 then
 			error("malformed payload")
 		end
@@ -275,13 +266,13 @@ do
 	codec.enum_KeyCode = enum_KeyCode
 end
 local e2 = Flamework.createSerializer({
-	serialize = function(v_19)
+	serialize = function(v_10)
 		local buf_20 = buffer.create(2)
-		buffer.writeu16(buf_20, 0, v_19.Value)
+		buffer.writeu16(buf_20, 0, v_10.Value)
 		return buf_20
 	end,
 	deserialize = function(buf_21)
-		local value_1 = (codec.enum_KeyCode)[buffer.readu16(buf_21, 0)]
+		local value_1 = codec.enum_KeyCode[buffer.readu16(buf_21, 0)]
 		if buffer.len(buf_21) ~= 2 then
 			error("malformed payload")
 		end
@@ -296,13 +287,13 @@ do
 	codec.enum_UserInputType = enum_UserInputType
 end
 local e3 = Flamework.createSerializer({
-	serialize = function(v_20)
+	serialize = function(v_11)
 		local buf_22 = buffer.create(2)
-		buffer.writeu16(buf_22, 0, v_20.Value)
+		buffer.writeu16(buf_22, 0, v_11.Value)
 		return buf_22
 	end,
 	deserialize = function(buf_23)
-		local value_2 = (codec.enum_UserInputType)[buffer.readu16(buf_23, 0)]
+		local value_2 = codec.enum_UserInputType[buffer.readu16(buf_23, 0)]
 		if buffer.len(buf_23) ~= 2 then
 			error("malformed payload")
 		end
@@ -315,10 +306,9 @@ codec.literalIndex_1 = {
 	b10 = 1,
 }
 local l10 = Flamework.createSerializer({
-	serialize = function(v_21)
+	serialize = function(v_12)
 		local buf_24 = buffer.create(1)
-		local v_22 = v_21
-		local index_9 = (codec.literalIndex_1)[v_22]
+		local index_9 = codec.literalIndex_1[v_12]
 		if index_9 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -326,7 +316,7 @@ local l10 = Flamework.createSerializer({
 		return buf_24
 	end,
 	deserialize = function(buf_25)
-		local literal_9 = (codec.literals_1)[buffer.readu8(buf_25, 0) + 1]
+		local literal_9 = codec.literals_1[buffer.readu8(buf_25, 0) + 1]
 		if literal_9 == nil then
 			error("malformed payload")
 		end

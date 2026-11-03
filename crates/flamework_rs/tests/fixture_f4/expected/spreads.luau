@@ -121,8 +121,8 @@ local spreadPick = Flamework.createSerializer({
 }, {
 	version = 1,
 	serialize = function(v)
-		local length = #(v.alpha)
-		local buf_2 = buffer.create(vsize(length) + length + 2 + 5)
+		local length = #v.alpha
+		local buf_2 = buffer.create(vsize(length) + length + 7)
 		buffer.writeu8(buf_2, 0, 1)
 		buffer.writeu32(buf_2, 1, 754612628)
 		local o_2 = 5
@@ -202,8 +202,8 @@ local spreadOmit = Flamework.createSerializer({
 }, {
 	version = 3,
 	serialize = function(v_2)
-		local length_3 = #(v_2.alpha)
-		local buf_6 = buffer.create(vsize(length_3) + length_3 + 2 + 5)
+		local length_3 = #v_2.alpha
+		local buf_6 = buffer.create(vsize(length_3) + length_3 + 7)
 		buffer.writeu8(buf_6, 0, 3)
 		buffer.writeu32(buf_6, 1, 3546260729)
 		local o_5 = 5
@@ -256,7 +256,7 @@ local spreadChain = Flamework.createSerializer({
 			size += vsize(length_6) + length_6
 		end
 		local v_5 = v_3.zeta
-		local buf_8 = buffer.create(size + (if v_5 ~= nil then 2 else 1) + 1 + 5)
+		local buf_8 = buffer.create(size + (if v_5 ~= nil then 2 else 1) + 6)
 		buffer.writeu8(buf_8, 0, 4)
 		buffer.writeu32(buf_8, 1, 994114310)
 		local o_8 = 5
@@ -324,8 +324,8 @@ local twoRuns = Flamework.createSerializer({
 }, {
 	version = 5,
 	serialize = function(v_8)
-		local length_9 = #(v_8.alpha)
-		local buf_10 = buffer.create(vsize(length_9) + length_9 + 5 + 5)
+		local length_9 = #v_8.alpha
+		local buf_10 = buffer.create(vsize(length_9) + length_9 + 10)
 		buffer.writeu8(buf_10, 0, 5)
 		buffer.writeu32(buf_10, 1, 3975425654)
 		local o_11 = 5
@@ -585,7 +585,7 @@ local partialSpread = Flamework.createSerializer({
 	end,
 })
 codec.s_SpreadOmit = function(v_20)
-	local length_15 = #(v_20.alpha)
+	local length_15 = #v_20.alpha
 	return vsize(length_15) + length_15 + 2
 end
 codec.w_SpreadOmit = function(buf_21, o_17, v_20)
@@ -648,13 +648,10 @@ local inArray = Flamework.createSerializer({
 			o_19 = codec.w_SpreadOmit(buf_22, o_19, item_1)
 		end
 		local map_2 = v_21.map
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
+		local n_7 = 0
 		for _ in map_2 do
-			_size += 1
+			n_7 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_7 = _size
 		o_19 = vwrite(buf_22, o_19, n_7)
 		for key_1, entry_1 in map_2 do
 			local length_19 = #key_1

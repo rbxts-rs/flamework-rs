@@ -19,7 +19,11 @@
 //! transformer's `guardOptionalChain` checked the operands, packed, then read the chain again for the send: an
 //! argument that clears or replaces an operand changed or broke the send; README, Differences.)
 //!
-//! **Names.** Each local is named when the hook first emits it ([`crate::serializer::local_name`]).
+//! **Names.** The site's locals are placeholders of the file's serializer names, named when the hook hands its
+//! statements out ([`crate::serializer::name_output`]). An argument read where it is (an identifier or a literal) is a
+//! slot in the packing ([`Gen::slot`]), replaced by the argument's Luau once it is compiled.
+
+use std::collections::HashMap;
 
 use rbxts_luau::{AssignmentOperator, BinaryOperator, Expr, Stmt, UnaryOperator, create};
 use rbxts_plugin::ts::{Kind, Node, P, Type};
@@ -28,9 +32,12 @@ use rbxts_plugin::{CallSite, Claim, Cx, LuauExpr, PResult};
 
 pub(crate) use super::analysis::CallShape;
 use super::scope::{self, COMPACT_LOCALS, Scope};
+use crate::luau_names::Names;
 use crate::plugin::FwInstance;
-use crate::serializer::ir::{self, Body, E, ExtLiteral, ExtValue, Id, S, Ty};
-use crate::serializer::{EncodingSite, GResult, Gen, local_name};
+use crate::serializer::codegen::SiteValues;
+use crate::serializer::lit::Lit;
+use crate::serializer::luau;
+use crate::serializer::{EncodingSite, GResult, Gen, Id, name_output};
 
 /// Where a call site's statements go (`emitWithStatements`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,10 +58,37 @@ pub(crate) enum Placement {
 #[derive(Debug)]
 pub(crate) struct Value {
     pub node: P<Node>,
-    /// The local (`bindArgument`), or `None` when the value is read where it is.
-    pub local: Option<Id>,
-    /// The value as the packing reads it when it has no local: its Luau, filled in at the hook.
-    pub ext: Option<ExtValue>,
+    pub read: Read,
+}
+
+/// How the packing reads a [`Value`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Read {
+    /// `undefined`: `nil`.
+    Nil,
+    /// Bound to a local (`bindArgument`).
+    Local(Id),
+    /// Read where it is, an identifier or a `literal`: a slot the hook fills with the argument's Luau.
+    #[cfg_attr(not(feature = "wire-harvest"), allow(dead_code))]
+    Slot { id: Id, literal: bool },
+}
+
+impl Value {
+    /// The local the value is bound to.
+    fn local(&self) -> Option<Id> {
+        match self.read {
+            Read::Local(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// The value as the packing reads it.
+    fn as_e(&self) -> Expr {
+        match self.read {
+            Read::Nil => create::nil(),
+            Read::Local(id) | Read::Slot { id, .. } => id.e(),
+        }
+    }
 }
 
 /// A networking call site's code, built at its hook ([`crate::serializer::call_site`]).
@@ -73,19 +107,19 @@ pub struct BuiltCall {
     /// `setCallback`'s callback argument and its local.
     callback: Option<(P<Node>, Id)>,
     /// The packing.
-    encoding: Vec<S>,
+    encoding: Vec<Stmt>,
     payload: Option<Id>,
     blobs: Option<Id>,
-    /// `setCallback`'s packer: `(value) => { <pack>; return [payload, blobs?] }`.
-    pack: Option<E>,
+    /// `setCallback`'s packer: `function(value) <pack>; return { payload, blobs? } end`.
+    pack: Option<Expr>,
 }
 
 impl BuiltCall {
     /// The locals it declares, in the order its statements declare them.
     fn declared(&self) -> Vec<Id> {
         let mut ids: Vec<Id> = self.target.into_iter().collect();
-        ids.extend(self.leading.iter().filter_map(|v| v.local));
-        ids.extend(self.packed.iter().filter_map(|v| v.local));
+        ids.extend(self.leading.iter().filter_map(Value::local));
+        ids.extend(self.packed.iter().filter_map(Value::local));
         ids.extend(self.spread.as_ref().map(|(id, _)| *id));
         ids.extend(self.callback.map(|(_, id)| id));
         ids
@@ -126,7 +160,7 @@ fn build_send(
             "Flamework cannot pack this call: a spread argument ahead of the payload is not supported for a packed member (networking.serialization or Serialized).",
         ));
     }
-    let target_local = (!scope::is_pure(target)).then(|| gn.uid("target", Ty::Unknown));
+    let target_local = (!scope::is_pure(target)).then(|| gn.uid("target"));
     let leading: Vec<Value> = arguments[..lead].iter().map(|&a| value_of(gn, a, "target")).collect();
     let packed_nodes = &arguments[lead..];
 
@@ -145,19 +179,19 @@ fn build_send(
             }
         }
         // A spread makes the count a runtime matter: gather the list first, as `fire` itself would.
-        let table = gn.uid("args", Ty::Array);
+        let table = gn.uid("args");
         spread = Some((table, packed_nodes.to_vec()));
-        crate::serializer::codegen::SiteValues::Table(ir::cast(ir::id(table), Ty::Array))
+        SiteValues::Table(table.e())
     } else {
         packed = packed_nodes.iter().map(|&a| value_of(gn, a, "arg")).collect();
-        crate::serializer::codegen::SiteValues::List(packed.iter().map(Value::as_e).collect())
+        SiteValues::List(packed.iter().map(Value::as_e).collect())
     };
 
     // The packing lands among the locals of the function the call is in: its own, those Flamework's code ahead of it
     // holds there still, and the ones bound above.
     let bound = u32::from(target_local.is_some())
-        + leading.iter().filter(|v| v.local.is_some()).count() as u32
-        + packed.iter().filter(|v| v.local.is_some()).count() as u32
+        + leading.iter().filter(|v| v.local().is_some()).count() as u32
+        + packed.iter().filter(|v| v.local().is_some()).count() as u32
         + u32::from(spread.is_some());
     let outer = live_locals(gn, node) + bound;
     let name = member_name(gn, target);
@@ -192,27 +226,20 @@ fn build_callback(
 ) -> GResult<BuiltCall> {
     let callback = *node.arguments().first().expect("a callback argument");
     // The target is bound unless it is an identifier (`bindArgument` of the chained target).
-    let target_local = (!is_simple(target)).then(|| gn.uid("target", Ty::Unknown));
-    let callback_local = gn.uid("callback", Ty::Function);
-    let value = gn.parameter("value", Ty::Unknown);
+    let target_local = (!is_simple(target)).then(|| gn.uid("target"));
+    let callback_local = gn.uid("callback");
+    let value = gn.uid("value");
     let name = member_name(gn, target);
     let list = gn.result_of(function, node)?;
-    let encoding = gn.encode_elements(
-        list,
-        crate::serializer::codegen::SiteValues::List(vec![ir::id(value)]),
-        EncodingSite { name, result: true, outer: 0 },
-    )?;
+    let encoding =
+        gn.encode_elements(list, SiteValues::List(vec![value.e()]), EncodingSite { name, result: true, outer: 0 })?;
     // The runtime calls `pack` only with a resolved, successful value.
     let mut body = encoding.statements;
-    body.push(S::Return(Some(match encoding.payload {
-        Some(payload) => {
-            let mut packed = vec![ir::id(payload)];
-            packed.extend(encoding.blobs.map(ir::id));
-            ir::cast(ir::array(packed), Ty::Array)
-        }
-        None => ir::nil(),
-    })));
-    let pack = ir::arrow(vec![ir::param(value)], Body::Block(body));
+    body.push(create::return_stmt(match encoding.payload {
+        Some(payload) => create::array(std::iter::once(payload).chain(encoding.blobs).map(Id::e).collect()),
+        None => create::nil(),
+    }));
+    let pack = crate::serializer::codegen::function(&[value], body);
 
     let mut call = BuiltCall {
         shape: shape.clone(),
@@ -231,34 +258,24 @@ fn build_callback(
     Ok(call)
 }
 
-impl Value {
-    /// The value as the packing reads it.
-    fn as_e(&self) -> E {
-        match (self.local, &self.ext) {
-            (Some(local), _) => ir::id(local),
-            (None, Some(ext)) => E::Ext(ext.clone()),
-            (None, None) => ir::nil(),
-        }
-    }
-}
-
-/// `bindArgument`: an argument read where it is (an identifier or a literal), else bound to a new local (`hint`).
+/// `bindArgument`: an argument read where it is (an identifier or a literal, through a slot), else bound to a new
+/// local (`hint`).
 fn value_of(gn: &mut Gen<'_, '_, '_>, node: P<Node>, hint: &str) -> Value {
     if node.kind() == Kind::Identifier && node.text() == "undefined" {
-        return Value { node, local: None, ext: None };
+        return Value { node, read: Read::Nil };
     }
     if is_simple(node) {
         let literal = match node.kind() {
             Kind::Identifier => None,
-            Kind::TrueKeyword => Some(ExtLiteral::Bool(true)),
-            Kind::FalseKeyword => Some(ExtLiteral::Bool(false)),
-            Kind::NumericLiteral => Some(ExtLiteral::Num(crate::js::string_to_number(node.text()))),
-            _ => Some(ExtLiteral::Str(node.text().to_owned())),
+            Kind::TrueKeyword => Some(Lit::Bool(true)),
+            Kind::FalseKeyword => Some(Lit::Bool(false)),
+            Kind::NumericLiteral => Some(Lit::Num(crate::js::string_to_number(node.text()))),
+            _ => Some(Lit::Str(node.text().to_owned())),
         };
-        let parameter = literal.is_none() && is_parameter_reference(gn.cx, node);
-        return Value { node, local: None, ext: Some(ExtValue::new(parameter, literal)) };
+        let literal_read = literal.is_some();
+        return Value { node, read: Read::Slot { id: gn.slot(literal), literal: literal_read } };
     }
-    Value { node, local: Some(gn.uid(hint, Ty::Unknown)), ext: None }
+    Value { node, read: Read::Local(gn.uid(hint)) }
 }
 
 /// What `bindArgument` leaves as it is: an identifier, a literal, `true` or `false`.
@@ -266,12 +283,6 @@ fn is_simple(node: P<Node>) -> bool {
     node.kind() == Kind::Identifier
         || tsrs_ast::is_literal_expression(node)
         || matches!(node.kind(), Kind::TrueKeyword | Kind::FalseKeyword)
-}
-
-/// `isParameterReference`: an identifier that names a parameter.
-fn is_parameter_reference(cx: &mut Cx<'_>, node: P<Node>) -> bool {
-    let Some(symbol) = cx.checker().get_symbol_at_location_exported(node) else { return false };
-    symbol.value_declaration().is_some_and(|d| d.kind() == Kind::Parameter)
 }
 
 /// `memberName`: the member a call goes through, as the source names it, for a width check's message; none under
@@ -334,12 +345,11 @@ fn claims(gn: &mut Gen<'_, '_, '_>, node: P<Node>, statement: Option<P<Node>>, l
 }
 
 /// `declaredLocals` of generated statements.
-fn declared_locals(statements: &[S]) -> u32 {
+fn declared_locals(statements: &[Stmt]) -> u32 {
     statements
         .iter()
         .map(|s| match s {
-            S::Const(ir::Bind::One(_), _) | S::Let(..) => 1,
-            S::Const(ir::Bind::Tuple(ids), _) => ids.len() as u32,
+            Stmt::VariableDeclaration(declaration) => declaration.left.len() as u32,
             _ => 0,
         })
         .sum()
@@ -389,29 +399,32 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
     let built = crate::serializer::call_site(fw, cx, node, &shape)?;
 
     let mut statements: Vec<Stmt> = Vec::new();
-    let value = match &built.shape {
+    // each slot's Luau, by placeholder index
+    let mut slots: HashMap<usize, Expr> = HashMap::new();
+    let mut value = match &built.shape {
         CallShape::Send { target, target_is_callee, method, .. } => {
             let receiver = target_value(fw, cx, call, &built, *target, *target_is_callee, &mut statements)?;
             let mut arguments = Vec::with_capacity(built.leading.len() + 2);
             for value in &built.leading {
-                arguments.push(bind_value(fw, cx, value, &mut statements)?);
+                arguments.push(bind_value(cx, value, &mut statements, &mut slots)?);
             }
             match &built.spread {
                 Some((table, nodes)) => {
                     let (array, prereqs) = cx.capture(|cx| spread_array(cx, nodes))?;
                     statements.extend(prereqs);
-                    statements.push(create::local(create::any_id(local_name(fw, cx, *table)), Some(array)));
+                    statements.push(luau::local(&table.e(), Some(array)));
                 }
                 None => {
                     for value in &built.packed {
-                        bind_value(fw, cx, value, &mut statements)?;
+                        bind_value(cx, value, &mut statements, &mut slots)?;
                     }
                 }
             }
-            let (encoding, payload, blobs) = lower_encoding(fw, cx, &built);
+            let mut encoding = built.encoding.clone();
+            Names::substitute(&mut encoding, &slots);
             statements.extend(encoding);
-            arguments.extend(payload);
-            arguments.extend(blobs);
+            arguments.extend(built.payload.map(Id::e));
+            arguments.extend(built.blobs.map(Id::e));
             create::method_call(receiver, *method, arguments)
         }
         CallShape::Callback { target, .. } => {
@@ -419,18 +432,14 @@ pub(crate) fn call_hook(fw: &FwInstance, cx: &mut Cx<'_>, call: &CallSite) -> PR
             let (callback_node, callback) = built.callback.expect("a callback site has its callback");
             let (value, prereqs) = cx.capture(|cx| cx.compile_expr(callback_node))?;
             statements.extend(prereqs);
-            let callback_name = local_name(fw, cx, callback);
-            statements.push(create::local(create::any_id(callback_name.clone()), Some(value)));
-            let pack = built.pack.as_ref().expect("a callback site has its packer");
-            let pack = crate::serializer::with_lowerer(fw, cx, |lowerer| {
-                let mut prereqs = Vec::new();
-                lowerer.expr(pack, &mut prereqs)
-            });
-            create::method_call(receiver, "_setCallback", vec![create::id(callback_name), pack])
+            statements.push(luau::local(&callback.e(), Some(value)));
+            let pack = built.pack.clone().expect("a callback site has its packer");
+            create::method_call(receiver, "_setCallback", vec![callback.e(), pack])
         }
     };
+    name_output(fw, cx, &mut statements, Some(&mut value));
     #[cfg(feature = "wire-harvest")]
-    harvest(fw, cx, node, &built);
+    harvest(fw, cx, node, &built, &slots);
 
     Ok(Claim::Take(match built.placement {
         Placement::Bare | Placement::Chain => {
@@ -495,9 +504,8 @@ fn target_value(
     statements.extend(prereqs);
     Ok(match built.target {
         Some(local) => {
-            let name = local_name(fw, cx, local);
-            statements.push(create::local(create::any_id(name.clone()), Some(value)));
-            create::id(name)
+            statements.push(luau::local(&local.e(), Some(value)));
+            local.e()
         }
         None => value,
     })
@@ -541,89 +549,71 @@ fn is_chain_start(call: P<Node>) -> bool {
     true
 }
 
-/// An argument compiled in the TS statements' order: bound to its local, or kept for the packing to read.
-fn bind_value(fw: &FwInstance, cx: &mut Cx<'_>, value: &Value, statements: &mut Vec<Stmt>) -> PResult<Expr> {
+/// An argument compiled in the TS statements' order: bound to its local, or kept for its slot in the packing (`slots`,
+/// by placeholder index).
+fn bind_value(
+    cx: &mut Cx<'_>,
+    value: &Value,
+    statements: &mut Vec<Stmt>,
+    slots: &mut HashMap<usize, Expr>,
+) -> PResult<Expr> {
     let (compiled, prereqs) = cx.capture(|cx| cx.compile_expr(value.node))?;
     statements.extend(prereqs);
-    Ok(match (value.local, &value.ext) {
-        (Some(local), _) => {
-            let name = local_name(fw, cx, local);
-            statements.push(create::local(create::any_id(name.clone()), Some(compiled)));
-            create::id(name)
+    Ok(match value.read {
+        Read::Local(local) => {
+            statements.push(luau::local(&local.e(), Some(compiled)));
+            local.e()
         }
-        (None, Some(ext)) => {
-            ext.set(compiled.clone());
+        Read::Slot { id, .. } => {
+            slots.insert(id.0 as usize, compiled.clone());
             compiled
         }
-        (None, None) => compiled,
-    })
-}
-
-/// Lowers the packing: its statements, payload and blob list.
-fn lower_encoding(fw: &FwInstance, cx: &mut Cx<'_>, built: &BuiltCall) -> (Vec<Stmt>, Option<Expr>, Option<Expr>) {
-    crate::serializer::with_lowerer(fw, cx, |lowerer| {
-        let statements = lowerer.statements(&built.encoding);
-        let mut prereqs = Vec::new();
-        let payload = built.payload.map(|id| lowerer.expr(&ir::id(id), &mut prereqs));
-        let blobs = built.blobs.map(|id| lowerer.expr(&ir::id(id), &mut prereqs));
-        (statements, payload, blobs)
+        Read::Nil => compiled,
     })
 }
 
 /// `wire-harvest` ([`crate::serializer::wire`]): the site's packing as `pack(args)`, which returns `{ payload, blobs }`
-/// (a callback's packer as it is), its arguments read from `args` where the build reads them; `fixed` boxes the
-/// literal (or `undefined`) arguments the packing was built for.
+/// (a callback's packer as it is), its arguments read from `args` where the build reads them, named as the build named
+/// them; `fixed` boxes the literal (or `undefined`) arguments the packing was built for (`slots` holds their Luau).
 #[cfg(feature = "wire-harvest")]
-fn harvest(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &BuiltCall) {
+fn harvest(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, built: &BuiltCall, slots: &HashMap<usize, Expr>) {
     use crate::serializer::wire;
     if !wire::on() {
         return;
     }
     let args = || create::id("__fwargs");
     let at = |i: usize| create::computed_index(args(), create::number((i + 1) as f64));
-    let (ty, result, pack, fixed) = match &built.shape {
+    let position = |i: usize| create::number((i + 1) as f64);
+    let (ty, result, mut pack, fixed) = match &built.shape {
         CallShape::Send { list, .. } => {
             let Some(payload) = built.payload else { return };
-            let (mut fixed, mut saved) = (Vec::new(), Vec::new());
+            let (mut fixed, mut read_args, mut body) = (Vec::new(), HashMap::new(), Vec::new());
             for (i, value) in built.packed.iter().enumerate() {
-                match (value.local, &value.ext) {
-                    (Some(_), _) => {}
-                    (None, Some(ext)) => {
-                        let compiled = ext.value.replace(at(i));
-                        if ext.literal.is_some() {
-                            fixed.push((create::number((i + 1) as f64), create::array(vec![compiled.clone()])));
+                match value.read {
+                    Read::Local(local) => body.push(luau::local(&local.e(), Some(at(i)))),
+                    Read::Slot { id, literal } => {
+                        read_args.insert(id.0 as usize, at(i));
+                        if literal {
+                            fixed.push((position(i), create::array(vec![slots[&(id.0 as usize)].clone()])));
                         }
-                        saved.push((ext, compiled));
                     }
-                    (None, None) => fixed.push((create::number((i + 1) as f64), create::array(Vec::new()))),
+                    Read::Nil => fixed.push((position(i), create::array(Vec::new()))),
                 }
             }
-            let pack = wire::relower(fw, |lowerer| {
-                let mut body = Vec::new();
-                for (i, value) in built.packed.iter().enumerate() {
-                    if let Some(local) = value.local {
-                        body.push(create::local(create::any_id(lowerer.name(local)), Some(at(i))));
-                    }
-                }
-                if let Some((table, _)) = &built.spread {
-                    body.push(create::local(create::any_id(lowerer.name(*table)), Some(args())));
-                }
-                body.extend(lowerer.statements(&built.encoding));
-                let packed = std::iter::once(payload).chain(built.blobs).map(|id| create::id(lowerer.name(id))).collect();
-                body.push(create::return_stmt(create::array(packed)));
-                create::function(vec![create::any_id("__fwargs")], false, body)
-            });
-            for (ext, compiled) in saved {
-                ext.set(compiled);
+            if let Some((table, _)) = &built.spread {
+                body.push(luau::local(&table.e(), Some(args())));
             }
-            (*list, false, pack, fixed)
+            body.extend(built.encoding.iter().cloned());
+            Names::substitute(&mut body, &read_args);
+            let packed = std::iter::once(payload).chain(built.blobs).map(Id::e).collect();
+            body.push(create::return_stmt(create::array(packed)));
+            (*list, false, create::function(vec![create::any_id("__fwargs")], false, body), fixed)
         }
         CallShape::Callback { function, .. } => {
-            let pack = built.pack.as_ref().expect("a callback site has its packer");
-            (*function, true, wire::relower(fw, |lowerer| lowerer.expr(pack, &mut Vec::new())), Vec::new())
+            (*function, true, built.pack.clone().expect("a callback site has its packer"), Vec::new())
         }
     };
-    let Some(pack) = pack else { return };
+    wire::name_copy(fw, &mut pack);
     let mut extra = vec![("pack", pack), ("fixed", create::map(fixed))];
     if built.spread.is_none() && !result {
         extra.push(("arity", create::number(built.packed.len() as f64)));

@@ -53,7 +53,7 @@ codec.s_WithObject = function(v)
 	local v_1 = v.value
 	local size = 1
 	if type(v_1) == "table" and v_1.a ~= nil then
-		local length = #(v_1.a)
+		local length = #v_1.a
 		size += vsize(length) + length
 	elseif true then
 		size += 4

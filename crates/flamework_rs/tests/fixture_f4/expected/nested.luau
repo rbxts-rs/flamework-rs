@@ -94,13 +94,10 @@ codec.w_A = function(buf_2, o_2, v)
 		end
 	elseif guard(v_2) then
 		buffer.writeu8(buf_2, o_2, 1)
-		-- ▼ ReadonlySet.size ▼
-		local _size = 0
+		local n_6 = 0
 		for _ in v_2 do
-			_size += 1
+			n_6 += 1
 		end
-		-- ▲ ReadonlySet.size ▲
-		local n_6 = _size
 		o_2 = vwrite(buf_2, o_2 + 1, n_6)
 		for item_3 in v_2 do
 			local length_4 = #item_3
@@ -110,13 +107,10 @@ codec.w_A = function(buf_2, o_2, v)
 		end
 	elseif type(v_2) == "table" then
 		buffer.writeu8(buf_2, o_2, 2)
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
+		local n_7 = 0
 		for _ in v_2 do
-			_size += 1
+			n_7 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_7 = _size
 		o_2 = vwrite(buf_2, o_2 + 1, n_7)
 		for key_1, entry_1 in v_2 do
 			local length_5 = #key_1
@@ -189,7 +183,7 @@ codec.r_A = function(buf_2, o_2)
 	return value_2, o_2
 end
 codec.s_B = function(v_3)
-	local length_9 = #(v_3.b)
+	local length_9 = #v_3.b
 	local v_4 = v_3.list
 	local size_4 = 1
 	if type(v_4) == "string" then
@@ -307,13 +301,10 @@ codec.s_Map_string_A = function(v_8)
 	return size_6
 end
 codec.w_Map_string_A = function(buf_8, o_17, v_8)
-	-- ▼ ReadonlyMap.size ▼
-	local _size = 0
+	local n_10 = 0
 	for _ in v_8 do
-		_size += 1
+		n_10 += 1
 	end
-	-- ▲ ReadonlyMap.size ▲
-	local n_10 = _size
 	o_17 = vwrite(buf_8, o_17, n_10)
 	for key_3, entry_3 in v_8 do
 		local length_16 = #key_3
@@ -394,22 +385,20 @@ local deeper = wrap({ wrap(wrap(1, {
 	end,
 }) }, {
 	serialize = function(v_11)
-		local v_12 = v_11
 		local size_8 = 1
-		if v_12.a ~= nil then
-			size_8 += codec.s_A(v_12)
-		elseif v_12.b ~= nil then
-			size_8 += codec.s_B(v_12)
+		if v_11.a ~= nil then
+			size_8 += codec.s_A(v_11)
+		elseif v_11.b ~= nil then
+			size_8 += codec.s_B(v_11)
 		end
 		local buf_13 = buffer.create(size_8)
 		local o_26 = 0
-		local v_13 = v_11
-		if v_13.a ~= nil then
+		if v_11.a ~= nil then
 			buffer.writeu8(buf_13, o_26, 0)
-			o_26 = codec.w_A(buf_13, o_26 + 1, v_13)
-		elseif v_13.b ~= nil then
+			o_26 = codec.w_A(buf_13, o_26 + 1, v_11)
+		elseif v_11.b ~= nil then
 			buffer.writeu8(buf_13, o_26, 1)
-			o_26 = codec.w_B(buf_13, o_26 + 1, v_13)
+			o_26 = codec.w_B(buf_13, o_26 + 1, v_11)
 		else
 			error("value matches none of the union's members")
 		end

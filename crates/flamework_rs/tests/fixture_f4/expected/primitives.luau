@@ -571,8 +571,7 @@ local literalIndex = {
 local mode = Flamework.createSerializer({
 	serialize = function(v_29)
 		local buf_60 = buffer.create(1)
-		local v_30 = v_29
-		local index = literalIndex[v_30]
+		local index = literalIndex[v_29]
 		if index == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -600,10 +599,9 @@ local literalIndex_1 = {
 	[10] = 5,
 }
 local numbers = Flamework.createSerializer({
-	serialize = function(v_31)
+	serialize = function(v_30)
 		local buf_62 = buffer.create(1)
-		local v_32 = v_31
-		local index_1 = literalIndex_1[v_32]
+		local index_1 = literalIndex_1[v_30]
 		if index_1 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -630,10 +628,9 @@ local literalIndex_2 = {
 	a = 4,
 }
 local mixedLiterals = Flamework.createSerializer({
-	serialize = function(v_33)
+	serialize = function(v_31)
 		local buf_64 = buffer.create(1)
-		local v_34 = v_33
-		local index_2 = literalIndex_2[v_34]
+		local index_2 = literalIndex_2[v_31]
 		if index_2 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -652,7 +649,7 @@ local mixedLiterals = Flamework.createSerializer({
 	end,
 })
 local nothing = Flamework.createSerializer({
-	serialize = function(v_35)
+	serialize = function(v_32)
 		local buf_66 = buffer.create(0)
 		return buf_66
 	end,
@@ -664,15 +661,13 @@ local nothing = Flamework.createSerializer({
 	end,
 })
 local maybe = Flamework.createSerializer({
-	serialize = function(v_36)
-		local v_37 = v_36
-		local buf_68 = buffer.create(if v_37 ~= nil then 9 else 1)
+	serialize = function(v_33)
+		local buf_68 = buffer.create(if v_33 ~= nil then 9 else 1)
 		local o_32 = 0
-		local v_38 = v_36
-		buffer.writeu8(buf_68, o_32, if v_38 ~= nil then 1 else 0)
+		buffer.writeu8(buf_68, o_32, if v_33 ~= nil then 1 else 0)
 		o_32 += 1
-		if v_38 ~= nil then
-			buffer.writef64(buf_68, o_32, v_38)
+		if v_33 ~= nil then
+			buffer.writef64(buf_68, o_32, v_33)
 			o_32 += 8
 		end
 		return buf_68
@@ -693,22 +688,20 @@ local maybe = Flamework.createSerializer({
 	end,
 })
 local maybeText = Flamework.createSerializer({
-	serialize = function(v_39)
-		local v_40 = v_39
+	serialize = function(v_34)
 		local size = 1
-		if v_40 ~= nil then
-			local length_24 = #v_40
+		if v_34 ~= nil then
+			local length_24 = #v_34
 			size += vsize(length_24) + length_24
 		end
 		local buf_70 = buffer.create(size)
 		local o_34 = 0
-		local v_41 = v_39
-		buffer.writeu8(buf_70, o_34, if v_41 ~= nil then 1 else 0)
+		buffer.writeu8(buf_70, o_34, if v_34 ~= nil then 1 else 0)
 		o_34 += 1
-		if v_41 ~= nil then
-			local length_25 = #v_41
+		if v_34 ~= nil then
+			local length_25 = #v_34
 			o_34 = vwrite(buf_70, o_34, length_25)
-			buffer.writestring(buf_70, o_34, v_41)
+			buffer.writestring(buf_70, o_34, v_34)
 			o_34 += length_25
 		end
 		return buf_70
@@ -732,12 +725,11 @@ local maybeText = Flamework.createSerializer({
 })
 -- Values that travel whole.
 local anything = Flamework.createSerializer({
-	serialize = function(v_42)
+	serialize = function(v_35)
 		local buf_72 = buffer.create(4)
 		local blobs = {}
-		local blob = v_42
-		if blob ~= nil then
-			table.insert(blobs, blob)
+		if v_35 ~= nil then
+			table.insert(blobs, v_35)
 			buffer.writeu32(buf_72, 0, #blobs)
 		else
 			buffer.writeu32(buf_72, 0, 0)
@@ -753,12 +745,11 @@ local anything = Flamework.createSerializer({
 	end,
 })
 local object = Flamework.createSerializer({
-	serialize = function(v_43)
+	serialize = function(v_36)
 		local buf_74 = buffer.create(4)
 		local blobs_2 = {}
-		local blob_1 = v_43
-		if blob_1 ~= nil then
-			table.insert(blobs_2, blob_1)
+		if v_36 ~= nil then
+			table.insert(blobs_2, v_36)
 			buffer.writeu32(buf_74, 0, #blobs_2)
 		else
 			buffer.writeu32(buf_74, 0, 0)
@@ -774,12 +765,11 @@ local object = Flamework.createSerializer({
 	end,
 })
 local part = Flamework.createSerializer({
-	serialize = function(v_44)
+	serialize = function(v_37)
 		local buf_76 = buffer.create(4)
 		local blobs_4 = {}
-		local blob_2 = v_44
-		if blob_2 ~= nil then
-			table.insert(blobs_4, blob_2)
+		if v_37 ~= nil then
+			table.insert(blobs_4, v_37)
 			buffer.writeu32(buf_76, 0, #blobs_4)
 		else
 			buffer.writeu32(buf_76, 0, 0)
@@ -795,12 +785,11 @@ local part = Flamework.createSerializer({
 	end,
 })
 local font = Flamework.createSerializer({
-	serialize = function(v_45)
+	serialize = function(v_38)
 		local buf_78 = buffer.create(4)
 		local blobs_6 = {}
-		local blob_3 = v_45
-		if blob_3 ~= nil then
-			table.insert(blobs_6, blob_3)
+		if v_38 ~= nil then
+			table.insert(blobs_6, v_38)
 			buffer.writeu32(buf_78, 0, #blobs_6)
 		else
 			buffer.writeu32(buf_78, 0, 0)
@@ -816,12 +805,11 @@ local font = Flamework.createSerializer({
 	end,
 })
 local signal = Flamework.createSerializer({
-	serialize = function(v_46)
+	serialize = function(v_39)
 		local buf_80 = buffer.create(4)
 		local blobs_8 = {}
-		local blob_4 = v_46
-		if blob_4 ~= nil then
-			table.insert(blobs_8, blob_4)
+		if v_39 ~= nil then
+			table.insert(blobs_8, v_39)
 			buffer.writeu32(buf_80, 0, #blobs_8)
 		else
 			buffer.writeu32(buf_80, 0, 0)
@@ -853,12 +841,11 @@ do
 	end
 end
 local thing = Flamework.createSerializer({
-	serialize = function(v_47)
+	serialize = function(v_40)
 		local buf_82 = buffer.create(4)
 		local blobs_10 = {}
-		local blob_5 = v_47
-		if blob_5 ~= nil then
-			table.insert(blobs_10, blob_5)
+		if v_40 ~= nil then
+			table.insert(blobs_10, v_40)
 			buffer.writeu32(buf_82, 0, #blobs_10)
 		else
 			buffer.writeu32(buf_82, 0, 0)

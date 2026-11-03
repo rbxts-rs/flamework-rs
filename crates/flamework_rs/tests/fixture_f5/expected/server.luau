@@ -72,14 +72,14 @@ local Events = GlobalEvents:createServer({
 	outgoingIds = { "alpha", "lima", "mike" },
 	outgoingUnreliable = {},
 	incomingSerializers = {
-		alpha = (function(buf)
+		alpha = function(buf)
 			local value = { buffer.readf64(buf, 0) }
 			if buffer.len(buf) ~= 8 then
 				error("malformed payload")
 			end
 			return value
-		end),
-		bravo = (function(buf_3)
+		end,
+		bravo = function(buf_3)
 			local o_2 = 0
 			local length, o_3 = vread(buf_3, o_2)
 			local text_1 = buffer.readstring(buf_3, o_3, length)
@@ -91,8 +91,8 @@ local Events = GlobalEvents:createServer({
 				error("malformed payload")
 			end
 			return value_1
-		end),
-		delta = (function(buf_4)
+		end,
+		delta = function(buf_4)
 			local o_4 = 0
 			local x_1 = buffer.readf64(buf_4, o_4)
 			local y = buffer.readf64(buf_4, o_4 + 8)
@@ -114,8 +114,8 @@ local Events = GlobalEvents:createServer({
 				error("malformed payload")
 			end
 			return value_3
-		end),
-		echo = (function(buf_5)
+		end,
+		echo = function(buf_5)
 			local o_6 = 0
 			local count, o_7 = vread(buf_5, o_6)
 			o_6 = o_7
@@ -131,8 +131,8 @@ local Events = GlobalEvents:createServer({
 				error("malformed payload")
 			end
 			return list
-		end),
-		foxtrot = (function(buf_6)
+		end,
+		foxtrot = function(buf_6)
 			local o_8 = 0
 			local length_2, o_9 = vread(buf_6, o_8)
 			local text_3 = buffer.readstring(buf_6, o_9, length_2)
@@ -151,15 +151,15 @@ local Events = GlobalEvents:createServer({
 				error("malformed payload")
 			end
 			return list_1
-		end),
-		golf = (function(buf_7)
+		end,
+		golf = function(buf_7)
 			local value_4 = { buffer.readf64(buf_7, 0) }
 			if buffer.len(buf_7) ~= 8 then
 				error("malformed payload")
 			end
 			return value_4
-		end),
-		india = (function(buf_8, blobs)
+		end,
+		india = function(buf_8, blobs)
 			local o_11 = 0
 			local arg_2 = blobs[buffer.readu32(buf_8, o_11)]
 			local length_3, o_12 = vread(buf_8, o_11 + 4)
@@ -170,8 +170,8 @@ local Events = GlobalEvents:createServer({
 				error("malformed payload")
 			end
 			return value_5
-		end),
-		letters = (function(buf_9)
+		end,
+		letters = function(buf_9)
 			local o_13 = 0
 			local count_2, o_14 = vread(buf_9, o_13)
 			o_13 = o_14
@@ -189,7 +189,7 @@ local Events = GlobalEvents:createServer({
 				error("malformed payload")
 			end
 			return list_2
-		end),
+		end,
 	},
 	namespaceIds = { "juliet" },
 	namespaces = {
@@ -202,13 +202,13 @@ local Events = GlobalEvents:createServer({
 			outgoingIds = {},
 			outgoingUnreliable = {},
 			incomingSerializers = {
-				kilo = (function(buf_10)
+				kilo = function(buf_10)
 					local value_6 = { buffer.readu8(buf_10, 0) ~= 0 }
 					if buffer.len(buf_10) ~= 1 then
 						error("malformed payload")
 					end
 					return value_6
-				end),
+				end,
 			},
 			namespaceIds = {},
 			namespaces = {},
@@ -231,14 +231,14 @@ local Functions = GlobalFunctions:createServer({}, {
 		romeo = t.string,
 	},
 	incomingSerializers = {
-		november = (function(buf_11)
+		november = function(buf_11)
 			local value_7 = { buffer.readf64(buf_11, 0) }
 			if buffer.len(buf_11) ~= 8 then
 				error("malformed payload")
 			end
 			return value_7
-		end),
-		oscar = (function(buf_12)
+		end,
+		oscar = function(buf_12)
 			local o_16 = 0
 			local length_5, o_17 = vread(buf_12, o_16)
 			local text_6 = buffer.readstring(buf_12, o_17, length_5)
@@ -248,8 +248,8 @@ local Functions = GlobalFunctions:createServer({}, {
 				error("malformed payload")
 			end
 			return value_8
-		end),
-		quebec = (function(buf_13)
+		end,
+		quebec = function(buf_13)
 			local value_9 = { {
 				x = buffer.readf64(buf_13, 0),
 				y = buffer.readf64(buf_13, 8),
@@ -258,10 +258,10 @@ local Functions = GlobalFunctions:createServer({}, {
 				error("malformed payload")
 			end
 			return value_9
-		end),
+		end,
 	},
 	outgoingResults = {
-		romeo = (function(buf_14)
+		romeo = function(buf_14)
 			local o_18 = 0
 			local length_6, o_19 = vread(buf_14, o_18)
 			local text_7 = buffer.readstring(buf_14, o_19, length_6)
@@ -271,7 +271,7 @@ local Functions = GlobalFunctions:createServer({}, {
 				error("malformed payload")
 			end
 			return value_10
-		end),
+		end,
 	},
 	namespaceIds = {},
 	namespaces = {},
@@ -369,15 +369,13 @@ local function callbacks()
 		return if coord.x > 0 then coord else nil
 	end
 	target_3:_setCallback(callback_3, function(value_14)
-		local v = value_14
-		local buf_23 = buffer.create(if v ~= nil then 17 else 1)
+		local buf_23 = buffer.create(if value_14 ~= nil then 17 else 1)
 		local o_26 = 0
-		local v_1 = value_14
-		buffer.writeu8(buf_23, o_26, if v_1 ~= nil then 1 else 0)
+		buffer.writeu8(buf_23, o_26, if value_14 ~= nil then 1 else 0)
 		o_26 += 1
-		if v_1 ~= nil then
-			buffer.writef64(buf_23, o_26, v_1.x)
-			buffer.writef64(buf_23, o_26 + 8, v_1.y)
+		if value_14 ~= nil then
+			buffer.writef64(buf_23, o_26, value_14.x)
+			buffer.writef64(buf_23, o_26 + 8, value_14.y)
 			o_26 += 16
 		end
 		return { buf_23 }

@@ -89,9 +89,8 @@ local privateNames = Flamework.createSerializer({
 	serialize = function(v_3)
 		local buf_6 = buffer.create(4)
 		local blobs = {}
-		local blob = v_3
-		if blob ~= nil then
-			table.insert(blobs, blob)
+		if v_3 ~= nil then
+			table.insert(blobs, v_3)
 			buffer.writeu32(buf_6, 0, #blobs)
 		else
 			buffer.writeu32(buf_6, 0, 0)

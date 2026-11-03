@@ -8,8 +8,9 @@
 //! built and dropped consumes no names. [`Names::substitute`] replaces placeholders by other expressions first (the
 //! `guards.Name` fields of a guard holding more locals than Luau allows).
 //!
-//! Guards (`crate::guards`) use it, and so do the serializer's hoisted helpers, through [`placeholder`]s of its IR ids
-//! that its lowering names, until its emitters build Luau too (DESIGN §2.1, §4).
+//! Guards (`crate::guards`) use it, and so does the serializer (`crate::serializer`), whose file-wide registry names
+//! its output hook by hook: a name, once given, is kept ([`Names::assign_with`]), so that a helper one hook hoisted is
+//! read by the same name in the next hook's code.
 
 use std::collections::HashMap;
 
@@ -20,19 +21,26 @@ use rbxts_plugin::Cx;
 /// be mistaken for a real name (and the renderer would refuse one that was left unnamed).
 const MARK: char = '\u{1}';
 
-/// The placeholders of one piece of generated code (a guard), by index: the base name each one asks for.
-#[derive(Debug, Default)]
+/// The placeholders of one piece of generated code (a guard, or a file's serializer code), by index: the base name each
+/// one asks for, and the name it was given.
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Names {
     bases: Vec<String>,
+    named: Vec<Option<String>>,
 }
 
 impl Names {
     /// A new local, named after `base` (as given: [`crate::guards::names::local_name`] it first when it comes from the
     /// project).
     pub(crate) fn fresh(&mut self, base: impl Into<String>) -> Expr {
-        let index = self.bases.len();
+        placeholder(self.fresh_index(base))
+    }
+
+    /// [`Names::fresh`], as the placeholder's index.
+    pub(crate) fn fresh_index(&mut self, base: impl Into<String>) -> usize {
         self.bases.push(base.into());
-        placeholder(index)
+        self.named.push(None);
+        self.bases.len() - 1
     }
 
     /// Hands the placeholders in `expr` over to another registry: each becomes the placeholder `adopt` gives for its
@@ -60,26 +68,24 @@ impl Names {
     }
 
     /// Names every placeholder in `statements` and then `expr`, in render order (see the module docs).
-    pub(crate) fn assign(&self, cx: &Cx<'_>, statements: &mut [Stmt], expr: Option<&mut Expr>) {
+    pub(crate) fn assign(&mut self, cx: &Cx<'_>, statements: &mut [Stmt], expr: Option<&mut Expr>) {
         self.assign_with(statements, expr, |base| unique_name(cx, base));
     }
 
-    /// [`Names::assign`] with the names given by `unique` (a base name in, the local's name out), in render order.
+    /// [`Names::assign`] with the names given by `unique` (a base name in, the local's name out), in render order. A
+    /// placeholder named before keeps its name.
     pub(crate) fn assign_with(
-        &self,
+        &mut self,
         statements: &mut [Stmt],
         expr: Option<&mut Expr>,
         mut unique: impl FnMut(&str) -> String,
     ) {
-        let mut assigned: Vec<Option<String>> = vec![None; self.bases.len()];
-        name_placeholders(statements, expr, |index| {
-            assigned[index].get_or_insert_with(|| unique(&self.bases[index])).clone()
-        });
+        let (bases, named) = (&self.bases, &mut self.named);
+        name_placeholders(statements, expr, |index| named[index].get_or_insert_with(|| unique(&bases[index])).clone());
     }
 }
 
-/// The placeholder of index `index` ([`Names::fresh`]'s, or one standing for another registry's identifier: the
-/// serializer's IR ids until its direct emission is complete).
+/// The placeholder of index `index` ([`Names::fresh`]'s).
 pub(crate) fn placeholder(index: usize) -> Expr {
     create::id(placeholder_name(index))
 }

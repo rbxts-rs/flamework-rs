@@ -176,6 +176,12 @@ Text and order:
 - **The names of Flamework's generated locals** (`buf`, `value_2`, a guard's `v_Tree`, …): each is named when it is
   built, as the compiler approves it (never a name the file uses), so the numbers after a name differ from the TS
   printer's. `--normalize` (above) hides these names and nothing else.
+- **The Luau of serializers and packed network calls** (`createSerializer`, the network decoders, a packed send's or
+  callback's packing): flamework-rs builds it as Luau directly, where the TS transformer built TypeScript for roblox-ts
+  to compile, so the text is flamework-rs's own: no roblox-ts macro comments or temporaries (a set's size is counted
+  into its own local), no copies of parameters, 1-based indexes written as such, fewer parentheses. The wire format,
+  the checks and their messages are the same; `--normalize` does not hide this, so compare those files on behaviour
+  ([Wire identity](#wire-identity)).
 - **The order things are recorded in within a file:** a file's new ids (`flamework.build`'s `identifiers` and the
   counters of `short` / `tiny` / `obfuscated` ids), its `Flamework.env` inputs and its glob and path uses (their entries
   in `flamework.build` and `include/flamework/globs.json`, and the order of the glob warnings; path warnings stay in

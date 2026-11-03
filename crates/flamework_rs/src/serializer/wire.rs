@@ -2,28 +2,23 @@
 //!
 //! With `FLAMEWORK_RS_WIRE_DIR` set, every serializer, network decoder and packed call site of a file is also written
 //! as a standalone Luau module, `<dir>/<file id>/<ordinal>.luau` (ordinals in source order): the file's hoisted
-//! statements, then `return { kind, layout, key, ... }`. What the build emits is taken as it was lowered; what a
+//! statements, then `return { kind, layout, key, ... }`. What the build emits is taken as it was named; what a
 //! module needs besides (a call site's decoder, a decoder's encoder, every layout text) comes from a second generator
 //! of the file's own, the companion, which never names through the compiler, warns nothing and builds
 //! `__fwguard(<key>)` in place of a guard, so the build's output is the same with the feature on.
 //!
-//! **What B2 (direct Luau emission) must rewrite here.** The companion's lowering ([`Namer`] through
-//! [`super::lower::LowerCx`]), [`relower`] and `networking::calls::harvest` work on the IR (`ir.rs`, `lower.rs`), which
-//! B2 deletes. On the Luau builders they become:
-//! - a site's packing: the build's own emitted statements, its argument placeholders bound to `__fwargs[i]` (instead
-//!   of lowering the encoding again with `ExtValue`s swapped);
-//! - the companion's names: a namer through the new shared `Names` that never asks the compiler (as [`Namer`] does);
-//! - the module contract unchanged (`kind`, `layout`, `key`, `serializer` / `deserialize` / `encode` / `pack`,
-//!   `fixed`, `arity`; ordinals in source order), so that harvests of builds before and after B2 still pair up.
+//! Names in a module never come from the compiler: the companion's are `<base>_h<n>`, and a call site's packing keeps
+//! the build's names ([`name_copy`]). The module contract (`kind`, `layout`, `key`, `serializer` / `deserialize` /
+//! `encode` / `pack`, `fixed`, `arity`; ordinals in source order) is the same as before direct Luau emission, so
+//! harvests of builds before and after it pair up.
 
-use rbxts_luau::{LateStrings, TempIds, TemporaryIdentifier, create, render_ast, render_expr};
+use rbxts_luau::{Expr, LateStrings, Stmt, create, render_ast, render_expr};
 use rbxts_plugin::ts::{Node, P, Type};
 use rbxts_plugin::{Cx, LuauExpr, LuauStmt, text_literal};
 
-use super::codegen::SiteValues;
-use super::ir::{self, Ty};
-use super::lower::{LowerCx, Lowerer};
-use super::{Checks, EncodingSite, GResult, Gen, Generator, Shape};
+use super::codegen::{SiteValues, function};
+use super::{Checks, EncodingSite, GResult, Gen, Generator, Id, Shape};
+use crate::luau_names::Names;
 use crate::plugin::FwInstance;
 
 /// One file's harvest: the hoisted statements handed out so far, the modules' entries, the companion.
@@ -32,22 +27,17 @@ pub struct Harvest {
     top: Vec<LuauStmt>,
     companion: Option<Generator>,
     companion_top: Vec<LuauStmt>,
-    temps: TempIds,
     named: u32,
     entries: Vec<(u32, String)>,
 }
 
-/// Names for harvest lowering: never asks the compiler, so nothing it names takes a name from the file.
-struct Namer<'h>(&'h mut TempIds, &'h mut u32);
-
-impl LowerCx for Namer<'_> {
-    fn temp_id(&mut self, hint: &str) -> TemporaryIdentifier {
-        self.0.temp_id(hint)
-    }
-    fn local_name(&mut self, hint: &str) -> String {
-        *self.1 += 1;
-        format!("{hint}_h{}", self.1)
-    }
+/// Names placeholders with `names`, giving each new one `<base>_h<n>`: never asks the compiler, so nothing named
+/// here takes a name from the file.
+fn name_harvest(names: &mut Names, named: &mut u32, statements: &mut [Stmt], expr: Option<&mut Expr>) {
+    names.assign_with(statements, expr, |base| {
+        *named += 1;
+        format!("{base}_h{named}")
+    });
 }
 
 pub(crate) fn on() -> bool {
@@ -61,14 +51,14 @@ pub(crate) fn hoisted(fw: &FwInstance, top: &[LuauStmt]) {
     }
 }
 
-/// Runs `build` on the file's companion at `node`, then lowers its hoisted statements and what `lower` makes of the
-/// result. `None` when the build failed or there is nothing to test.
+/// Runs `build` on the file's companion at `node`, then names its hoisted statements and the fields `fields` makes of
+/// the result. `None` when the build failed or there is nothing to test.
 fn companion<T>(
     fw: &FwInstance,
     cx: &mut Cx<'_>,
     node: P<Node>,
     build: impl FnOnce(&mut Gen<'_, '_, '_>) -> GResult<Option<T>>,
-    lower: impl FnOnce(&mut Lowerer<'_>, T) -> Vec<(&'static str, LuauExpr)>,
+    fields: impl FnOnce(T) -> Vec<(&'static str, LuauExpr)>,
 ) -> Option<Vec<(&'static str, LuauExpr)>> {
     let mut state = fw.serializer.borrow_mut();
     let state = &mut *state;
@@ -81,11 +71,15 @@ fn companion<T>(
     let mut gn = Gen { g, cx, shared: &fw.shared };
     gn.use_node(node);
     let built = build(&mut gn);
-    let hoisted = gn.take_hoisted();
+    let mut hoisted = gn.take_hoisted();
     let built = if gn.g.sticky.take().is_some() { None } else { built.ok().flatten() };
-    let mut lowerer = Lowerer { ids: &g.ids, names: &mut g.names, cx: &mut Namer(&mut h.temps, &mut h.named) };
-    h.companion_top.extend(lowerer.statements(&hoisted));
-    Some(lower(&mut lowerer, built?))
+    name_harvest(&mut g.names, &mut h.named, &mut hoisted, None);
+    h.companion_top.extend(hoisted);
+    let mut fields = fields(built?);
+    for (_, value) in &mut fields {
+        name_harvest(&mut g.names, &mut h.named, &mut [], Some(value));
+    }
+    Some(fields)
 }
 
 /// The layout text and wire key of an argument list (a function type's result with `result`).
@@ -110,7 +104,7 @@ pub(crate) fn serializer(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<
         let value = gn.unwrap_promise(ty);
         let shape = gn.spell(written, value)?;
         Ok(Some((gn.layout_text(&shape)?, gn.wire_key(&shape, &mut Vec::new(), false)?.0)))
-    }, |_, (layout, key)| texts(layout, key));
+    }, |(layout, key)| texts(layout, key));
     let Some(mut fields) = fields else { return };
     fields.push(("serializer", object.clone()));
     entry(fw, cx, node, "serializer", fields);
@@ -123,17 +117,16 @@ pub(crate) fn decoder(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<Typ
     }
     let fields = companion(fw, cx, node, |gn| {
         let (list, layout, key) = list_texts(gn, ty, node, result)?;
-        let args = gn.parameter("args", Ty::Array);
+        let args = gn.uid("args");
         let site = EncodingSite { result, ..EncodingSite::default() };
-        let encoding = gn.encode_elements(list, SiteValues::Table(ir::cast(ir::id(args), Ty::Array)), site)?;
+        let encoding = gn.encode_elements(list, SiteValues::Table(args.e()), site)?;
         Ok(encoding.payload.is_some().then_some((layout, key, args, encoding)))
-    }, |lowerer, (layout, key, args, encoding)| {
-        let mut body = lowerer.statements(&encoding.statements);
-        let ids = encoding.payload.into_iter().chain(encoding.blobs);
-        let packed = ids.map(|id| create::id(lowerer.name(id))).collect();
+    }, |(layout, key, args, encoding)| {
+        let mut body = encoding.statements;
+        let packed = encoding.payload.into_iter().chain(encoding.blobs).map(Id::e).collect();
         body.push(create::return_stmt(create::array(packed)));
         let mut fields = texts(layout, key);
-        fields.push(("encode", create::function(vec![create::any_id(lowerer.name(args))], false, body)));
+        fields.push(("encode", function(&[args], body)));
         fields
     });
     let Some(mut fields) = fields else { return };
@@ -146,9 +139,9 @@ pub(crate) fn site(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<Type>,
     let fields = companion(fw, cx, node, |gn| {
         let (list, layout, key) = list_texts(gn, ty, node, result)?;
         Ok(gn.build_decoder(list)?.map(|decoder| (layout, key, decoder)))
-    }, |lowerer, (layout, key, decoder)| {
+    }, |(layout, key, decoder)| {
         let mut fields = texts(layout, key);
-        fields.push(("deserialize", lowerer.expr(&decoder, &mut Vec::new())));
+        fields.push(("deserialize", decoder));
         fields
     });
     let Some(mut fields) = fields else { return };
@@ -156,17 +149,13 @@ pub(crate) fn site(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<Type>,
     entry(fw, cx, node, if result { "callback" } else { "site" }, fields);
 }
 
-/// Lowers IR the build lowered already, with its names (copied: nothing named here reaches the build).
-pub(crate) fn relower<T>(fw: &FwInstance, f: impl FnOnce(&mut Lowerer<'_>) -> T) -> Option<T> {
-    if !on() {
-        return None;
-    }
+/// Names the build's code again for a module, with the build's names (copied: nothing named here reaches the build).
+pub(crate) fn name_copy(fw: &FwInstance, expr: &mut Expr) {
     let mut state = fw.serializer.borrow_mut();
     let state = &mut *state;
-    let generator = state.generator.as_ref()?;
+    let Some(generator) = state.generator.as_ref() else { return };
     let mut names = generator.names.clone();
-    let h = &mut state.harvest;
-    Some(f(&mut Lowerer { ids: &generator.ids, names: &mut names, cx: &mut Namer(&mut h.temps, &mut h.named) }))
+    name_harvest(&mut names, &mut state.harvest.named, &mut [], Some(expr));
 }
 
 fn entry(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, kind: &str, fields: Vec<(&'static str, LuauExpr)>) {
@@ -199,7 +188,7 @@ pub(crate) fn end_file(fw: &FwInstance, cx: &mut Cx<'_>) {
 
 /// What a companion builds for a guard (`guardFor`): `__fwguard("<wire key>")`, a test of the key's values that the
 /// harness provides, so that no guard (and no `t` import) is made for the file.
-pub(crate) fn guard(gn: &mut Gen<'_, '_, '_>, ty: P<Type>) -> GResult<ir::E> {
+pub(crate) fn guard(gn: &mut Gen<'_, '_, '_>, ty: P<Type>) -> GResult<Expr> {
     let key = gn.wire_key(&Shape::Type(ty), &mut Vec::new(), false)?.0;
-    Ok(ir::E::Luau(super::luau::call(create::id("__fwguard"), vec![super::luau::str(&key)])))
+    Ok(super::luau::call(create::id("__fwguard"), vec![super::luau::str(&key)]))
 }

@@ -1,18 +1,21 @@
 //! The code: the top level (`buildSerializer`, `buildDecoder`, `encodeElements`), the size pass, the writes and the
-//! reads, with the cursor that folds constant offsets and the compact form (`fitted`).
+//! reads, with the cursor that folds constant offsets and the compact form (`fitted`). Everything is built as Luau
+//! ([`super::luau`]), indexes 1-based where the TS generator's were 0-based.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use rbxts_luau::BinaryOperator as B;
+use rbxts_luau::{AssignmentOperator, ElseBody, Expr, IfStatement, Stmt, create};
 use tsrs_checker::TypeFlags;
 
-use super::checks::{fits_statically, literal_type, number_range};
+use super::checks::{fits_statically, number_range};
 use super::classify::datatype;
 use super::hoist::{MALFORMED, Role};
-use super::ir::{self, Bind, Body, E, Id, Key, Op, S, Ty};
-use super::limits::{self, Choice, Measuring, holds_locals};
+use super::limits::{self, Choice, holds_locals};
+use super::luau::{self, Part, is_literal, is_name};
 use super::typeinfo::{key_access, key_name, key_segment, local_name};
-use super::{EncodingSite, GResult, Gen, Kind, LengthWidth, Layout, Shape, Width};
+use super::{EncodingSite, GResult, Gen, Id, Kind, LengthWidth, Layout, Shape, Width};
 
 const HEADER_SIZE: u64 = 5;
 const BLOB_SIZE: i64 = 4;
@@ -20,18 +23,57 @@ const ZERO_SIZE_COUNT_MAX: f64 = 65535.0;
 const HALF: f64 = 4294967296.0;
 
 /// A statement list several builders append to (a TS array shared by reference).
-pub(crate) type Out = Rc<RefCell<Vec<S>>>;
+pub(crate) type Out = Rc<RefCell<Vec<Stmt>>>;
 
 pub(crate) fn out() -> Out {
     Rc::new(RefCell::new(Vec::new()))
 }
 
-pub(crate) fn push(out: &Out, s: S) {
+pub(crate) fn push(out: &Out, s: Stmt) {
     out.borrow_mut().push(s);
 }
 
-pub(crate) fn take(out: &Out) -> Vec<S> {
+pub(crate) fn take(out: &Out) -> Vec<Stmt> {
     std::mem::take(&mut *out.borrow_mut())
+}
+
+fn num(n: f64) -> Expr {
+    luau::num(n)
+}
+
+/// `target += value`.
+fn add_assign(target: Expr, value: Expr) -> Stmt {
+    luau::compound(target, AssignmentOperator::Add, value)
+}
+
+/// `if test then body end`.
+fn if_then(test: Expr, body: Vec<Stmt>) -> Stmt {
+    luau::if_chain(vec![(test, body)], Vec::new())
+}
+
+/// `if test then body else <rest>` of an if-chain built from its end: an `if` goes on as `elseif`, a `do` block is the
+/// last `else` block.
+fn if_else(test: Expr, body: Vec<Stmt>, rest: Stmt) -> Stmt {
+    let else_body = match rest {
+        Stmt::If(inner) => ElseBody::If(inner),
+        Stmt::Do(block) => ElseBody::Block(block.statements),
+        other => ElseBody::Block(vec![other]),
+    };
+    Stmt::If(Box::new(IfStatement { condition: test, statements: body, else_body }))
+}
+
+/// [`if_else`], or [`if_then`] without the rest.
+fn if_chain_on(test: Expr, body: Vec<Stmt>, rest: Option<Stmt>) -> Stmt {
+    match rest {
+        Some(rest) => if_else(test, body, rest),
+        None => if_then(test, body),
+    }
+}
+
+/// `function(ids) body end`.
+pub(crate) fn function(ids: &[Id], body: Vec<Stmt>) -> Expr {
+    let params: Vec<Expr> = ids.iter().map(|id| id.e()).collect();
+    luau::function(&params, body)
 }
 
 /// Where a value sits, for the checks' messages (`Place`).
@@ -103,39 +145,18 @@ impl Ctx {
     }
 }
 
-/// `left + right` with constants folded (`add`).
-pub(crate) fn add(left: E, right: f64) -> E {
-    if right == 0.0 {
-        return left;
-    }
-    if let E::Num(n) = left {
-        return ir::num(n + right);
-    }
-    ir::binary(left, Op::Add, ir::num(right))
-}
-
-fn add_expr(left: E, right: E) -> E {
-    if left.is_zero() {
-        return right;
-    }
-    if let E::Num(n) = right {
-        return add(left, n);
-    }
-    ir::binary(left, Op::Add, right)
-}
-
 /// A byte total under construction (`Sum`).
 #[derive(Default)]
 struct Sum {
     constant: f64,
-    terms: Vec<E>,
+    terms: Vec<Expr>,
 }
 
 impl Sum {
-    fn add(&mut self, part: E) {
-        match part {
-            E::Num(n) => self.constant += n,
-            other => self.terms.push(other),
+    fn add(&mut self, part: Expr) {
+        match luau::literal_number(&part) {
+            Some(n) => self.constant += n,
+            None => self.terms.push(part),
         }
     }
 
@@ -143,44 +164,19 @@ impl Sum {
         self.constant += n;
     }
 
-    fn build(self) -> E {
-        let mut total: Option<E> = None;
+    fn build(self) -> Expr {
+        let mut total: Option<Expr> = None;
         for term in self.terms {
             total = Some(match total {
-                Some(t) => ir::binary(t, Op::Add, term),
+                Some(t) => luau::bin(t, B::Add, term),
                 None => term,
             });
         }
         match total {
-            Some(t) => add(t, self.constant),
-            None => ir::num(self.constant),
+            Some(t) => luau::add(t, self.constant),
+            None => num(self.constant),
         }
     }
-}
-
-/// A part of `interpolate`.
-pub(crate) enum Part {
-    Text(String),
-    Expr(E),
-}
-
-/// `interpolate(parts)`: a template string, or a plain string without values.
-pub(crate) fn interpolate(parts: Vec<Part>) -> E {
-    let mut head = String::new();
-    let mut spans: Vec<(E, String)> = Vec::new();
-    for part in parts {
-        match part {
-            Part::Expr(e) => spans.push((e, String::new())),
-            Part::Text(t) => match spans.last_mut() {
-                Some(last) => last.1.push_str(&t),
-                None => head.push_str(&t),
-            },
-        }
-    }
-    if spans.is_empty() {
-        return ir::string(&head);
-    }
-    E::Template(head, spans)
 }
 
 /// The bytes of a varint known when building (`staticVarint`).
@@ -197,7 +193,6 @@ fn static_varint(mut n: u64) -> Vec<u64> {
 /// The payload and blob list of each build of an encoding, in build order (`encodings`): the one `fitted` kept is
 /// the encoding's (`kept(statements)`).
 type Chosen = Rc<RefCell<Vec<(Id, Option<Id>)>>>;
-
 
 /// The payload and blob list of the build `fitted_choice` kept: the compact rebuild's, or the first build's.
 fn kept(chosen: &Chosen, rebuilt: bool) -> (Id, Option<Id>) {
@@ -229,7 +224,7 @@ fn record(
 
 /// A call site's packing, before naming.
 pub(crate) struct Encoding {
-    pub statements: Vec<S>,
+    pub statements: Vec<Stmt>,
     pub payload: Option<Id>,
     pub blobs: Option<Id>,
 }
@@ -237,8 +232,8 @@ pub(crate) struct Encoding {
 /// A value of a call site (`values[i]`).
 #[derive(Clone)]
 pub(crate) enum SiteValues {
-    List(Vec<E>),
-    Table(E),
+    List(Vec<Expr>),
+    Table(Expr),
 }
 
 impl Gen<'_, '_, '_> {
@@ -253,7 +248,7 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `buildSerializer(type, versioned)`.
-    pub(crate) fn build_serializer(&mut self, ty: Shape, versioned: Option<(u32, String)>) -> GResult<E> {
+    pub(crate) fn build_serializer(&mut self, ty: Shape, versioned: Option<(u32, String)>) -> GResult<Expr> {
         let layout = self.layout_of(&ty)?;
         self.count_uses(&ty)?;
         let header = match versioned {
@@ -266,7 +261,7 @@ impl Gen<'_, '_, '_> {
             }
             None => None,
         };
-        let value = self.parameter("v", Ty::Unknown);
+        let value = self.uid("v");
         let named = self.shape_text(&ty);
         let serialize_body = self.fitted(
             &mut |gn| {
@@ -278,16 +273,16 @@ impl Gen<'_, '_, '_> {
             None,
             0,
         )?;
-        let serialize = ir::arrow(vec![ir::param(value)], Body::Block(serialize_body));
+        let serialize = function(&[value], serialize_body);
 
-        let buf = self.uid("buf", Ty::Buffer);
-        let blobs = if layout.blobs { Some(self.uid("blobs", Ty::Blobs)) } else { None };
+        let buf = self.uid("buf");
+        let blobs = if layout.blobs { Some(self.uid("blobs")) } else { None };
         let params: Vec<Id> = std::iter::once(buf).chain(blobs).collect();
         let body = self.fitted(
             &mut |gn| {
                 let statements = out();
                 let result = gn.decode_body(&ty, layout, buf, blobs, &statements, header.as_ref())?;
-                push(&statements, S::Return(Some(result)));
+                push(&statements, create::return_stmt(result));
                 Ok(take(&statements))
             },
             &params,
@@ -295,33 +290,33 @@ impl Gen<'_, '_, '_> {
             None,
             0,
         )?;
-        let deserialize = ir::arrow(params.iter().map(|&p| ir::param(p)).collect(), Body::Block(body));
+        let deserialize = function(&params, body);
 
         let mut fields = Vec::new();
         if let Some(h) = &header {
-            fields.push((Key::Str("version".into()), ir::num(f64::from(h.version))));
+            fields.push((luau::str("version"), num(f64::from(h.version))));
         }
-        fields.push((Key::Str("serialize".into()), serialize));
-        fields.push((Key::Str("deserialize".into()), deserialize));
-        Ok(ir::object(fields))
+        fields.push((luau::str("serialize"), serialize));
+        fields.push((luau::str("deserialize"), deserialize));
+        Ok(create::map(fields))
     }
 
     /// `buildDecoder(list)`: `None` when the list carries nothing.
-    pub(crate) fn build_decoder(&mut self, list: Shape) -> GResult<Option<E>> {
+    pub(crate) fn build_decoder(&mut self, list: Shape) -> GResult<Option<Expr>> {
         let kind = self.describe(&list)?;
         if self.carries_nothing(&kind)? {
             return Ok(None);
         }
         let layout = self.layout_of(&list)?;
         self.count_uses(&list)?;
-        let buf = self.uid("buf", Ty::Buffer);
-        let blobs = if layout.blobs { Some(self.uid("blobs", Ty::Blobs)) } else { None };
+        let buf = self.uid("buf");
+        let blobs = if layout.blobs { Some(self.uid("blobs")) } else { None };
         let params: Vec<Id> = std::iter::once(buf).chain(blobs).collect();
         let body = self.fitted(
             &mut |gn| {
                 let statements = out();
                 let result = gn.decode_body(&list, layout, buf, blobs, &statements, None)?;
-                push(&statements, S::Return(Some(result)));
+                push(&statements, create::return_stmt(result));
                 Ok(take(&statements))
             },
             &params,
@@ -329,7 +324,7 @@ impl Gen<'_, '_, '_> {
             None,
             0,
         )?;
-        Ok(Some(ir::paren(ir::arrow(params.iter().map(|&p| ir::param(p)).collect(), Body::Block(body)))))
+        Ok(Some(function(&params, body)))
     }
 
     /// `encodeElements(list, values, site)`.
@@ -366,8 +361,8 @@ impl Gen<'_, '_, '_> {
         };
 
         let after: Vec<Shape> = after.clone().unwrap_or_default();
-        let after_values: Vec<E> = if !after.is_empty() { values[values.len() - after.len()..].to_vec() } else { vec![] };
-        let rest_values: Vec<E> = if values.len() > elements.len() + after_values.len() {
+        let after_values: Vec<Expr> = if !after.is_empty() { values[values.len() - after.len()..].to_vec() } else { vec![] };
+        let rest_values: Vec<Expr> = if values.len() > elements.len() + after_values.len() {
             values[elements.len()..values.len() - after_values.len()].to_vec()
         } else {
             vec![]
@@ -381,18 +376,15 @@ impl Gen<'_, '_, '_> {
         let count_bytes = static_varint(rest_values.len() as u64);
         // A function's result is packed in a function of its own, whose one parameter is the value.
         let own: Vec<Id> = match (site.result, values.first()) {
-            (true, Some(E::Id(id))) => vec![*id],
+            (true, Some(first)) => crate::luau_names::placeholder_index(first).map(|i| Id(i as u32)).into_iter().collect(),
             _ => Vec::new(),
         };
         let chosen_in = chosen.clone();
         let tail_chosen = chosen.clone();
-        let mut tail = move |_gen: &mut Self| -> Vec<S> {
+        let mut tail = move |_gen: &mut Self| -> Vec<Stmt> {
             let (buf, blobs) = *tail_chosen.borrow().last().expect("the build ran");
-            let mut list = vec![ir::id(buf)];
-            if let Some(b) = blobs {
-                list.push(ir::id(b));
-            }
-            vec![S::Return(Some(ir::array(list)))]
+            let list = std::iter::once(buf).chain(blobs).map(Id::e).collect();
+            vec![create::return_stmt(create::array(list))]
         };
         let elements = elements.clone();
         let rest = rest.clone();
@@ -433,19 +425,19 @@ impl Gen<'_, '_, '_> {
         layout: Layout,
         site: &EncodingSite,
         statements: &Out,
-        values: &[E],
-        rest_values: &[E],
-        after_values: &[E],
+        values: &[Expr],
+        rest_values: &[Expr],
+        after_values: &[Expr],
         count_bytes: &[u64],
     ) -> GResult<(Id, Option<Id>)> {
-        let element_value = |i: usize| values.get(i).cloned().unwrap_or_else(ir::nil);
+        let element_value = |i: usize| values.get(i).cloned().unwrap_or_else(create::nil);
         let size_place = |i: usize| Place {
             path: Some(if site.result { "result".into() } else { format!("[{i}]") }),
             site: site.name.clone(),
             ..Place::default()
         };
         let mut total = Sum::default();
-        let parts: Vec<(Shape, E, Place)> =
+        let parts: Vec<(Shape, Expr, Place)> =
             elements.iter().enumerate().map(|(i, e)| (e.clone(), element_value(i), size_place(i))).collect();
         self.add_sizes(statements, &mut total, parts)?;
         if let Some(rest) = rest {
@@ -462,18 +454,18 @@ impl Gen<'_, '_, '_> {
         }
 
         let size = total.build();
-        let fixed = matches!(size, E::Num(_));
-        let buf = self.uid("buf", Ty::Buffer);
+        let fixed = luau::literal_number(&size).is_some();
+        let buf = self.uid("buf");
         let create = self.buffer_call("create", vec![size]);
-        push(statements, S::Const(Bind::One(buf), create));
-        let blobs = if layout.blobs { Some(self.uid("blobs", Ty::Blobs)) } else { None };
+        push(statements, luau::local(&buf.e(), Some(create)));
+        let blobs = if layout.blobs { Some(self.uid("blobs")) } else { None };
         if let Some(b) = blobs {
             let array = self.construct("Array", vec![]);
-            push(statements, S::Const(Bind::One(b), array));
+            push(statements, luau::local(&b.e(), Some(array)));
         }
-        let variable = if fixed { None } else { Some(self.uid("o", Ty::Number)) };
+        let variable = if fixed { None } else { Some(self.uid("o")) };
         if let Some(v) = variable {
-            push(statements, S::Let(v, Some(ir::num(0.0))));
+            push(statements, luau::local(&v.e(), Some(num(0.0))));
         }
         let ctx = Ctx::new(buf, blobs, variable, 0, statements.clone(), Place { site: site.name.clone(), ..Place::default() });
         let argument = |i: usize| ctx.within(&if site.result { "result".into() } else { format!("[{i}]") }, true);
@@ -485,8 +477,8 @@ impl Gen<'_, '_, '_> {
         if let Some(rest) = rest {
             for &byte in count_bytes {
                 let at = self.at(&ctx, 0);
-                let write = self.buffer_call("writeu8", vec![ir::id(buf), at, ir::num(byte as f64)]);
-                push(statements, ir::stmt(write));
+                let write = self.buffer_call("writeu8", vec![buf.e(), at, num(byte as f64)]);
+                push(statements, Stmt::Call(write));
                 ctx.cursor.borrow_mut().offset += 1;
             }
             let start = elements.len();
@@ -507,15 +499,15 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `encodeBody(shape, layout, value, path, header)`.
-    fn encode_body(&mut self, shape: &Shape, layout: Layout, value: Id, path: &str, header: Option<&Header>) -> GResult<Vec<S>> {
+    fn encode_body(&mut self, shape: &Shape, layout: Layout, value: Id, path: &str, header: Option<&Header>) -> GResult<Vec<Stmt>> {
         let body = out();
         let place = Place { path: Some(path.to_owned()), ..Place::default() };
-        let (buf, blobs) = self.encode_into(shape, layout, ir::id(value), &body, &place, header)?;
+        let (buf, blobs) = self.encode_into(shape, layout, value.e(), &body, &place, header)?;
         let result = match blobs {
-            Some(b) => self.tuple(vec![ir::id(buf), ir::id(b)]),
-            None => ir::id(buf),
+            Some(b) => self.tuple(vec![buf.e(), b.e()]),
+            None => create::return_stmt(buf.e()),
         };
-        push(&body, S::Return(Some(result)));
+        push(&body, result);
         Ok(take(&body))
     }
 
@@ -524,47 +516,47 @@ impl Gen<'_, '_, '_> {
         &mut self,
         shape: &Shape,
         layout: Layout,
-        value: E,
+        value: Expr,
         body: &Out,
         place: &Place,
         header: Option<&Header>,
     ) -> GResult<(Id, Option<Id>)> {
         let size = self.emit_size(shape, value.clone(), body, place)?;
-        let buf = self.uid("buf", Ty::Buffer);
-        let total = if header.is_some() { add(size, HEADER_SIZE as f64) } else { size };
+        let buf = self.uid("buf");
+        let total = if header.is_some() { luau::add(size, HEADER_SIZE as f64) } else { size };
         let create = self.buffer_call("create", vec![total]);
-        push(body, S::Const(Bind::One(buf), create));
+        push(body, luau::local(&buf.e(), Some(create)));
         if let Some(h) = header {
-            let a = self.buffer_call("writeu8", vec![ir::id(buf), ir::num(0.0), ir::num(f64::from(h.version))]);
-            push(body, ir::stmt(a));
-            let b = self.buffer_call("writeu32", vec![ir::id(buf), ir::num(1.0), ir::num(f64::from(h.hash))]);
-            push(body, ir::stmt(b));
+            let a = self.buffer_call("writeu8", vec![buf.e(), num(0.0), num(f64::from(h.version))]);
+            push(body, Stmt::Call(a));
+            let b = self.buffer_call("writeu32", vec![buf.e(), num(1.0), num(f64::from(h.hash))]);
+            push(body, Stmt::Call(b));
         }
         let start = if header.is_some() { HEADER_SIZE as i64 } else { 0 };
-        let blobs = if layout.blobs { Some(self.uid("blobs", Ty::Blobs)) } else { None };
+        let blobs = if layout.blobs { Some(self.uid("blobs")) } else { None };
         if let Some(b) = blobs {
             let array = self.construct("Array", vec![]);
-            push(body, S::Const(Bind::One(b), array));
+            push(body, luau::local(&b.e(), Some(array)));
         }
         let top = match shape {
             Shape::Type(t) => self.hoist(*t)?,
             Shape::Kind(_) => None,
         };
         if let Some(top) = top {
-            let mut args = vec![ir::id(buf), ir::num(start as f64), value];
+            let mut args = vec![buf.e(), num(start as f64), value];
             if let Some(b) = blobs {
-                args.push(ir::id(b));
+                args.push(b.e());
             }
             if top.checks {
                 let where_place = Place { path: place.path.clone(), site: place.site.clone(), ..Place::default() };
                 args.push(self.where_of(&where_place));
             }
             let call = self.call_hoisted(&top, Role::W, args);
-            push(body, ir::stmt(call));
+            push(body, Stmt::Call(call));
         } else {
-            let variable = if layout.size.is_none() { Some(self.uid("o", Ty::Number)) } else { None };
+            let variable = if layout.size.is_none() { Some(self.uid("o")) } else { None };
             if let Some(v) = variable {
-                push(body, S::Let(v, Some(ir::num(start as f64))));
+                push(body, luau::local(&v.e(), Some(num(start as f64))));
             }
             let ctx = Ctx::new(buf, blobs, variable, if variable.is_some() { 0 } else { start }, body.clone(), Place {
                 path: place.path.clone(),
@@ -586,50 +578,50 @@ impl Gen<'_, '_, '_> {
         blobs: Option<Id>,
         body: &Out,
         header: Option<&Header>,
-    ) -> GResult<E> {
+    ) -> GResult<Expr> {
         if let Some(h) = header {
             self.check_header(buf, h, body);
         }
         let start = if header.is_some() { HEADER_SIZE as i64 } else { 0 };
-        let length = self.buffer_call("len", vec![ir::id(buf)]);
+        let length = self.buffer_call("len", vec![buf.e()]);
         if layout.zeros {
             let zeros = self.zero_tally();
-            push(body, ir::assign(ir::id(zeros), ir::num(0.0)));
+            push(body, luau::assign(zeros.e(), num(0.0)));
         }
         let top = match shape {
             Shape::Type(t) => self.hoist(*t)?,
             Shape::Kind(_) => None,
         };
         if let Some(top) = top {
-            let value = self.uid("value", Ty::Unknown);
-            let end = self.uid("o", Ty::Number);
-            let mut args = vec![ir::id(buf), ir::num(start as f64)];
+            let value = self.uid("value");
+            let end = self.uid("o");
+            let mut args = vec![buf.e(), num(start as f64)];
             if let Some(b) = blobs {
-                args.push(ir::id(b));
+                args.push(b.e());
             }
             let call = self.call_hoisted(&top, Role::R, args);
-            push(body, S::Const(Bind::Tuple(vec![value, end]), call));
+            push(body, luau::locals(&[value.e(), end.e()], vec![call]));
             let raise = self.raise(MALFORMED);
-            push(body, ir::if_stmt(ir::binary(ir::id(end), Op::Ne, length), vec![raise], None));
-            return Ok(ir::id(value));
+            push(body, if_then(luau::bin(end.e(), B::Ne, length), vec![raise]));
+            return Ok(value.e());
         }
-        let variable = if layout.size.is_none() { Some(self.uid("o", Ty::Number)) } else { None };
+        let variable = if layout.size.is_none() { Some(self.uid("o")) } else { None };
         if let Some(v) = variable {
-            push(body, S::Let(v, Some(ir::num(start as f64))));
+            push(body, luau::local(&v.e(), Some(num(start as f64))));
         }
         let ctx = Ctx::new(buf, blobs, variable, if variable.is_some() { 0 } else { start }, body.clone(), Place::default());
         let mut result = self.emit_read(shape, &ctx)?;
-        if !result.is_identifier() && !result.is_literal() {
-            result = self.bind(body, result, "value", None);
+        if !is_name(&result) && !is_literal(&result) {
+            result = self.bind(body, result, "value");
         }
         if let Some(v) = variable {
             self.sync(&ctx);
             let raise = self.raise(MALFORMED);
-            push(body, ir::if_stmt(ir::binary(ir::id(v), Op::Ne, length), vec![raise], None));
+            push(body, if_then(luau::bin(v.e(), B::Ne, length), vec![raise]));
         } else {
             let raise = self.raise(MALFORMED);
-            let expected = ir::num((layout.size.unwrap() as i64 + start) as f64);
-            push(body, ir::if_stmt(ir::binary(length, Op::Ne, expected), vec![raise], None));
+            let expected = num((layout.size.unwrap() as i64 + start) as f64);
+            push(body, if_then(luau::bin(length, B::Ne, expected), vec![raise]));
         }
         Ok(result)
     }
@@ -637,15 +629,15 @@ impl Gen<'_, '_, '_> {
     /// `checkHeader(buf, header, body)`.
     fn check_header(&mut self, buf: Id, header: &Header, body: &Out) {
         let Header { version, hash, name } = header;
-        let len = self.buffer_call("len", vec![ir::id(buf)]);
+        let len = self.buffer_call("len", vec![buf.e()]);
         let raise = self.raise(&format!(
             "[Flamework] this buffer is too short for the header of {name}, version {version}: no versioned serializer wrote it"
         ));
-        push(body, ir::if_stmt(ir::binary(len, Op::Lt, ir::num(HEADER_SIZE as f64)), vec![raise], None));
+        push(body, if_then(luau::bin(len, B::Lt, num(HEADER_SIZE as f64)), vec![raise]));
 
-        let written = |gn: &mut Self| gn.buffer_call("readu8", vec![ir::id(buf), ir::num(0.0)]);
-        let condition = ir::binary(written(self), Op::Ne, ir::num(f64::from(*version)));
-        let message = interpolate(vec![
+        let written = |gn: &mut Self| gn.buffer_call("readu8", vec![buf.e(), num(0.0)]);
+        let condition = luau::bin(written(self), B::Ne, num(f64::from(*version)));
+        let message = luau::interp(vec![
             Part::Text("[Flamework] this buffer is version ".into()),
             Part::Expr(written(self)),
             Part::Text(format!(
@@ -653,24 +645,24 @@ impl Gen<'_, '_, '_> {
             )),
         ]);
         let raise = self.raise_with(message);
-        push(body, ir::if_stmt(condition, vec![raise], None));
+        push(body, if_then(condition, vec![raise]));
 
-        let read = self.buffer_call("readu32", vec![ir::id(buf), ir::num(1.0)]);
+        let read = self.buffer_call("readu32", vec![buf.e(), num(1.0)]);
         let raise = self.raise(&format!(
             "[Flamework] {name}'s layout changed since this buffer was written as version {version}; bump the version and keep a reader for the old one"
         ));
-        push(body, ir::if_stmt(ir::binary(read, Op::Ne, ir::num(f64::from(*hash))), vec![raise], None));
+        push(body, if_then(luau::bin(read, B::Ne, num(f64::from(*hash))), vec![raise]));
     }
 
     // --- cursor ----------------------------------------------------------------------------------------------
 
     /// `at(ctx, extra)`.
-    pub(crate) fn at(&self, ctx: &Ctx, extra: i64) -> E {
+    pub(crate) fn at(&self, ctx: &Ctx, extra: i64) -> Expr {
         let cursor = ctx.cursor.borrow();
         let offset = cursor.offset + extra;
         match cursor.base {
-            Some(base) => add(ir::id(base), offset as f64),
-            None => ir::num(offset as f64),
+            Some(base) => luau::add(base.e(), offset as f64),
+            None => num(offset as f64),
         }
     }
 
@@ -685,9 +677,9 @@ impl Gen<'_, '_, '_> {
         }
         let variable = variable.expect("Flamework: a variable-size write inside a fixed layout");
         if base == Some(variable) {
-            push(&ctx.out, ir::add_assign(ir::id(variable), ir::num(offset as f64)));
+            push(&ctx.out, add_assign(variable.e(), num(offset as f64)));
         } else {
-            push(&ctx.out, ir::assign(ir::id(variable), self.at(ctx, 0)));
+            push(&ctx.out, luau::assign(variable.e(), self.at(ctx, 0)));
         }
         let mut c = ctx.cursor.borrow_mut();
         c.base = Some(variable);
@@ -695,16 +687,16 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `advanceBy(ctx, amount)`.
-    fn advance_by(&self, ctx: &Ctx, amount: E) {
+    fn advance_by(&self, ctx: &Ctx, amount: Expr) {
         let (base, variable, offset) = {
             let c = ctx.cursor.borrow();
             (c.base, c.variable, c.offset)
         };
         let variable = variable.expect("Flamework: a variable-size write inside a fixed layout");
         if base == Some(variable) {
-            push(&ctx.out, ir::add_assign(ir::id(variable), add_expr_offset(amount, offset)));
+            push(&ctx.out, add_assign(variable.e(), luau::add(amount, offset as f64)));
         } else {
-            push(&ctx.out, ir::assign(ir::id(variable), add_expr(self.at(ctx, 0), amount)));
+            push(&ctx.out, luau::assign(variable.e(), luau::plus(self.at(ctx, 0), amount)));
         }
         let mut c = ctx.cursor.borrow_mut();
         c.base = Some(variable);
@@ -712,7 +704,7 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `branch(ctx, build)`.
-    fn branch(&mut self, ctx: &Ctx, build: &mut dyn FnMut(&mut Self, &Ctx) -> GResult<()>) -> GResult<Vec<S>> {
+    fn branch(&mut self, ctx: &Ctx, build: &mut dyn FnMut(&mut Self, &Ctx) -> GResult<()>) -> GResult<Vec<Stmt>> {
         if let Some(variable) = ctx.variable() {
             self.sync(ctx);
             let child = Ctx {
@@ -730,22 +722,14 @@ impl Gen<'_, '_, '_> {
         Ok(take(&child.out))
     }
 
-    /// `bind(out, value, hint, type)`.
-    pub(crate) fn bind(&mut self, out_list: &Out, value: E, hint: &str, ty: Option<Ty>) -> E {
-        if ty.is_none() {
-            if value.is_identifier() && !self.is_parameter_reference(&value) {
-                return value;
-            }
-            if let E::As(inner, _) = &value
-                && inner.skip_casts().is_identifier()
-            {
-                return value;
-            }
+    /// `bind(out, value, hint)`: the value read once into a new local, or the name itself.
+    pub(crate) fn bind(&mut self, out_list: &Out, value: Expr, hint: &str) -> Expr {
+        if self.is_name(&value) {
+            return value;
         }
-        let declared = ty.unwrap_or_else(|| self.type_of_value(&value));
-        let id = self.uid(hint, declared);
-        push(out_list, S::Const(Bind::One(id), value));
-        ir::id(id)
+        let id = self.uid(hint);
+        push(out_list, luau::local(&id.e(), Some(value)));
+        id.e()
     }
 
     // --- compact functions -----------------------------------------------------------------------------------
@@ -755,12 +739,12 @@ impl Gen<'_, '_, '_> {
     #[allow(clippy::type_complexity)]
     pub(crate) fn fitted(
         &mut self,
-        build: &mut dyn FnMut(&mut Self) -> GResult<Vec<S>>,
+        build: &mut dyn FnMut(&mut Self) -> GResult<Vec<Stmt>>,
         parameters: &[Id],
         what: Option<&str>,
-        tail: Option<&mut dyn FnMut(&mut Self) -> Vec<S>>,
+        tail: Option<&mut dyn FnMut(&mut Self) -> Vec<Stmt>>,
         outer: u32,
-    ) -> GResult<Vec<S>> {
+    ) -> GResult<Vec<Stmt>> {
         self.fitted_choice(build, parameters, what, tail, outer).map(|(body, _)| body)
     }
 
@@ -770,37 +754,33 @@ impl Gen<'_, '_, '_> {
     #[allow(clippy::type_complexity)]
     pub(crate) fn fitted_choice(
         &mut self,
-        build: &mut dyn FnMut(&mut Self) -> GResult<Vec<S>>,
+        build: &mut dyn FnMut(&mut Self) -> GResult<Vec<Stmt>>,
         parameters: &[Id],
         what: Option<&str>,
-        mut tail: Option<&mut dyn FnMut(&mut Self) -> Vec<S>>,
+        mut tail: Option<&mut dyn FnMut(&mut Self) -> Vec<Stmt>>,
         outer: u32,
-    ) -> GResult<(Vec<S>, bool)> {
+    ) -> GResult<(Vec<Stmt>, bool)> {
         let previous = self.g.compact;
         self.g.compact = false;
         let result = (|| {
-            let mut measuring = Measuring::default();
-            let mut measure = |gn: &mut Self, measuring: &mut Measuring, body: &[S]| {
+            let mut measure = |gn: &mut Self, body: &[Stmt]| {
                 let mut all = body.to_vec();
                 if let Some(tail) = tail.as_mut() {
                     all.extend(tail(gn));
                 }
-                measuring.function(&gn.g.ids, parameters, &all)
+                limits::Function::new(parameters, all)
             };
             let body = build(self)?;
             let recording = limits::record::on();
-            let mut plain = measure(self, &mut measuring, &body);
+            let mut plain = measure(self, &body);
             if !recording && plain.surely_fits(limits::MARGIN + outer) {
                 return Ok((body, false));
             }
             // what the file hoisted so far ahead of its functions, in `take_hoisted`'s order
             let hoisted = |gn: &Self| [gn.g.declarations.len(), gn.g.tables.len()];
-            let prelude = |gn: &Self, measuring: &mut Measuring| {
-                let statements = [gn.g.declarations.as_slice(), gn.g.tables.as_slice()].concat();
-                Rc::new(measuring.lower(&gn.g.ids, &statements))
-            };
+            let prelude = |gn: &Self| Rc::new([gn.g.declarations.as_slice(), gn.g.tables.as_slice()].concat());
             let before = hoisted(self);
-            plain.prelude = prelude(self, &mut measuring);
+            plain.prelude = prelude(self);
             let keep = limits::keeps_plain(&plain, outer).map_err(|error| self.does_not_compile(what, error))?;
             if keep {
                 record(what, outer, &plain, None, false);
@@ -808,10 +788,10 @@ impl Gen<'_, '_, '_> {
             }
             self.g.compact = true;
             let rebuilt = build(self)?;
-            let mut compact = measure(self, &mut measuring, &rebuilt);
+            let mut compact = measure(self, &rebuilt);
             if hoisted(self) != before {
                 // what the rebuild hoisted
-                plain.prelude = prelude(self, &mut measuring);
+                plain.prelude = prelude(self);
             }
             compact.prelude = plain.prelude.clone();
             let choice = limits::choose(&plain, &compact, outer).map_err(|error| self.does_not_compile(what, error))?;
@@ -843,7 +823,7 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `addSizes(out, total, parts)`.
-    fn add_sizes(&mut self, out_list: &Out, total: &mut Sum, parts: Vec<(Shape, E, Place)>) -> GResult<()> {
+    fn add_sizes(&mut self, out_list: &Out, total: &mut Sum, parts: Vec<(Shape, Expr, Place)>) -> GResult<()> {
         if !self.g.compact {
             for (shape, value, place) in parts {
                 let size = self.emit_size(&shape, value, out_list, &place)?;
@@ -855,32 +835,32 @@ impl Gen<'_, '_, '_> {
         for (shape, value, place) in parts {
             let body = out();
             let size = self.emit_size(&shape, value, &body, &place)?;
-            if matches!(size, E::Num(_)) && body.borrow().is_empty() {
+            if luau::literal_number(&size).is_some() && body.borrow().is_empty() {
                 total.add(size);
                 continue;
             }
             let r = match running {
                 Some(r) => r,
                 None => {
-                    let r = self.uid("size", Ty::Number);
-                    push(out_list, S::Let(r, Some(ir::num(0.0))));
+                    let r = self.uid("size");
+                    push(out_list, luau::local(&r.e(), Some(num(0.0))));
                     running = Some(r);
                     r
                 }
             };
-            push(&body, ir::add_assign(ir::id(r), size));
+            push(&body, add_assign(r.e(), size));
             self.push_scoped(out_list, take(&body));
         }
         if let Some(r) = running {
-            total.add(ir::id(r));
+            total.add(r.e());
         }
         Ok(())
     }
 
     /// `pushScoped(out, body)`.
-    fn push_scoped(&self, out_list: &Out, body: Vec<S>) {
-        if holds_locals(&self.g.ids, &body) {
-            push(out_list, S::Block(body));
+    fn push_scoped(&self, out_list: &Out, body: Vec<Stmt>) {
+        if holds_locals(&body) {
+            push(out_list, luau::do_(body));
         } else {
             out_list.borrow_mut().extend(body);
         }
@@ -889,10 +869,10 @@ impl Gen<'_, '_, '_> {
     // --- size ------------------------------------------------------------------------------------------------
 
     /// `emitSize(shape, value, out, place)`.
-    pub(crate) fn emit_size(&mut self, shape: &Shape, value: E, out_list: &Out, place: &Place) -> GResult<E> {
+    pub(crate) fn emit_size(&mut self, shape: &Shape, value: Expr, out_list: &Out, place: &Place) -> GResult<Expr> {
         let layout = self.layout_of(shape)?;
         if let Some(size) = layout.size {
-            return Ok(ir::num(size as f64));
+            return Ok(num(size as f64));
         }
         if let Shape::Type(t) = shape
             && let Some(info) = self.hoist(*t)?
@@ -906,84 +886,81 @@ impl Gen<'_, '_, '_> {
             self.emit_type_check(&kind, value.clone(), out_list, place)?;
         }
         match &*kind {
-            Kind::String { length, .. } => {
-                let size = ir::macro_call(ir::cast(value, Ty::String), "size", vec![]);
-                Ok(self.size_with_length(out_list, *length, size))
-            }
+            Kind::String { length, .. } => Ok(self.size_with_length(out_list, *length, luau::len(value))),
             Kind::Buffer { length, .. } => {
-                let len = self.buffer_call("len", vec![ir::cast(value, Ty::Buffer)]);
+                let len = self.buffer_call("len", vec![value]);
                 Ok(self.size_with_length(out_list, *length, len))
             }
             Kind::Varint { .. } => {
                 let v = self.varint_helpers();
-                Ok(ir::call(ir::id(v.size), vec![ir::cast(value, Ty::Number)]))
+                Ok(luau::call(v.size.e(), vec![value]))
             }
             Kind::Optional(inner) => {
-                if value.is_nil_literal() {
-                    return Ok(ir::num(1.0));
+                if matches!(value, Expr::Nil) {
+                    return Ok(num(1.0));
                 }
                 let inner_layout = self.layout_of(inner)?;
-                let v = self.bind(out_list, value, "v", None);
+                let v = self.bind(out_list, value, "v");
                 if let Some(size) = inner_layout.size {
-                    return Ok(ir::cond(ir::binary(v, Op::Ne, ir::nil()), ir::num(1.0 + size as f64), ir::num(1.0)));
+                    return Ok(luau::if_expr(luau::bin(v, B::Ne, create::nil()), num(1.0 + size as f64), num(1.0)));
                 }
-                let total = self.uid("size", Ty::Number);
-                push(out_list, S::Let(total, Some(ir::num(1.0))));
+                let total = self.uid("size");
+                push(out_list, luau::local(&total.e(), Some(num(1.0))));
                 let body = out();
                 let size = self.emit_size(inner, v.clone(), &body, place)?;
-                push(&body, ir::add_assign(ir::id(total), size));
-                push(out_list, ir::if_stmt(ir::binary(v, Op::Ne, ir::nil()), take(&body), None));
-                Ok(ir::id(total))
+                push(&body, add_assign(total.e(), size));
+                push(out_list, if_then(luau::bin(v, B::Ne, create::nil()), take(&body)));
+                Ok(total.e())
             }
             Kind::Array(element) => {
-                let array = self.bind(out_list, ir::cast(value, Ty::Array), "array", None);
-                let count = self.bind(out_list, ir::macro_call(array.clone(), "size", vec![]), "n", None);
+                let array = self.bind(out_list, value, "array");
+                let count = self.bind(out_list, luau::len(array.clone()), "n");
                 let vsize = self.varint_helpers().size;
-                let prefix = ir::call(ir::id(vsize), vec![count.clone()]);
+                let prefix = luau::call(vsize.e(), vec![count.clone()]);
                 let element_layout = self.layout_of(element)?;
                 if let Some(size) = element_layout.size {
                     return Ok(counted_size(prefix, count, size));
                 }
-                let total = self.uid("size", Ty::Number);
-                let index = self.uid("i", Ty::Number);
-                push(out_list, S::Let(total, Some(prefix)));
+                let total = self.uid("size");
+                let index = self.uid("i");
+                push(out_list, luau::local(&total.e(), Some(prefix)));
                 let body = out();
                 let hole = if self.allows_nil(element)? { None } else { Some((place.clone(), "the array".to_owned())) };
                 let item = self.element_at(array, index, &body, hole);
                 let size = self.emit_size(element, item, &body, &place.within("[]", false))?;
-                push(&body, ir::add_assign(ir::id(total), size));
-                let range = self.range(ir::num(1.0), count);
-                push(out_list, S::ForOf(Bind::One(index), range, take(&body)));
-                Ok(ir::id(total))
+                push(&body, add_assign(total.e(), size));
+                let range = self.for_range(index, num(1.0), count, take(&body));
+                push(out_list, range);
+                Ok(total.e())
             }
             Kind::Set(element) => {
-                let set = self.bind(out_list, ir::cast(value, Ty::Set), "set", None);
+                let set = self.bind(out_list, value, "set");
                 let element_layout = self.layout_of(element)?;
-                let item = self.uid("item", Ty::Defined);
+                let item = self.uid("item");
                 let element = element.clone();
-                self.counted_in_pass(out_list, set, Bind::One(item), &mut |gn, body| match element_layout.size {
-                    Some(size) => Ok(ir::num(size as f64)),
-                    None => gn.emit_size(&element, ir::id(item), body, &place.within("[]", false)),
+                self.counted_in_pass(out_list, set, &[item], &mut |gn, body| match element_layout.size {
+                    Some(size) => Ok(num(size as f64)),
+                    None => gn.emit_size(&element, item.e(), body, &place.within("[]", false)),
                 })
             }
             Kind::Map(key_shape, value_shape) => {
-                let map = self.bind(out_list, ir::cast(value, Ty::Map), "map", None);
-                let key = self.uid("key", Ty::Unknown);
-                let entry = self.uid("entry", Ty::Unknown);
+                let map = self.bind(out_list, value, "map");
+                let key = self.uid("key");
+                let entry = self.uid("entry");
                 let (key_shape, value_shape) = (key_shape.clone(), value_shape.clone());
-                self.counted_in_pass(out_list, map, Bind::Tuple(vec![key, entry]), &mut |gn, body| {
-                    let k = gn.emit_size(&key_shape, ir::id(key), body, &place.within("<key>", false))?;
-                    let v = gn.emit_size(&value_shape, ir::id(entry), body, &place.within("<value>", false))?;
-                    Ok(add_expr(k, v))
+                self.counted_in_pass(out_list, map, &[key, entry], &mut |gn, body| {
+                    let k = gn.emit_size(&key_shape, key.e(), body, &place.within("<key>", false))?;
+                    let v = gn.emit_size(&value_shape, entry.e(), body, &place.within("<value>", false))?;
+                    Ok(luau::plus(k, v))
                 })
             }
             Kind::List { elements, rest, after } => {
-                let list = self.bind(out_list, ir::cast(value, Ty::Array), "list", None);
+                let list = self.bind(out_list, value, "list");
                 let mut total = Sum::default();
                 let parts = elements
                     .iter()
                     .enumerate()
-                    .map(|(i, e)| (e.clone(), ir::elem(list.clone(), ir::num(i as f64)), place.within(&format!("[{i}]"), false)))
+                    .map(|(i, e)| (e.clone(), luau::index(list.clone(), num((i + 1) as f64)), place.within(&format!("[{i}]"), false)))
                     .collect();
                 self.add_sizes(out_list, &mut total, parts)?;
                 let Some(rest) = rest else { return Ok(total.build()) };
@@ -994,36 +971,41 @@ impl Gen<'_, '_, '_> {
                     .iter()
                     .enumerate()
                     .map(|(i, e)| {
-                        let at = add(ir::id(count), (elements.len() + i) as f64);
-                        (e.clone(), ir::elem(list.clone(), at), place.within("[]", false))
+                        let at = luau::add(count.e(), (elements.len() + i + 1) as f64);
+                        (e.clone(), luau::index(list.clone(), at), place.within("[]", false))
                     })
                     .collect();
                 self.add_sizes(out_list, &mut total, parts)?;
                 let vsize = self.varint_helpers().size;
-                let prefix = ir::call(ir::id(vsize), vec![ir::id(count)]);
+                let prefix = luau::call(vsize.e(), vec![count.e()]);
                 if let Some(size) = rest_layout.size {
-                    total.add(counted_size(prefix, ir::id(count), size));
+                    total.add(counted_size(prefix, count.e(), size));
                     return Ok(total.build());
                 }
-                let sum = self.uid("size", Ty::Number);
-                let index = self.uid("i", Ty::Number);
+                let sum = self.uid("size");
+                let index = self.uid("i");
                 total.add(prefix);
-                push(out_list, S::Let(sum, Some(total.build())));
+                push(out_list, luau::local(&sum.e(), Some(total.build())));
                 let body = out();
                 let element = if self.allows_nil(rest)? {
-                    ir::elem(list.clone(), ir::binary(ir::id(index), Op::Sub, ir::num(1.0)))
+                    luau::index(list.clone(), index.e())
                 } else {
                     let container = tuple_name(place);
                     self.element_at(list.clone(), index, &body, Some((place.clone(), container)))
                 };
                 let size = self.emit_size(rest, element, &body, &place.within("[]", false))?;
-                push(&body, ir::add_assign(ir::id(sum), size));
-                let range = self.range(ir::num((elements.len() + 1) as f64), add(ir::id(count), elements.len() as f64));
-                push(out_list, S::ForOf(Bind::One(index), range, take(&body)));
-                Ok(ir::id(sum))
+                push(&body, add_assign(sum.e(), size));
+                let range = self.for_range(
+                    index,
+                    num((elements.len() + 1) as f64),
+                    luau::add(count.e(), elements.len() as f64),
+                    take(&body),
+                );
+                push(out_list, range);
+                Ok(sum.e())
             }
             Kind::Object { fields } => {
-                let object = self.bind(out_list, ir::cast(value, Ty::Record), "object", None);
+                let object = self.bind(out_list, value, "object");
                 let mut total = Sum::default();
                 let parts = fields
                     .iter()
@@ -1033,15 +1015,15 @@ impl Gen<'_, '_, '_> {
                 Ok(total.build())
             }
             Kind::Union { alternatives, whole, .. } => {
-                let v = self.bind(out_list, value, "v", None);
-                let total = self.uid("size", Ty::Number);
-                push(out_list, S::Let(total, Some(ir::num(1.0))));
+                let v = self.bind(out_list, value, "v");
+                let total = self.uid("size");
+                push(out_list, luau::local(&total.e(), Some(num(1.0))));
                 if typed {
                     self.table_precheck(&kind, v.clone(), out_list, place)?;
                 }
-                let mut chain: Option<S> = if typed {
+                let mut chain: Option<Stmt> = if typed {
                     let call = self.call_type_check(&kind, v.clone(), place)?;
-                    Some(S::Block(vec![ir::stmt(call)]))
+                    Some(luau::do_(vec![Stmt::Call(call)]))
                 } else {
                     None
                 };
@@ -1051,12 +1033,12 @@ impl Gen<'_, '_, '_> {
                     let member_size = self.layout_of(&shape)?.size;
                     let body = out();
                     let size = match member_size {
-                        Some(s) => ir::num(s as f64),
+                        Some(s) => num(s as f64),
                         None => self.emit_size(&shape, v.clone(), &body, &member)?,
                     };
-                    push(&body, ir::add_assign(ir::id(total), size));
+                    push(&body, add_assign(total.e(), size));
                     let test = self.type_of_is(v.clone(), "number");
-                    chain = Some(ir::if_stmt(test, take(&body), chain.map(else_of)));
+                    chain = Some(if_chain_on(test, take(&body), chain));
                 }
                 let order = self.evaluation(&kind)?.order.clone();
                 for &i in order.iter().rev() {
@@ -1064,27 +1046,26 @@ impl Gen<'_, '_, '_> {
                     let layout = self.layout_of(&alternative.shape)?;
                     let body = out();
                     let size = if *whole == Some(i) {
-                        let n = ir::cast(v.clone(), Ty::Number);
                         let vsize = self.varint_helpers().size;
-                        ir::cond(Self::is_whole(n.clone()), ir::call(ir::id(vsize), vec![n]), ir::num(8.0))
+                        luau::if_expr(Self::is_whole(v.clone()), luau::call(vsize.e(), vec![v.clone()]), num(8.0))
                     } else if let Some(s) = layout.size {
-                        ir::num(s as f64)
+                        num(s as f64)
                     } else {
                         self.emit_size(&alternative.shape, v.clone(), &body, &member)?
                     };
-                    if !size.is_zero() {
-                        push(&body, ir::add_assign(ir::id(total), size));
+                    if luau::literal_number(&size) != Some(0.0) {
+                        push(&body, add_assign(total.e(), size));
                     }
                     if body.borrow().is_empty() && chain.is_none() {
                         continue;
                     }
                     let test = self.discriminate(&kind, i, v.clone())?;
-                    chain = Some(ir::if_stmt(test, take(&body), chain.map(else_of)));
+                    chain = Some(if_chain_on(test, take(&body), chain));
                 }
                 if let Some(c) = chain {
                     push(out_list, c);
                 }
-                Ok(ir::id(total))
+                Ok(total.e())
             }
             other => panic!("Flamework: '{}' has a fixed size", other.name()),
         }
@@ -1111,29 +1092,29 @@ impl Gen<'_, '_, '_> {
         Ok(false)
     }
 
-    /// `elementAt(list, index, out, hole)`.
-    fn element_at(&mut self, list: E, index: Id, out_list: &Out, hole: Option<(Place, String)>) -> E {
-        let item = self.uid("item", Ty::Unknown);
-        push(out_list, S::Const(Bind::One(item), ir::elem(list, ir::binary(ir::id(index), Op::Sub, ir::num(1.0)))));
+    /// `elementAt(list, index, out, hole)`: `local item = list[index]`, refused when nil with `hole`.
+    fn element_at(&mut self, list: Expr, index: Id, out_list: &Out, hole: Option<(Place, String)>) -> Expr {
+        let item = self.uid("item");
+        push(out_list, luau::local(&item.e(), Some(luau::index(list, index.e()))));
         if let Some((place, container)) = hole {
             let mut parts = vec![Part::Text(format!("[Flamework] {container} has no value at "))];
             parts.extend(self.hole_where(&place));
             parts.push(Part::Text("[".into()));
-            parts.push(Part::Expr(ir::binary(ir::id(index), Op::Sub, ir::num(1.0))));
+            parts.push(Part::Expr(luau::bin(index.e(), B::Sub, num(1.0))));
             parts.push(Part::Text("]".into()));
-            let message = interpolate(parts);
+            let message = luau::interp(parts);
             let raise = self.raise_with(message);
-            push(out_list, ir::if_stmt(ir::binary(ir::id(item), Op::Eq, ir::nil()), vec![raise], None));
+            push(out_list, if_then(luau::bin(item.e(), B::Eq, create::nil()), vec![raise]));
         }
-        ir::id(item)
+        item.e()
     }
 
     /// `holeWhere(place)`.
     fn hole_where(&self, place: &Place) -> Vec<Part> {
         if let Some(w) = place.where_ {
             return match &place.path {
-                Some(p) if !p.is_empty() => vec![Part::Expr(ir::id(w)), Part::Text(p.clone())],
-                _ => vec![Part::Expr(ir::id(w))],
+                Some(p) if !p.is_empty() => vec![Part::Expr(w.e()), Part::Text(p.clone())],
+                _ => vec![Part::Expr(w.e())],
             };
         }
         if let Some(owner) = &place.owner {
@@ -1145,29 +1126,29 @@ impl Gen<'_, '_, '_> {
                 None => String::new(),
             })];
         }
-        match self.where_of(place) {
-            E::Str(s) => vec![Part::Text(s)],
-            other => vec![Part::Expr(other)],
+        match self.where_text(place) {
+            Ok(text) => vec![Part::Text(text)],
+            Err(e) => vec![Part::Expr(e)],
         }
     }
 
     // --- write -----------------------------------------------------------------------------------------------
 
     /// `emitWrite(shape, value, ctx)`.
-    pub(crate) fn emit_write(&mut self, shape: &Shape, value: E, ctx: &Ctx) -> GResult<()> {
+    pub(crate) fn emit_write(&mut self, shape: &Shape, value: Expr, ctx: &Ctx) -> GResult<()> {
         if let Shape::Type(t) = shape
             && let Some(info) = self.hoist(*t)?
         {
-            let mut args = vec![ir::id(ctx.buf), self.at(ctx, 0), value];
+            let mut args = vec![ctx.buf.e(), self.at(ctx, 0), value];
             if info.layout.blobs {
-                args.push(ir::id(ctx.blobs.unwrap()));
+                args.push(ctx.blobs.unwrap().e());
             }
             if info.checks {
                 args.push(self.passed_where(&ctx.place));
             }
             let call = self.call_hoisted(&info, Role::W, args);
             let variable = ctx.variable().unwrap();
-            push(&ctx.out, ir::assign(ir::id(variable), call));
+            push(&ctx.out, luau::assign(variable.e(), call));
             let mut c = ctx.cursor.borrow_mut();
             c.base = Some(variable);
             c.offset = 0;
@@ -1187,24 +1168,22 @@ impl Gen<'_, '_, '_> {
                         return;
                     }
                     let at = gn.at(target, 0);
-                    let write = gn.buffer_call(&format!("write{}", width.name()), vec![ir::id(target.buf), at, ir::cast(n, Ty::Number)]);
-                    push(&target.out, ir::stmt(write));
+                    let write = gn.buffer_call(&format!("write{}", width.name()), vec![target.buf.e(), at, n]);
+                    push(&target.out, Stmt::Call(write));
                     target.cursor.borrow_mut().offset += i64::from(width.size());
                 })
             }
-            Kind::Varint { .. } => {
-                self.write_number(&kind, value, ctx, &mut |gn, n, target| gn.write_varint(target, ir::cast(n, Ty::Number)))
-            }
+            Kind::Varint { .. } => self.write_number(&kind, value, ctx, &mut |gn, n, target| gn.write_varint(target, n)),
             Kind::Boolean => {
-                let mut write = |gn: &mut Self, b: E, target: &Ctx| {
+                let mut write = |gn: &mut Self, b: Expr, target: &Ctx| {
                     let at = gn.at(target, 0);
-                    let flag = ir::cond(ir::cast(b, Ty::Boolean), ir::num(1.0), ir::num(0.0));
-                    let call = gn.buffer_call("writeu8", vec![ir::id(target.buf), at, flag]);
-                    push(&target.out, ir::stmt(call));
+                    let flag = luau::if_expr(b, num(1.0), num(0.0));
+                    let call = gn.buffer_call("writeu8", vec![target.buf.e(), at, flag]);
+                    push(&target.out, Stmt::Call(call));
                     target.cursor.borrow_mut().offset += 1;
                 };
                 if typed {
-                    if literal_type(&value).is_none() {
+                    if self.literal(&value).and_then(|l| l.type_name()).is_none() {
                         return self.write_typed(&kind, value, ctx, &mut write);
                     }
                     self.emit_type_check(&kind, value.clone(), &ctx.out, &ctx.place)?;
@@ -1213,176 +1192,180 @@ impl Gen<'_, '_, '_> {
                 Ok(())
             }
             Kind::String { length: width, .. } => {
-                let text = self.bind(&ctx.out, ir::cast(value, Ty::String), "text", None);
-                let length = self.bind(&ctx.out, ir::macro_call(text.clone(), "size", vec![]), "length", None);
+                let text = self.bind(&ctx.out, value, "text");
+                let length = self.bind(&ctx.out, luau::len(text.clone()), "length");
                 let checked = self.checked_width(&kind, ctx.unchecked);
                 self.write_length(ctx, *width, length.clone(), "string", checked.as_deref());
                 let at = self.at(ctx, 0);
-                let write = self.buffer_call("writestring", vec![ir::id(ctx.buf), at, text]);
-                push(&ctx.out, ir::stmt(write));
+                let write = self.buffer_call("writestring", vec![ctx.buf.e(), at, text]);
+                push(&ctx.out, Stmt::Call(write));
                 self.advance_by(ctx, length);
                 Ok(())
             }
             Kind::Buffer { length: width, .. } => {
-                let bytes = self.bind(&ctx.out, ir::cast(value, Ty::Buffer), "bytes", None);
+                let bytes = self.bind(&ctx.out, value, "bytes");
                 let len = self.buffer_call("len", vec![bytes.clone()]);
-                let length = self.bind(&ctx.out, len, "length", None);
+                let length = self.bind(&ctx.out, len, "length");
                 let checked = self.checked_width(&kind, ctx.unchecked);
                 self.write_length(ctx, *width, length.clone(), "buffer", checked.as_deref());
                 let at = self.at(ctx, 0);
-                let copy = self.buffer_call("copy", vec![ir::id(ctx.buf), at, bytes]);
-                push(&ctx.out, ir::stmt(copy));
+                let copy = self.buffer_call("copy", vec![ctx.buf.e(), at, bytes]);
+                push(&ctx.out, Stmt::Call(copy));
                 self.advance_by(ctx, length);
                 Ok(())
             }
             Kind::Constant(_) | Kind::Nothing => Ok(()),
             Kind::Literals(values) => {
                 let (_, index) = self.literal_tables_for(&kind);
-                let v = self.bind(&ctx.out, value, "v", None);
-                let get = ir::macro_call(index, "get", vec![ir::cast(v.clone(), Ty::Defined)]);
-                let slot = self.bind(&ctx.out, get, "index", Some(Ty::Number));
+                let v = self.bind(&ctx.out, value, "v");
+                let slot = self.bind(&ctx.out, luau::index(index, v.clone()), "index");
                 let refuse = self.raise("value is not one of the literals its type allows");
                 let body = if typed {
                     let call = self.call_type_check(&kind, v, &ctx.place)?;
-                    vec![ir::stmt(call), refuse]
+                    vec![Stmt::Call(call), refuse]
                 } else {
                     vec![refuse]
                 };
-                push(&ctx.out, ir::if_stmt(ir::binary(slot.clone(), Op::Eq, ir::nil()), body, None));
+                push(&ctx.out, if_then(luau::bin(slot.clone(), B::Eq, create::nil()), body));
                 let width = if values.len() > 0xff { Width::U16 } else { Width::U8 };
                 let at = self.at(ctx, 0);
-                let write = self.buffer_call(&format!("write{}", width.name()), vec![ir::id(ctx.buf), at, slot]);
-                push(&ctx.out, ir::stmt(write));
+                let write = self.buffer_call(&format!("write{}", width.name()), vec![ctx.buf.e(), at, slot]);
+                push(&ctx.out, Stmt::Call(write));
                 ctx.cursor.borrow_mut().offset += i64::from(width.size());
                 Ok(())
             }
             Kind::Blob { .. } => {
-                let blob = self.bind(&ctx.out, value, "blob", None);
+                let blob = self.bind(&ctx.out, value, "blob");
                 let blobs = ctx.blobs.unwrap();
                 let at = self.at(ctx, 0);
-                let size = ir::macro_call(ir::id(blobs), "size", vec![]);
+                let insert = luau::call(luau::prop(create::id("table"), "insert"), vec![blobs.e(), blob.clone()]);
                 let mut present = vec![
-                    ir::stmt(ir::macro_call(ir::id(blobs), "push", vec![ir::cast(blob.clone(), Ty::Defined)])),
-                    ir::stmt(self.buffer_call("writeu32", vec![ir::id(ctx.buf), at.clone(), size])),
+                    Stmt::Call(insert),
+                    Stmt::Call(self.buffer_call("writeu32", vec![ctx.buf.e(), at.clone(), luau::len(blobs.e())])),
                 ];
                 if typed {
                     present.insert(0, self.type_check_statement(&kind, blob.clone(), &ctx.place)?);
                 }
-                let absent = vec![ir::stmt(self.buffer_call("writeu32", vec![ir::id(ctx.buf), at, ir::num(0.0)]))];
-                push(&ctx.out, ir::if_stmt(ir::binary(blob, Op::Ne, ir::nil()), present, Some(ir::Else::Block(absent))));
+                let absent = vec![Stmt::Call(self.buffer_call("writeu32", vec![ctx.buf.e(), at, num(0.0)]))];
+                push(&ctx.out, luau::if_chain(vec![(luau::bin(blob, B::Ne, create::nil()), present)], absent));
                 ctx.cursor.borrow_mut().offset += BLOB_SIZE;
                 Ok(())
             }
             Kind::Datatype(name) => {
                 let (_, fields) = datatype(name).unwrap();
                 let hint = name.to_lowercase();
-                let value = self.bind(&ctx.out, ir::cast(value, Ty::Datatype), &hint, None);
+                let value = self.bind(&ctx.out, value, &hint);
                 for (width, names) in fields {
                     let at = self.at(ctx, 0);
-                    let path = names.iter().fold(value.clone(), |current, n| ir::prop(current, n));
-                    let write = self.buffer_call(&format!("write{}", width.name()), vec![ir::id(ctx.buf), at, path]);
-                    push(&ctx.out, ir::stmt(write));
+                    let path = names.iter().fold(value.clone(), |current, n| luau::prop(current, n));
+                    let write = self.buffer_call(&format!("write{}", width.name()), vec![ctx.buf.e(), at, path]);
+                    push(&ctx.out, Stmt::Call(write));
                     ctx.cursor.borrow_mut().offset += i64::from(width.size());
                 }
                 Ok(())
             }
             Kind::CFrame => {
-                let components: Vec<Id> = (0..12).map(|i| self.uid(&format!("c{i}"), Ty::Number)).collect();
-                push(&ctx.out, S::Const(Bind::Tuple(components.clone()), ir::method(ir::cast(value, Ty::CFrame), "GetComponents", vec![])));
+                let components: Vec<Id> = (0..12).map(|i| self.uid(&format!("c{i}"))).collect();
+                let names: Vec<Expr> = components.iter().map(|c| c.e()).collect();
+                push(&ctx.out, luau::locals(&names, vec![luau::method(value, "GetComponents", vec![])]));
                 for c in components {
                     let at = self.at(ctx, 0);
-                    let write = self.buffer_call("writef32", vec![ir::id(ctx.buf), at, ir::id(c)]);
-                    push(&ctx.out, ir::stmt(write));
+                    let write = self.buffer_call("writef32", vec![ctx.buf.e(), at, c.e()]);
+                    push(&ctx.out, Stmt::Call(write));
                     ctx.cursor.borrow_mut().offset += 4;
                 }
                 Ok(())
             }
             Kind::Enum(_) => {
                 let at = self.at(ctx, 0);
-                let write = self.buffer_call("writeu16", vec![ir::id(ctx.buf), at, ir::prop(ir::cast(value, Ty::EnumItem), "Value")]);
-                push(&ctx.out, ir::stmt(write));
+                let write = self.buffer_call("writeu16", vec![ctx.buf.e(), at, luau::prop(value, "Value")]);
+                push(&ctx.out, Stmt::Call(write));
                 ctx.cursor.borrow_mut().offset += 2;
                 Ok(())
             }
             Kind::Optional(inner) => {
-                if value.is_nil_literal() {
+                if matches!(value, Expr::Nil) {
                     let at = self.at(ctx, 0);
-                    let write = self.buffer_call("writeu8", vec![ir::id(ctx.buf), at, ir::num(0.0)]);
-                    push(&ctx.out, ir::stmt(write));
+                    let write = self.buffer_call("writeu8", vec![ctx.buf.e(), at, num(0.0)]);
+                    push(&ctx.out, Stmt::Call(write));
                     ctx.cursor.borrow_mut().offset += 1;
                     return Ok(());
                 }
-                let v = self.bind(&ctx.out, value, "v", None);
+                let v = self.bind(&ctx.out, value, "v");
                 let at = self.at(ctx, 0);
-                let flag = ir::cond(ir::binary(v.clone(), Op::Ne, ir::nil()), ir::num(1.0), ir::num(0.0));
-                let write = self.buffer_call("writeu8", vec![ir::id(ctx.buf), at, flag]);
-                push(&ctx.out, ir::stmt(write));
+                let flag = luau::if_expr(luau::bin(v.clone(), B::Ne, create::nil()), num(1.0), num(0.0));
+                let write = self.buffer_call("writeu8", vec![ctx.buf.e(), at, flag]);
+                push(&ctx.out, Stmt::Call(write));
                 ctx.cursor.borrow_mut().offset += 1;
                 let inner = inner.clone();
                 let v2 = v.clone();
                 let body = self.branch(ctx, &mut |gn, child| gn.emit_write(&inner, v2.clone(), child))?;
-                push(&ctx.out, ir::if_stmt(ir::binary(v, Op::Ne, ir::nil()), body, None));
+                push(&ctx.out, if_then(luau::bin(v, B::Ne, create::nil()), body));
                 Ok(())
             }
             Kind::Array(element) => {
-                let array = self.bind(&ctx.out, ir::cast(value, Ty::Array), "array", None);
-                self.write_varint(ctx, ir::macro_call(array.clone(), "size", vec![]));
+                let array = self.bind(&ctx.out, value, "array");
+                self.write_varint(ctx, luau::len(array.clone()));
                 let hole = if self.hole_in_write(element)? { Some((ctx.place.clone(), "the array".to_owned())) } else { None };
-                let index = self.uid("i", Ty::Number);
-                let range = self.range(ir::num(1.0), ir::macro_call(array.clone(), "size", vec![]));
+                let index = self.uid("i");
                 let element = element.clone();
+                let array_in = array.clone();
                 let body = self.branch(ctx, &mut |gn, child| {
-                    let item = gn.element_at(array.clone(), index, &child.out, hole.clone());
+                    let item = gn.element_at(array_in.clone(), index, &child.out, hole.clone());
                     gn.emit_write(&element, item, &child.within("[]", false))
                 })?;
-                push(&ctx.out, S::ForOf(Bind::One(index), range, body));
+                let range = self.for_range(index, num(1.0), luau::len(array), body);
+                push(&ctx.out, range);
                 Ok(())
             }
             Kind::Set(element) => {
-                let set = self.bind(&ctx.out, ir::cast(value, Ty::Set), "set", None);
+                let set = self.bind(&ctx.out, value, "set");
                 let element = element.clone();
-                self.write_counted(ctx, set, None, &mut |gn, item, child| gn.emit_write(&element, ir::id(item), &child.within("[]", false)))
+                self.write_counted(ctx, set, None, &mut |gn, item, child| gn.emit_write(&element, item.e(), &child.within("[]", false)))
             }
             Kind::Map(key_shape, value_shape) => {
-                let map = self.bind(&ctx.out, ir::cast(value, Ty::Map), "map", None);
-                let key = self.uid("key", Ty::Unknown);
-                let entry = self.uid("entry", Ty::Unknown);
+                let map = self.bind(&ctx.out, value, "map");
+                let key = self.uid("key");
+                let entry = self.uid("entry");
                 let (key_shape, value_shape) = (key_shape.clone(), value_shape.clone());
-                self.write_counted(ctx, map, Some(Bind::Tuple(vec![key, entry])), &mut |gn, _, child| {
-                    gn.emit_write(&key_shape, ir::id(key), &child.within("<key>", false))?;
-                    gn.emit_write(&value_shape, ir::id(entry), &child.within("<value>", false))
+                self.write_counted(ctx, map, Some(vec![key, entry]), &mut |gn, _, child| {
+                    gn.emit_write(&key_shape, key.e(), &child.within("<key>", false))?;
+                    gn.emit_write(&value_shape, entry.e(), &child.within("<value>", false))
                 })
             }
             Kind::List { elements, rest, after } => {
-                let list = self.bind(&ctx.out, ir::cast(value, Ty::Array), "list", None);
+                let list = self.bind(&ctx.out, value, "list");
                 for (i, element) in elements.iter().enumerate() {
-                    self.emit_scoped_write(element, ir::elem(list.clone(), ir::num(i as f64)), &ctx.within(&format!("[{i}]"), false))?;
+                    let item = luau::index(list.clone(), num((i + 1) as f64));
+                    self.emit_scoped_write(element, item, &ctx.within(&format!("[{i}]"), false))?;
                 }
                 if let Some(rest) = rest {
                     let after: Vec<Shape> = after.clone().unwrap_or_default();
                     let count = self.rest_count(&ctx.out, list.clone(), elements.len() + after.len());
-                    self.write_varint(ctx, ir::id(count));
-                    let index = self.uid("i", Ty::Number);
+                    self.write_varint(ctx, count.e());
+                    let index = self.uid("i");
                     let hole = if self.hole_in_write(rest)? { Some((ctx.place.clone(), tuple_name(&ctx.place))) } else { None };
-                    let range = self.range(ir::num((elements.len() + 1) as f64), add(ir::id(count), elements.len() as f64));
                     let rest = rest.clone();
+                    let list_in = list.clone();
                     let body = self.branch(ctx, &mut |gn, child| {
                         let element = match &hole {
-                            Some(h) => gn.element_at(list.clone(), index, &child.out, Some(h.clone())),
-                            None => ir::elem(list.clone(), ir::binary(ir::id(index), Op::Sub, ir::num(1.0))),
+                            Some(h) => gn.element_at(list_in.clone(), index, &child.out, Some(h.clone())),
+                            None => luau::index(list_in.clone(), index.e()),
                         };
                         gn.emit_write(&rest, element, &child.within("[]", false))
                     })?;
-                    push(&ctx.out, S::ForOf(Bind::One(index), range, body));
+                    let range =
+                        self.for_range(index, num((elements.len() + 1) as f64), luau::add(count.e(), elements.len() as f64), body);
+                    push(&ctx.out, range);
                     for (position, shape) in after.iter().enumerate() {
-                        let at = add(ir::id(count), (elements.len() + position) as f64);
-                        self.emit_scoped_write(shape, ir::elem(list.clone(), at), &ctx.within("[]", false))?;
+                        let at = luau::add(count.e(), (elements.len() + position + 1) as f64);
+                        self.emit_scoped_write(shape, luau::index(list.clone(), at), &ctx.within("[]", false))?;
                     }
                 }
                 Ok(())
             }
             Kind::Object { fields } => {
-                let object = self.bind(&ctx.out, ir::cast(value, Ty::Record), "object", None);
+                let object = self.bind(&ctx.out, value, "object");
                 for field in fields {
                     let place = ctx.within(&key_segment(&field.key), false);
                     let compared =
@@ -1400,11 +1383,11 @@ impl Gen<'_, '_, '_> {
         kind: &Rc<Kind>,
         alternatives: Vec<super::Alternative>,
         whole: Option<usize>,
-        value: E,
+        value: Expr,
         ctx: &Ctx,
         typed: bool,
     ) -> GResult<()> {
-        let v = self.bind(&ctx.out, value, "v", None);
+        let v = self.bind(&ctx.out, value, "v");
         let layout = self.layout_of(&Shape::Kind(kind.clone()))?;
         let is_fixed_layout = ctx.variable().is_none();
         let start = ctx.cursor.borrow().offset;
@@ -1414,15 +1397,15 @@ impl Gen<'_, '_, '_> {
         let refuse = self.raise("value matches none of the union's members");
         let mut chain = if typed {
             let call = self.call_type_check(kind, v.clone(), &ctx.place)?;
-            S::Block(vec![ir::stmt(call), refuse])
+            luau::do_(vec![Stmt::Call(call), refuse])
         } else {
-            S::Block(vec![refuse])
+            luau::do_(vec![refuse])
         };
         let checks_types = self.g.checks.types;
         let write_member = |gn: &mut Self, child: &Ctx, i: usize| -> GResult<()> {
             let at = gn.at(child, 0);
-            let tag = gn.buffer_call("writeu8", vec![ir::id(child.buf), at, ir::num(i as f64)]);
-            push(&child.out, ir::stmt(tag));
+            let tag = gn.buffer_call("writeu8", vec![child.buf.e(), at, num(i as f64)]);
+            push(&child.out, Stmt::Call(tag));
             child.cursor.borrow_mut().offset += 1;
             let shape = alternatives[i].shape.clone();
             let ranged = number_range(&*gn.describe(&shape)?).is_some();
@@ -1436,10 +1419,10 @@ impl Gen<'_, '_, '_> {
 
         if let Some((index, widths)) = self.numeric_fallback(kind, ctx.unchecked)? {
             let is_number = self.type_of_is(v.clone(), "number");
-            let check = self.call_check(&widths, ir::cast(v.clone(), Ty::Number), ctx, None);
-            let test = ir::binary(is_number, Op::And, check);
+            let check = self.call_check(&widths, v.clone(), ctx, None);
+            let test = luau::bin(is_number, B::And, check);
             let body = self.branch(ctx, &mut |gn, child| write_member(gn, child, index))?;
-            chain = ir::if_stmt(test, body, Some(else_of(chain)));
+            chain = if_else(test, body, chain);
         }
 
         let order = self.evaluation(kind)?.order.clone();
@@ -1449,22 +1432,21 @@ impl Gen<'_, '_, '_> {
                 if whole != Some(i) {
                     return write_member(gn, child, i);
                 }
-                let n = ir::cast(v.clone(), Ty::Number);
-                let n2 = n.clone();
+                let n = v.clone();
                 let whole_body = gn.branch(child, &mut |gn, inner| {
                     let at = gn.at(inner, 0);
-                    let tag = gn.buffer_call("writeu8", vec![ir::id(inner.buf), at, ir::num(count as f64)]);
-                    push(&inner.out, ir::stmt(tag));
+                    let tag = gn.buffer_call("writeu8", vec![inner.buf.e(), at, num(count as f64)]);
+                    push(&inner.out, Stmt::Call(tag));
                     inner.cursor.borrow_mut().offset += 1;
-                    gn.write_varint(inner, n2.clone());
+                    gn.write_varint(inner, n.clone());
                     Ok(())
                 })?;
                 let other = gn.branch(child, &mut |gn, inner| write_member(gn, inner, i))?;
-                push(&child.out, ir::if_stmt(Self::is_whole(n), whole_body, Some(ir::Else::Block(other))));
+                push(&child.out, luau::if_chain(vec![(Self::is_whole(v.clone()), whole_body)], other));
                 Ok(())
             })?;
             let test = self.discriminate(kind, i, v.clone())?;
-            chain = ir::if_stmt(test, body, Some(else_of(chain)));
+            chain = if_else(test, body, chain);
         }
         push(&ctx.out, chain);
         if is_fixed_layout && let Some(size) = layout.size {
@@ -1474,18 +1456,14 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `emitScopedWrite(shape, value, place)`.
-    fn emit_scoped_write(&mut self, shape: &Shape, value: E, ctx: &Ctx) -> GResult<()> {
+    fn emit_scoped_write(&mut self, shape: &Shape, value: Expr, ctx: &Ctx) -> GResult<()> {
         if !self.g.checks.types && !self.g.compact {
             return self.emit_write(shape, value, ctx);
         }
         let block = ctx.with_out(out());
         self.emit_write(shape, value, &block)?;
         let statements = take(&block.out);
-        if holds_locals(&self.g.ids, &statements) {
-            push(&ctx.out, S::Block(statements));
-        } else {
-            ctx.out.borrow_mut().extend(statements);
-        }
+        self.push_scoped(&ctx.out, statements);
         Ok(())
     }
 
@@ -1494,22 +1472,22 @@ impl Gen<'_, '_, '_> {
         Ok(!self.allows_nil(element)? && self.layout_of(element)?.size.is_some())
     }
 
-    /// `restCount(out, list, fixed)`.
-    fn rest_count(&mut self, out_list: &Out, list: E, fixed: usize) -> Id {
-        let count = self.uid("count", Ty::Number);
-        let size = ir::macro_call(list, "size", vec![]);
+    /// `restCount(out, list, fixed)`: `local count = #list`, less the fixed elements.
+    fn rest_count(&mut self, out_list: &Out, list: Expr, fixed: usize) -> Id {
+        let count = self.uid("count");
+        let size = luau::len(list);
         let value = if fixed == 0 {
             size
         } else {
-            let length = ir::binary(size, Op::Sub, ir::num(fixed as f64));
-            self.math_call("max", vec![length, ir::num(0.0)])
+            let length = luau::bin(size, B::Sub, num(fixed as f64));
+            self.math_call("max", vec![length, num(0.0)])
         };
-        push(out_list, S::Const(Bind::One(count), value));
+        push(out_list, luau::local(&count.e(), Some(value)));
         count
     }
 
     /// `writeLength(ctx, width, length, what, checked)`.
-    fn write_length(&mut self, ctx: &Ctx, width: LengthWidth, length: E, what: &str, checked: Option<&str>) {
+    fn write_length(&mut self, ctx: &Ctx, width: LengthWidth, length: Expr, what: &str, checked: Option<&str>) {
         let Some(fixed) = width.width() else {
             self.write_varint(ctx, length);
             return;
@@ -1520,31 +1498,36 @@ impl Gen<'_, '_, '_> {
             let body = match checked {
                 Some(c) => {
                     let call = self.call_check(c, length.clone(), ctx, Some(" bytes"));
-                    vec![ir::stmt(call), refuse]
+                    vec![Stmt::Call(call), refuse]
                 }
                 None => vec![refuse],
             };
-            push(&ctx.out, ir::if_stmt(ir::binary(length.clone(), Op::Gt, ir::num(max)), body, None));
+            push(&ctx.out, if_then(luau::bin(length.clone(), B::Gt, num(max)), body));
         }
         let at = self.at(ctx, 0);
-        let write = self.buffer_call(&format!("write{}", fixed.name()), vec![ir::id(ctx.buf), at, length]);
-        push(&ctx.out, ir::stmt(write));
+        let write = self.buffer_call(&format!("write{}", fixed.name()), vec![ctx.buf.e(), at, length]);
+        push(&ctx.out, Stmt::Call(write));
         ctx.cursor.borrow_mut().offset += i64::from(fixed.size());
     }
 
-    /// `writeCounted(ctx, collection, body, binding)`.
+    /// `writeCounted(ctx, collection, body, binding)`: the collection counted (`local n = 0; for _ in c do n += 1 end`),
+    /// the count written, then `for <binding> in c do <body> end`.
     fn write_counted(
         &mut self,
         ctx: &Ctx,
-        collection: E,
-        binding: Option<Bind>,
+        collection: Expr,
+        binding: Option<Vec<Id>>,
         body: &mut dyn FnMut(&mut Self, Id, &Ctx) -> GResult<()>,
     ) -> GResult<()> {
-        let count = self.bind(&ctx.out, ir::macro_call(collection.clone(), "size", vec![]), "n", None);
-        self.write_varint(ctx, count);
-        let item = self.uid("item", Ty::Defined);
+        let count = self.uid("n");
+        push(&ctx.out, luau::local(&count.e(), Some(num(0.0))));
+        let counting = vec![add_assign(count.e(), num(1.0))];
+        push(&ctx.out, luau::for_in(&[create::id("_")], collection.clone(), counting));
+        self.write_varint(ctx, count.e());
+        let item = self.uid("item");
         let statements = self.branch(ctx, &mut |gn, child| body(gn, item, child))?;
-        push(&ctx.out, S::ForOf(binding.unwrap_or(Bind::One(item)), collection, statements));
+        let ids: Vec<Expr> = binding.unwrap_or_else(|| vec![item]).into_iter().map(Id::e).collect();
+        push(&ctx.out, luau::for_in(&ids, collection, statements));
         Ok(())
     }
 
@@ -1552,9 +1535,9 @@ impl Gen<'_, '_, '_> {
     fn write_number(
         &mut self,
         kind: &Rc<Kind>,
-        value: E,
+        value: Expr,
         ctx: &Ctx,
-        write: &mut dyn FnMut(&mut Self, E, &Ctx),
+        write: &mut dyn FnMut(&mut Self, Expr, &Ctx),
     ) -> GResult<()> {
         let width = self.checked_width(kind, ctx.unchecked);
         let range = number_range(kind);
@@ -1564,76 +1547,68 @@ impl Gen<'_, '_, '_> {
             write(self, value, ctx);
             return Ok(());
         }
-        if let Some(known) = value.literal_number() {
+        if let Some(known) = self.literal_number(&value) {
             if ranged && !fits_statically(known, range.unwrap()) {
                 let call = self.call_check(width.as_deref().unwrap(), value.clone(), ctx, None);
-                push(&ctx.out, ir::stmt(call));
+                push(&ctx.out, Stmt::Call(call));
             }
             write(self, value, ctx);
             return Ok(());
         }
         let block = ctx.with_out(out());
-        let n = if value.is_identifier() && !(typed && self.is_parameter_reference(&value)) {
-            value
-        } else {
-            self.bind(&block.out, value, "n", None)
-        };
+        let n = if self.is_name(&value) { value } else { self.bind(&block.out, value, "n") };
         let target = if block.out.borrow().is_empty() { ctx.clone() } else { block.clone() };
         if typed {
             let statement = self.type_check_statement(kind, n.clone(), &ctx.place)?;
             push(&target.out, statement);
         }
         if ranged {
-            let fails = self.fails_range(ir::cast(n.clone(), Ty::Number), range.unwrap());
-            let call = self.call_check(width.as_deref().unwrap(), ir::cast(n.clone(), Ty::Number), ctx, None);
-            push(&target.out, ir::if_stmt(fails, vec![ir::stmt(call)], None));
+            let fails = self.fails_range(n.clone(), range.unwrap());
+            let call = self.call_check(width.as_deref().unwrap(), n.clone(), ctx, None);
+            push(&target.out, if_then(fails, vec![Stmt::Call(call)]));
         }
         write(self, n, &target);
         if Rc::ptr_eq(&target.out, &block.out) {
             let statements = take(&block.out);
-            push(&ctx.out, S::Block(statements));
+            push(&ctx.out, luau::do_(statements));
         }
         Ok(())
     }
 
     /// `writeTyped(kind, value, ctx, write)`.
-    fn write_typed(&mut self, kind: &Rc<Kind>, value: E, ctx: &Ctx, write: &mut dyn FnMut(&mut Self, E, &Ctx)) -> GResult<()> {
+    fn write_typed(&mut self, kind: &Rc<Kind>, value: Expr, ctx: &Ctx, write: &mut dyn FnMut(&mut Self, Expr, &Ctx)) -> GResult<()> {
         let block = ctx.with_out(out());
-        let v = if value.is_identifier() && !self.is_parameter_reference(&value) {
-            value
-        } else {
-            self.bind(&block.out, value, "v", None)
-        };
+        let v = if self.is_name(&value) { value } else { self.bind(&block.out, value, "v") };
         let target = if block.out.borrow().is_empty() { ctx.clone() } else { block.clone() };
         let statement = self.type_check_statement(kind, v.clone(), &ctx.place)?;
         push(&target.out, statement);
         write(self, v, &target);
         if Rc::ptr_eq(&target.out, &block.out) {
             let statements = take(&block.out);
-            push(&ctx.out, S::Block(statements));
+            push(&ctx.out, luau::do_(statements));
         }
         Ok(())
     }
 
     /// `writeVarint(ctx, n)`: `o = vwrite(buf, o, n)`.
-    fn write_varint(&mut self, ctx: &Ctx, n: E) {
+    fn write_varint(&mut self, ctx: &Ctx, n: Expr) {
         let variable = ctx.variable().expect("Flamework: a varint inside a fixed layout");
         let vwrite = self.varint_helpers().write;
         let at = self.at(ctx, 0);
-        push(&ctx.out, ir::assign(ir::id(variable), ir::call(ir::id(vwrite), vec![ir::id(ctx.buf), at, n])));
+        push(&ctx.out, luau::assign(variable.e(), luau::call(vwrite.e(), vec![ctx.buf.e(), at, n])));
         let mut c = ctx.cursor.borrow_mut();
         c.base = Some(variable);
         c.offset = 0;
     }
 
-    /// `readVarint(ctx, hint)`: `const [n, o2] = vread(buf, o)`.
+    /// `readVarint(ctx, hint)`: `local n, o2 = vread(buf, o)`.
     fn read_varint(&mut self, ctx: &Ctx, hint: &str) -> Id {
         assert!(ctx.variable().is_some(), "Flamework: a varint inside a fixed layout");
-        let n = self.uid(hint, Ty::Number);
-        let next = self.uid("o", Ty::Number);
+        let n = self.uid(hint);
+        let next = self.uid("o");
         let vread = self.varint_helpers().read;
         let at = self.at(ctx, 0);
-        push(&ctx.out, S::Const(Bind::Tuple(vec![n, next]), ir::call(ir::id(vread), vec![ir::id(ctx.buf), at])));
+        push(&ctx.out, luau::locals(&[n.e(), next.e()], vec![luau::call(vread.e(), vec![ctx.buf.e(), at])]));
         let mut c = ctx.cursor.borrow_mut();
         c.base = Some(next);
         c.offset = 0;
@@ -1641,100 +1616,100 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `writeWide(ctx, width, value)`.
-    fn write_wide(&mut self, ctx: &Ctx, width: Width, value: E) {
+    fn write_wide(&mut self, ctx: &Ctx, width: Width, value: Expr) {
         let high = if width == Width::U64 { "writeu32" } else { "writei32" };
-        if let Some(known) = value.skip_casts().literal_number()
+        if let Some(known) = self.literal_number(&value)
             && known.is_finite()
         {
             let upper = (known / HALF).floor();
             let at = self.at(ctx, 0);
-            let a = self.buffer_call("writeu32", vec![ir::id(ctx.buf), at, ir::num(known - upper * HALF)]);
-            push(&ctx.out, ir::stmt(a));
+            let a = self.buffer_call("writeu32", vec![ctx.buf.e(), at, num(known - upper * HALF)]);
+            push(&ctx.out, Stmt::Call(a));
             let at4 = self.at(ctx, 4);
-            let b = self.buffer_call(high, vec![ir::id(ctx.buf), at4, ir::num(upper)]);
-            push(&ctx.out, ir::stmt(b));
+            let b = self.buffer_call(high, vec![ctx.buf.e(), at4, num(upper)]);
+            push(&ctx.out, Stmt::Call(b));
             ctx.cursor.borrow_mut().offset += i64::from(width.size());
             return;
         }
         let block = ctx.with_out(out());
-        let n = if value.skip_casts().is_identifier() { value } else { self.bind(&block.out, value, "n", None) };
+        let n = if self.is_name(&value) { value } else { self.bind(&block.out, value, "n") };
         let target = if block.out.borrow().is_empty() { ctx.clone() } else { block.clone() };
-        let number = ir::cast(n, Ty::Number);
         let at = self.at(&target, 0);
-        let low = self.buffer_call("writeu32", vec![ir::id(target.buf), at, ir::binary(number.clone(), Op::Mod, ir::num(HALF))]);
-        push(&target.out, ir::stmt(low));
-        let upper = self.math_call("floor", vec![ir::binary(number, Op::Div, ir::num(HALF))]);
+        let low = self.buffer_call("writeu32", vec![target.buf.e(), at, luau::bin(n.clone(), B::Mod, num(HALF))]);
+        push(&target.out, Stmt::Call(low));
+        let upper = self.math_call("floor", vec![luau::bin(n, B::Div, num(HALF))]);
         let at4 = self.at(&target, 4);
-        let high_write = self.buffer_call(high, vec![ir::id(target.buf), at4, upper]);
-        push(&target.out, ir::stmt(high_write));
+        let high_write = self.buffer_call(high, vec![target.buf.e(), at4, upper]);
+        push(&target.out, Stmt::Call(high_write));
         target.cursor.borrow_mut().offset += i64::from(width.size());
         if Rc::ptr_eq(&target.out, &block.out) {
             let statements = take(&block.out);
-            push(&ctx.out, S::Block(statements));
+            push(&ctx.out, luau::do_(statements));
         }
     }
 
     /// `readWide(ctx, width)`.
-    fn read_wide(&mut self, ctx: &Ctx, width: Width) -> E {
+    fn read_wide(&mut self, ctx: &Ctx, width: Width) -> Expr {
         let at4 = self.at(ctx, 4);
-        let high = self.buffer_call(if width == Width::U64 { "readu32" } else { "readi32" }, vec![ir::id(ctx.buf), at4]);
+        let high = self.buffer_call(if width == Width::U64 { "readu32" } else { "readi32" }, vec![ctx.buf.e(), at4]);
         let at = self.at(ctx, 0);
-        let low = self.buffer_call("readu32", vec![ir::id(ctx.buf), at]);
+        let low = self.buffer_call("readu32", vec![ctx.buf.e(), at]);
         ctx.cursor.borrow_mut().offset += i64::from(width.size());
-        ir::binary(ir::binary(high, Op::Mul, ir::num(HALF)), Op::Add, low)
+        luau::bin(luau::bin(high, B::Mul, num(HALF)), B::Add, low)
     }
 
     /// `sizeWithLength(out, width, length)`.
-    fn size_with_length(&mut self, out_list: &Out, width: LengthWidth, length: E) -> E {
+    fn size_with_length(&mut self, out_list: &Out, width: LengthWidth, length: Expr) -> Expr {
         if let Some(fixed) = width.width() {
-            return add(length, f64::from(fixed.size()));
+            return luau::add(length, f64::from(fixed.size()));
         }
-        let bound = self.bind(out_list, length, "length", None);
+        let bound = self.bind(out_list, length, "length");
         let vsize = self.varint_helpers().size;
-        add_expr(ir::call(ir::id(vsize), vec![bound.clone()]), bound)
+        luau::plus(luau::call(vsize.e(), vec![bound.clone()]), bound)
     }
 
     /// `countedInPass(out, collection, binding, element)`.
     fn counted_in_pass(
         &mut self,
         out_list: &Out,
-        collection: E,
-        binding: Bind,
-        element: &mut dyn FnMut(&mut Self, &Out) -> GResult<E>,
-    ) -> GResult<E> {
-        let total = self.uid("size", Ty::Number);
-        let count = self.uid("n", Ty::Number);
-        push(out_list, S::Let(total, Some(ir::num(0.0))));
-        push(out_list, S::Let(count, Some(ir::num(0.0))));
+        collection: Expr,
+        binding: &[Id],
+        element: &mut dyn FnMut(&mut Self, &Out) -> GResult<Expr>,
+    ) -> GResult<Expr> {
+        let total = self.uid("size");
+        let count = self.uid("n");
+        push(out_list, luau::local(&total.e(), Some(num(0.0))));
+        push(out_list, luau::local(&count.e(), Some(num(0.0))));
         let body = out();
-        push(&body, ir::add_assign(ir::id(count), ir::num(1.0)));
+        push(&body, add_assign(count.e(), num(1.0)));
         let size = element(self, &body)?;
-        push(&body, ir::add_assign(ir::id(total), size));
-        push(out_list, S::ForOf(binding, collection, take(&body)));
+        push(&body, add_assign(total.e(), size));
+        let ids: Vec<Expr> = binding.iter().map(|id| id.e()).collect();
+        push(out_list, luau::for_in(&ids, collection, take(&body)));
         let vsize = self.varint_helpers().size;
-        push(out_list, ir::add_assign(ir::id(total), ir::call(ir::id(vsize), vec![ir::id(count)])));
-        Ok(ir::id(total))
+        push(out_list, add_assign(total.e(), luau::call(vsize.e(), vec![count.e()])));
+        Ok(total.e())
     }
 
     // --- read ------------------------------------------------------------------------------------------------
 
     /// `emitRead(shape, ctx)`.
-    pub(crate) fn emit_read(&mut self, shape: &Shape, ctx: &Ctx) -> GResult<E> {
+    pub(crate) fn emit_read(&mut self, shape: &Shape, ctx: &Ctx) -> GResult<Expr> {
         if let Shape::Type(t) = shape
             && let Some(info) = self.hoist(*t)?
         {
-            let mut args = vec![ir::id(ctx.buf), self.at(ctx, 0)];
+            let mut args = vec![ctx.buf.e(), self.at(ctx, 0)];
             if info.layout.blobs {
-                args.push(ir::id(ctx.blobs.unwrap()));
+                args.push(ctx.blobs.unwrap().e());
             }
-            let value = self.uid("value", Ty::Unknown);
-            let next = self.uid("o", Ty::Number);
+            let value = self.uid("value");
+            let next = self.uid("o");
             let call = self.call_hoisted(&info, Role::R, args);
-            push(&ctx.out, S::Const(Bind::Tuple(vec![value, next]), call));
+            push(&ctx.out, luau::locals(&[value.e(), next.e()], vec![call]));
             let mut c = ctx.cursor.borrow_mut();
             c.base = Some(next);
             c.offset = 0;
-            return Ok(ir::id(value));
+            return Ok(value.e());
         }
         let kind = self.describe(shape)?;
         match &*kind {
@@ -1743,67 +1718,67 @@ impl Gen<'_, '_, '_> {
                     return Ok(self.read_wide(ctx, *width));
                 }
                 let at = self.at(ctx, 0);
-                let read = self.buffer_call(&format!("read{}", width.name()), vec![ir::id(ctx.buf), at]);
+                let read = self.buffer_call(&format!("read{}", width.name()), vec![ctx.buf.e(), at]);
                 ctx.cursor.borrow_mut().offset += i64::from(width.size());
                 Ok(read)
             }
-            Kind::Varint { .. } => Ok(ir::id(self.read_varint(ctx, "n"))),
+            Kind::Varint { .. } => Ok(self.read_varint(ctx, "n").e()),
             Kind::Boolean => {
                 let at = self.at(ctx, 0);
-                let read = self.buffer_call("readu8", vec![ir::id(ctx.buf), at]);
+                let read = self.buffer_call("readu8", vec![ctx.buf.e(), at]);
                 ctx.cursor.borrow_mut().offset += 1;
-                Ok(ir::binary(read, Op::Ne, ir::num(0.0)))
+                Ok(luau::bin(read, B::Ne, num(0.0)))
             }
             Kind::String { length: width, .. } => {
                 let length = self.read_length(ctx, *width);
                 let at = self.at(ctx, 0);
-                let read = self.buffer_call("readstring", vec![ir::id(ctx.buf), at, length.clone()]);
-                let text = self.bind(&ctx.out, read, "text", Some(Ty::String));
+                let read = self.buffer_call("readstring", vec![ctx.buf.e(), at, length.clone()]);
+                let text = self.bind(&ctx.out, read, "text");
                 self.advance_by(ctx, length);
                 Ok(text)
             }
             Kind::Buffer { length: width, .. } => {
                 let length = self.read_length(ctx, *width);
-                let len = self.buffer_call("len", vec![ir::id(ctx.buf)]);
-                let remaining = ir::binary(len, Op::Sub, self.at(ctx, 0));
+                let len = self.buffer_call("len", vec![ctx.buf.e()]);
+                let remaining = luau::bin(len, B::Sub, self.at(ctx, 0));
                 let raise = self.raise(MALFORMED);
-                push(&ctx.out, ir::if_stmt(ir::binary(length.clone(), Op::Gt, remaining), vec![raise], None));
+                push(&ctx.out, if_then(luau::bin(length.clone(), B::Gt, remaining), vec![raise]));
                 let create = self.buffer_call("create", vec![length.clone()]);
-                let bytes = self.bind(&ctx.out, create, "bytes", Some(Ty::Buffer));
+                let bytes = self.bind(&ctx.out, create, "bytes");
                 let at = self.at(ctx, 0);
-                let copy = self.buffer_call("copy", vec![bytes.clone(), ir::num(0.0), ir::id(ctx.buf), at, length.clone()]);
-                push(&ctx.out, ir::stmt(copy));
+                let copy = self.buffer_call("copy", vec![bytes.clone(), num(0.0), ctx.buf.e(), at, length.clone()]);
+                push(&ctx.out, Stmt::Call(copy));
                 self.advance_by(ctx, length);
                 Ok(bytes)
             }
             Kind::Constant(value) => {
                 self.check_globals_in(value);
-                Ok(value.to_ir())
+                Ok(value.to_luau())
             }
-            Kind::Nothing => Ok(ir::nil()),
+            Kind::Nothing => Ok(create::nil()),
             Kind::Literals(values) => {
                 let (list, _) = self.literal_tables_for(&kind);
                 let width = if values.len() > 0xff { Width::U16 } else { Width::U8 };
                 let at = self.at(ctx, 0);
-                let index = self.buffer_call(&format!("read{}", width.name()), vec![ir::id(ctx.buf), at]);
+                let index = self.buffer_call(&format!("read{}", width.name()), vec![ctx.buf.e(), at]);
                 ctx.cursor.borrow_mut().offset += i64::from(width.size());
-                let value = self.bind(&ctx.out, ir::elem(list, index), "literal", Some(Ty::Unknown));
+                let value = self.bind(&ctx.out, luau::index(list, luau::add(index, 1.0)), "literal");
                 let raise = self.raise(MALFORMED);
-                push(&ctx.out, ir::if_stmt(ir::binary(value.clone(), Op::Eq, ir::nil()), vec![raise], None));
+                push(&ctx.out, if_then(luau::bin(value.clone(), B::Eq, create::nil()), vec![raise]));
                 Ok(value)
             }
             Kind::Blob { .. } => {
                 let at = self.at(ctx, 0);
-                let index = self.buffer_call("readu32", vec![ir::id(ctx.buf), at]);
+                let index = self.buffer_call("readu32", vec![ctx.buf.e(), at]);
                 ctx.cursor.borrow_mut().offset += BLOB_SIZE;
-                Ok(ir::elem(ir::id(ctx.blobs.unwrap()), ir::binary(index, Op::Sub, ir::num(1.0))))
+                Ok(luau::index(ctx.blobs.unwrap().e(), index))
             }
             Kind::Datatype(name) => {
                 let (_, fields) = datatype(name).unwrap();
                 let mut args = Vec::new();
                 for (width, _) in fields {
                     let at = self.at(ctx, 0);
-                    args.push(self.buffer_call(&format!("read{}", width.name()), vec![ir::id(ctx.buf), at]));
+                    args.push(self.buffer_call(&format!("read{}", width.name()), vec![ctx.buf.e(), at]));
                     ctx.cursor.borrow_mut().offset += i64::from(width.size());
                 }
                 Ok(self.construct(name, args))
@@ -1812,87 +1787,90 @@ impl Gen<'_, '_, '_> {
                 let mut args = Vec::new();
                 for _ in 0..12 {
                     let at = self.at(ctx, 0);
-                    args.push(self.buffer_call("readf32", vec![ir::id(ctx.buf), at]));
+                    args.push(self.buffer_call("readf32", vec![ctx.buf.e(), at]));
                     ctx.cursor.borrow_mut().offset += 4;
                 }
                 Ok(self.construct("CFrame", args))
             }
             Kind::Enum(name) => {
                 let at = self.at(ctx, 0);
-                let index = self.buffer_call("readu16", vec![ir::id(ctx.buf), at]);
+                let index = self.buffer_call("readu16", vec![ctx.buf.e(), at]);
                 ctx.cursor.borrow_mut().offset += 2;
                 let table = self.enum_table_for(name);
-                Ok(ir::elem(table, index))
+                Ok(luau::index(table, index))
             }
             Kind::Optional(inner) => {
                 let at = self.at(ctx, 0);
-                let read = self.buffer_call("readu8", vec![ir::id(ctx.buf), at]);
-                let present = self.bind(&ctx.out, ir::binary(read, Op::Ne, ir::num(0.0)), "present", None);
+                let read = self.buffer_call("readu8", vec![ctx.buf.e(), at]);
+                let present = self.bind(&ctx.out, luau::bin(read, B::Ne, num(0.0)), "present");
                 ctx.cursor.borrow_mut().offset += 1;
-                let value = self.uid("value", Ty::Unknown);
-                push(&ctx.out, S::Let(value, None));
+                let value = self.uid("value");
+                push(&ctx.out, luau::local(&value.e(), None));
                 let inner = inner.clone();
                 let body = self.branch(ctx, &mut |gn, child| {
                     let read = gn.emit_read(&inner, child)?;
-                    push(&child.out, ir::assign(ir::id(value), read));
+                    push(&child.out, luau::assign(value.e(), read));
                     Ok(())
                 })?;
-                push(&ctx.out, ir::if_stmt(present, body, None));
-                Ok(ir::id(value))
+                push(&ctx.out, if_then(present, body));
+                Ok(value.e())
             }
             Kind::Array(element) => {
                 let min = self.layout_of(element)?.min;
                 let count = self.read_count(ctx, min);
                 let created = self.construct("Array", vec![count.clone()]);
-                let array = self.bind(&ctx.out, created, "array", Some(Ty::Array));
-                let index = self.uid("i", Ty::Number);
+                let array = self.bind(&ctx.out, created, "array");
+                let index = self.uid("i");
                 let element = element.clone();
-                let range = self.range(ir::num(1.0), count);
+                let array_in = array.clone();
                 let body = self.branch(ctx, &mut |gn, child| {
                     let read = gn.emit_read(&element, child)?;
-                    push(&child.out, ir::assign(ir::elem(array.clone(), ir::binary(ir::id(index), Op::Sub, ir::num(1.0))), read));
+                    push(&child.out, luau::assign(luau::index(array_in.clone(), index.e()), read));
                     Ok(())
                 })?;
-                push(&ctx.out, S::ForOf(Bind::One(index), range, body));
+                let range = self.for_range(index, num(1.0), count, body);
+                push(&ctx.out, range);
                 Ok(array)
             }
             Kind::Set(element) => {
                 let min = self.layout_of(element)?.min;
                 let count = self.read_count(ctx, min);
                 let created = self.construct("Set", vec![]);
-                let set = self.bind(&ctx.out, created, "set", Some(Ty::Set));
-                let loop_id = self.uid("_", Ty::Number);
+                let set = self.bind(&ctx.out, created, "set");
+                let loop_id = self.uid("_");
                 let element = element.clone();
-                let range = self.range(ir::num(1.0), count);
+                let set_in = set.clone();
                 let body = self.branch(ctx, &mut |gn, child| {
                     let read = gn.emit_read(&element, child)?;
-                    push(&child.out, ir::stmt(ir::macro_call(set.clone(), "add", vec![ir::cast(read, Ty::Defined)])));
+                    push(&child.out, luau::assign(luau::index(set_in.clone(), read), create::bool(true)));
                     Ok(())
                 })?;
-                push(&ctx.out, S::ForOf(Bind::One(loop_id), range, body));
+                let range = self.for_range(loop_id, num(1.0), count, body);
+                push(&ctx.out, range);
                 Ok(set)
             }
             Kind::Map(key_shape, value_shape) => {
                 let min = self.layout_of(key_shape)?.min + self.layout_of(value_shape)?.min;
                 let count = self.read_count(ctx, min);
                 let created = self.construct("Map", vec![]);
-                let map = self.bind(&ctx.out, created, "map", Some(Ty::Map));
-                let loop_id = self.uid("_", Ty::Number);
+                let map = self.bind(&ctx.out, created, "map");
+                let loop_id = self.uid("_");
                 let (key_shape, value_shape) = (key_shape.clone(), value_shape.clone());
-                let range = self.range(ir::num(1.0), count);
+                let map_in = map.clone();
                 let body = self.branch(ctx, &mut |gn, child| {
                     let key = gn.read_into(&key_shape, child, "key")?;
                     let value = gn.read_into(&value_shape, child, "entry")?;
-                    push(&child.out, ir::stmt(ir::macro_call(map.clone(), "set", vec![key, value])));
+                    push(&child.out, luau::assign(luau::index(map_in.clone(), key), value));
                     Ok(())
                 })?;
-                push(&ctx.out, S::ForOf(Bind::One(loop_id), range, body));
+                let range = self.for_range(loop_id, num(1.0), count, body);
+                push(&ctx.out, range);
                 Ok(map)
             }
             Kind::List { elements, rest, after } => self.read_list(elements, rest.as_ref(), after.as_deref(), ctx),
             Kind::Object { fields } => {
                 if self.g.compact {
-                    let object = self.bind(&ctx.out, ir::object(vec![]), "object", Some(Ty::Record));
+                    let object = self.bind(&ctx.out, create::map(Vec::<(Expr, Expr)>::new()), "object");
                     for field in fields {
                         let target = key_access(object.clone(), &field.key);
                         self.read_scoped(&field.shape, ctx, target)?;
@@ -1904,53 +1882,53 @@ impl Gen<'_, '_, '_> {
                     let read = self.read_into(&field.shape, ctx, &field.name)?;
                     entries.push((key_name(&field.key), read));
                 }
-                Ok(ir::object(entries))
+                Ok(create::map(entries))
             }
             Kind::Union { alternatives, whole, .. } => {
                 let layout = self.layout_of(&Shape::Kind(kind.clone()))?;
                 let is_fixed_layout = ctx.variable().is_none();
                 let at = self.at(ctx, 0);
-                let read = self.buffer_call("readu8", vec![ir::id(ctx.buf), at]);
-                let tag = self.bind(&ctx.out, read, "tag", None);
+                let read = self.buffer_call("readu8", vec![ctx.buf.e(), at]);
+                let tag = self.bind(&ctx.out, read, "tag");
                 ctx.cursor.borrow_mut().offset += 1;
                 let start = ctx.cursor.borrow().offset;
-                let value = self.uid("value", Ty::Unknown);
-                push(&ctx.out, S::Let(value, None));
+                let value = self.uid("value");
+                push(&ctx.out, luau::local(&value.e(), None));
                 let raise = self.raise(MALFORMED);
-                let mut chain = S::Block(vec![raise]);
+                let mut chain = luau::do_(vec![raise]);
                 if whole.is_some() {
                     let body = self.branch(ctx, &mut |gn, child| {
                         let n = gn.read_varint(child, "n");
-                        push(&child.out, ir::assign(ir::id(value), ir::id(n)));
+                        push(&child.out, luau::assign(value.e(), n.e()));
                         Ok(())
                     })?;
-                    chain = ir::if_stmt(ir::binary(tag.clone(), Op::Eq, ir::num(alternatives.len() as f64)), body, Some(else_of(chain)));
+                    chain = if_else(luau::bin(tag.clone(), B::Eq, num(alternatives.len() as f64)), body, chain);
                 }
                 for i in (0..alternatives.len()).rev() {
                     let shape = alternatives[i].shape.clone();
                     let body = self.branch(ctx, &mut |gn, child| {
                         let read = gn.emit_read(&shape, child)?;
-                        push(&child.out, ir::assign(ir::id(value), read));
+                        push(&child.out, luau::assign(value.e(), read));
                         Ok(())
                     })?;
-                    chain = ir::if_stmt(ir::binary(tag.clone(), Op::Eq, ir::num(i as f64)), body, Some(else_of(chain)));
+                    chain = if_else(luau::bin(tag.clone(), B::Eq, num(i as f64)), body, chain);
                 }
                 push(&ctx.out, chain);
                 if is_fixed_layout && let Some(size) = layout.size {
                     ctx.cursor.borrow_mut().offset = start + size as i64 - 1;
                 }
-                Ok(ir::id(value))
+                Ok(value.e())
             }
         }
     }
 
-    fn read_list(&mut self, elements: &[Shape], rest: Option<&Shape>, after: Option<&[Shape]>, ctx: &Ctx) -> GResult<E> {
+    fn read_list(&mut self, elements: &[Shape], rest: Option<&Shape>, after: Option<&[Shape]>, ctx: &Ctx) -> GResult<Expr> {
         let list;
         let count;
         if self.g.compact {
-            let built = self.bind(&ctx.out, ir::array(vec![]), "list", Some(Ty::Array));
+            let built = self.bind(&ctx.out, create::array(vec![]), "list");
             for (i, element) in elements.iter().enumerate() {
-                self.read_scoped(element, ctx, ir::elem(built.clone(), ir::num(i as f64)))?;
+                self.read_scoped(element, ctx, luau::index(built.clone(), num((i + 1) as f64)))?;
             }
             let Some(rest) = rest else { return Ok(built) };
             list = built;
@@ -1961,38 +1939,39 @@ impl Gen<'_, '_, '_> {
             for element in elements {
                 values.push(self.read_into(element, ctx, "arg")?);
             }
-            let Some(rest) = rest else { return Ok(ir::cast(ir::array(values), Ty::Array)) };
+            let Some(rest) = rest else { return Ok(create::array(values)) };
             let min = self.layout_of(rest)?.min;
             count = self.read_count(ctx, min);
-            list = self.bind(&ctx.out, ir::array(values), "list", Some(Ty::Array));
+            list = self.bind(&ctx.out, create::array(values), "list");
         }
         let rest = rest.unwrap().clone();
-        let index = self.uid("i", Ty::Number);
-        let range = self.range(ir::num(1.0), count.clone());
+        let index = self.uid("i");
         let fixed = elements.len();
+        let list_in = list.clone();
         let body = self.branch(ctx, &mut |gn, child| {
             let read = gn.emit_read(&rest, child)?;
-            push(&child.out, ir::assign(ir::elem(list.clone(), add(ir::id(index), fixed as f64 - 1.0)), read));
+            push(&child.out, luau::assign(luau::index(list_in.clone(), luau::add(index.e(), fixed as f64)), read));
             Ok(())
         })?;
-        push(&ctx.out, S::ForOf(Bind::One(index), range, body));
+        let range = self.for_range(index, num(1.0), count.clone(), body);
+        push(&ctx.out, range);
         for (position, shape) in after.unwrap_or(&[]).iter().enumerate() {
-            let at = ir::elem(list.clone(), add(count.clone(), (fixed + position) as f64));
+            let at = luau::index(list.clone(), luau::add(count.clone(), (fixed + position + 1) as f64));
             if self.g.compact {
                 self.read_scoped(shape, ctx, at)?;
                 continue;
             }
             let element = self.read_into(shape, ctx, "arg")?;
-            push(&ctx.out, ir::assign(at, element));
+            push(&ctx.out, luau::assign(at, element));
         }
         Ok(list)
     }
 
     /// `readScoped(shape, ctx, target)`.
-    fn read_scoped(&mut self, shape: &Shape, ctx: &Ctx, target: E) -> GResult<()> {
+    fn read_scoped(&mut self, shape: &Shape, ctx: &Ctx, target: Expr) -> GResult<()> {
         let inner = ctx.with_out(out());
         let read = self.emit_read(shape, &inner)?;
-        push(&inner.out, ir::assign(target, read));
+        push(&inner.out, luau::assign(target, read));
         if inner.variable().is_some() {
             self.sync(&inner);
         }
@@ -2002,42 +1981,42 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `readInto(shape, ctx, hint)`.
-    fn read_into(&mut self, shape: &Shape, ctx: &Ctx, hint: &str) -> GResult<E> {
+    fn read_into(&mut self, shape: &Shape, ctx: &Ctx, hint: &str) -> GResult<Expr> {
         let value = self.emit_read(shape, ctx)?;
-        if ctx.variable().is_none() || value.is_identifier() || value.is_literal() {
+        if ctx.variable().is_none() || is_name(&value) || is_literal(&value) {
             return Ok(value);
         }
         let name = local_name(self.cx, hint);
-        Ok(self.bind(&ctx.out, value, &name, None))
+        Ok(self.bind(&ctx.out, value, &name))
     }
 
     /// `readLength(ctx, width)`.
-    fn read_length(&mut self, ctx: &Ctx, width: LengthWidth) -> E {
-        let Some(fixed) = width.width() else { return ir::id(self.read_varint(ctx, "length")) };
+    fn read_length(&mut self, ctx: &Ctx, width: LengthWidth) -> Expr {
+        let Some(fixed) = width.width() else { return self.read_varint(ctx, "length").e() };
         let at = self.at(ctx, 0);
-        let read = self.buffer_call(&format!("read{}", fixed.name()), vec![ir::id(ctx.buf), at]);
-        let length = self.bind(&ctx.out, read, "length", None);
+        let read = self.buffer_call(&format!("read{}", fixed.name()), vec![ctx.buf.e(), at]);
+        let length = self.bind(&ctx.out, read, "length");
         ctx.cursor.borrow_mut().offset += i64::from(fixed.size());
         length
     }
 
     /// `readCount(ctx, minimumElementSize)`.
-    fn read_count(&mut self, ctx: &Ctx, minimum: u64) -> E {
+    fn read_count(&mut self, ctx: &Ctx, minimum: u64) -> Expr {
         let count = self.read_varint(ctx, "count");
         self.sync(ctx);
         if minimum == 0 {
             let tally = self.zero_tally();
-            push(&ctx.out, ir::add_assign(ir::id(tally), ir::id(count)));
+            push(&ctx.out, add_assign(tally.e(), count.e()));
             let raise = self.raise(MALFORMED);
-            push(&ctx.out, ir::if_stmt(ir::binary(ir::id(tally), Op::Gt, ir::num(ZERO_SIZE_COUNT_MAX)), vec![raise], None));
-            return ir::id(count);
+            push(&ctx.out, if_then(luau::bin(tally.e(), B::Gt, num(ZERO_SIZE_COUNT_MAX)), vec![raise]));
+            return count.e();
         }
-        let len = self.buffer_call("len", vec![ir::id(ctx.buf)]);
-        let remaining = ir::binary(len, Op::Sub, ir::id(ctx.variable().unwrap()));
-        let needed = if minimum > 1 { ir::binary(ir::id(count), Op::Mul, ir::num(minimum as f64)) } else { ir::id(count) };
+        let len = self.buffer_call("len", vec![ctx.buf.e()]);
+        let remaining = luau::bin(len, B::Sub, ctx.variable().unwrap().e());
+        let needed = if minimum > 1 { luau::bin(count.e(), B::Mul, num(minimum as f64)) } else { count.e() };
         let raise = self.raise(MALFORMED);
-        push(&ctx.out, ir::if_stmt(ir::binary(needed, Op::Gt, remaining), vec![raise], None));
-        ir::id(count)
+        push(&ctx.out, if_then(luau::bin(needed, B::Gt, remaining), vec![raise]));
+        count.e()
     }
 }
 
@@ -2048,26 +2027,12 @@ pub(crate) struct Header {
     pub name: String,
 }
 
-/// `else` of an if-chain: an `if` goes on as `else if`, anything else is the last block.
-fn else_of(s: S) -> ir::Else {
-    match s {
-        S::If(..) => ir::Else::If(s),
-        S::Block(list) => ir::Else::Block(list),
-        other => ir::Else::Block(vec![other]),
-    }
-}
-
-/// `add(amount, offset)` as `advanceBy` folds it.
-fn add_expr_offset(amount: E, offset: i64) -> E {
-    add(amount, offset as f64)
-}
-
 /// `countedSize(prefix, count, size)`.
-fn counted_size(prefix: E, count: E, size: u64) -> E {
+fn counted_size(prefix: Expr, count: Expr, size: u64) -> Expr {
     if size == 0 {
         return prefix;
     }
-    add_expr(prefix, ir::binary(count, Op::Mul, ir::num(size as f64)))
+    luau::plus(prefix, luau::bin(count, B::Mul, num(size as f64)))
 }
 
 /// `tupleName(place)`.

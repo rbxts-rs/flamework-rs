@@ -45,14 +45,14 @@ local Events = GlobalEvents:createClient({}, {
 		golf = true,
 	},
 	incomingSerializers = {
-		alpha = (function(buf)
+		alpha = function(buf)
 			local value_1 = { buffer.readf64(buf, 0) }
 			if buffer.len(buf) ~= 8 then
 				error("malformed payload")
 			end
 			return value_1
-		end),
-		lima = (function(buf_3)
+		end,
+		lima = function(buf_3)
 			local o_2 = 0
 			local length, o_3 = vread(buf_3, o_2)
 			local text_1 = buffer.readstring(buf_3, o_3, length)
@@ -62,8 +62,8 @@ local Events = GlobalEvents:createClient({}, {
 				error("malformed payload")
 			end
 			return value_2
-		end),
-		mike = (function(buf_4)
+		end,
+		mike = function(buf_4)
 			local o_4 = 0
 			local arg = buffer.readf64(buf_4, o_4)
 			local count, o_5 = vread(buf_4, o_4 + 8)
@@ -81,7 +81,7 @@ local Events = GlobalEvents:createClient({}, {
 				error("malformed payload")
 			end
 			return value_3
-		end),
+		end,
 	},
 	namespaceIds = { "juliet" },
 	namespaces = {
@@ -113,23 +113,23 @@ local Functions = GlobalFunctions:createClient({}, {
 		})),
 	},
 	incomingSerializers = {
-		romeo = (function(buf_5)
+		romeo = function(buf_5)
 			local value_4 = { buffer.readf64(buf_5, 0) }
 			if buffer.len(buf_5) ~= 8 then
 				error("malformed payload")
 			end
 			return value_4
-		end),
+		end,
 	},
 	outgoingResults = {
-		november = (function(buf_6)
+		november = function(buf_6)
 			local value_5 = { buffer.readf64(buf_6, 0) }
 			if buffer.len(buf_6) ~= 8 then
 				error("malformed payload")
 			end
 			return value_5
-		end),
-		oscar = (function(buf_7)
+		end,
+		oscar = function(buf_7)
 			local o_6 = 0
 			local length_1, o_7 = vread(buf_7, o_6)
 			local text_2 = buffer.readstring(buf_7, o_7, length_1)
@@ -139,8 +139,8 @@ local Functions = GlobalFunctions:createClient({}, {
 				error("malformed payload")
 			end
 			return value_6
-		end),
-		quebec = (function(buf_8)
+		end,
+		quebec = function(buf_8)
 			local o_8 = 0
 			local present = buffer.readu8(buf_8, o_8) ~= 0
 			local value_7
@@ -159,7 +159,7 @@ local Functions = GlobalFunctions:createClient({}, {
 				error("malformed payload")
 			end
 			return value_8
-		end),
+		end,
 	},
 	namespaceIds = {},
 	namespaces = {},
@@ -268,9 +268,8 @@ local function shapes(value, coord, part)
 	local buf_20 = buffer.create(vsize(length_10) + length_10 + 4)
 	local blobs = {}
 	local o_13 = 0
-	local blob = part
-	if blob ~= nil then
-		table.insert(blobs, blob)
+	if part ~= nil then
+		table.insert(blobs, part)
 		buffer.writeu32(buf_20, o_13, #blobs)
 	else
 		buffer.writeu32(buf_20, o_13, 0)
@@ -391,7 +390,7 @@ local function spreads(values, more)
 	local _length_4 = #_array_4
 	table.move(values, 1, #values, _length_4 + 1, _array_4)
 	local args_4 = _array_4
-	local length_14 = #(args_4[1])
+	local length_14 = #args_4[1]
 	local count_9 = math.max(#args_4 - 1, 0)
 	local buf_30 = buffer.create(vsize(length_14) + length_14 + (vsize(count_9) + count_9 * 8))
 	local o_19 = 0

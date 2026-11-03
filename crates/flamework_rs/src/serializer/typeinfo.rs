@@ -16,7 +16,8 @@ use rbxts_plugin::ts::{Kind as SyntaxKind, P, Symbol, Type};
 use tsrs_ast::{CheckFlags, SymbolFlags};
 use tsrs_checker::{LiteralValue, ObjectFlags, TypeFlags};
 
-use super::ir::{self, E};
+use rbxts_luau::Expr;
+
 use super::lit::Lit;
 
 /// A property's key in a Luau table: a string, or a number.
@@ -309,26 +310,19 @@ pub fn is_identifier_like(key: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
-/// `numberKey`: `10`, `-1`, `1e999` for an infinity.
-fn number_key(value: f64) -> E {
-    ir::num(value)
-}
-
-/// `keyAccess(object, key)`.
-pub fn key_access(object: E, key: &TableKey) -> E {
+/// `keyAccess(object, key)`: `object.name`, `object["a-b"]`, `object[10]` (a table's own key: no array offset).
+pub(crate) fn key_access(object: Expr, key: &TableKey) -> Expr {
     match key {
-        TableKey::Num(n) => ir::elem(object, number_key(*n)),
-        TableKey::Str(s) if is_identifier_like(s) => ir::prop(object, s),
-        TableKey::Str(s) => ir::elem(object, ir::string(s)),
+        TableKey::Num(n) => super::luau::index(object, super::luau::num(*n)),
+        TableKey::Str(s) => super::luau::prop(object, s),
     }
 }
 
-/// `keyName(key)`.
-pub fn key_name(key: &TableKey) -> ir::Key {
+/// `keyName(key)`: the key in a table constructor (`name = v`, `["a-b"] = v`, `[10] = v`).
+pub(crate) fn key_name(key: &TableKey) -> Expr {
     match key {
-        TableKey::Str(s) => ir::Key::Str(s.clone()),
-        TableKey::Num(n) if *n >= 0.0 || n.is_nan() => ir::Key::Num(*n),
-        TableKey::Num(n) => ir::Key::Computed(number_key(*n)),
+        TableKey::Str(s) => super::luau::str(s),
+        TableKey::Num(n) => super::luau::num(*n),
     }
 }
 

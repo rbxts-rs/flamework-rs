@@ -168,14 +168,13 @@ local w = wrap(Flamework.createGuard((function()
 	end
 end)()), {
 	serialize = function(v_2)
-		local v_3 = v_2
 		local size_1 = 1
-		if guard(v_3) then
-			size_1 += codec.s_Node(v_3)
-		elseif type(v_3) == "table" then
+		if guard(v_2) then
+			size_1 += codec.s_Node(v_2)
+		elseif type(v_2) == "table" then
 			local size_2 = 0
 			local n_4 = 0
-			for key, entry in v_3 do
+			for key, entry in v_2 do
 				n_4 += 1
 				local length = #key
 				size_2 += vsize(length) + length + 1
@@ -185,21 +184,17 @@ end)()), {
 		end
 		local buf_3 = buffer.create(size_1)
 		local o_5 = 0
-		local v_4 = v_2
-		if guard(v_4) then
+		if guard(v_2) then
 			buffer.writeu8(buf_3, o_5, 0)
-			o_5 = codec.w_Node(buf_3, o_5 + 1, v_4)
-		elseif type(v_4) == "table" then
+			o_5 = codec.w_Node(buf_3, o_5 + 1, v_2)
+		elseif type(v_2) == "table" then
 			buffer.writeu8(buf_3, o_5, 1)
-			-- ▼ ReadonlyMap.size ▼
-			local _size = 0
-			for _ in v_4 do
-				_size += 1
+			local n_5 = 0
+			for _ in v_2 do
+				n_5 += 1
 			end
-			-- ▲ ReadonlyMap.size ▲
-			local n_5 = _size
 			o_5 = vwrite(buf_3, o_5 + 1, n_5)
-			for key_1, entry_1 in v_4 do
+			for key_1, entry_1 in v_2 do
 				local length_1 = #key_1
 				o_5 = vwrite(buf_3, o_5, length_1)
 				buffer.writestring(buf_3, o_5, key_1)
@@ -246,10 +241,10 @@ end)()), {
 		return value_6
 	end,
 })
-codec.s_Map_string_u8 = function(v_6)
+codec.s_Map_string_u8 = function(v_4)
 	local size_3 = 0
 	local n_6 = 0
-	for key_2, entry_3 in v_6 do
+	for key_2, entry_3 in v_4 do
 		n_6 += 1
 		local length_3 = #key_2
 		size_3 += vsize(length_3) + length_3 + 1
@@ -257,16 +252,13 @@ codec.s_Map_string_u8 = function(v_6)
 	size_3 += vsize(n_6)
 	return size_3
 end
-codec.w_Map_string_u8 = function(buf_7, o_11, v_6)
-	-- ▼ ReadonlyMap.size ▼
-	local _size = 0
-	for _ in v_6 do
-		_size += 1
+codec.w_Map_string_u8 = function(buf_7, o_11, v_4)
+	local n_7 = 0
+	for _ in v_4 do
+		n_7 += 1
 	end
-	-- ▲ ReadonlyMap.size ▲
-	local n_7 = _size
 	o_11 = vwrite(buf_7, o_11, n_7)
-	for key_3, entry_4 in v_6 do
+	for key_3, entry_4 in v_4 do
 		local length_4 = #key_3
 		o_11 = vwrite(buf_7, o_11, length_4)
 		buffer.writestring(buf_7, o_11, key_3)
@@ -295,9 +287,9 @@ codec.r_Map_string_u8 = function(buf_7, o_11)
 end
 -- Generated, written (holding a guard), generated: named in index order.
 local interleaved = two({
-	serialize = function(v_5)
-		local buf_5 = buffer.create(codec.s_Node(v_5))
-		codec.w_Node(buf_5, 0, v_5)
+	serialize = function(v_3)
+		local buf_5 = buffer.create(codec.s_Node(v_3))
+		codec.w_Node(buf_5, 0, v_3)
 		return buf_5
 	end,
 	deserialize = function(buf_6)
@@ -352,9 +344,9 @@ local interleaved = two({
 		return result_5
 	end
 end)()), {
-	serialize = function(v_7)
-		local buf_8 = buffer.create(codec.s_Map_string_u8(v_7))
-		codec.w_Map_string_u8(buf_8, 0, v_7)
+	serialize = function(v_5)
+		local buf_8 = buffer.create(codec.s_Map_string_u8(v_5))
+		codec.w_Map_string_u8(buf_8, 0, v_5)
 		return buf_8
 	end,
 	deserialize = function(buf_9)
@@ -385,11 +377,11 @@ do
 end
 local wrapper = Wrapper.new()
 local maybeWrapper = wrapper
-codec.s_NodeArray = function(v_8)
-	local n_8 = #v_8
+codec.s_NodeArray = function(v_6)
+	local n_8 = #v_6
 	local size_4 = vsize(n_8)
 	for i_3 = 1, n_8 do
-		local item_2 = v_8[i_3]
+		local item_2 = v_6[i_3]
 		if item_2 == nil then
 			error(`[Flamework] the array has no value at (Node[])[{i_3 - 1}]`)
 		end
@@ -397,10 +389,10 @@ codec.s_NodeArray = function(v_8)
 	end
 	return size_4
 end
-codec.w_NodeArray = function(buf_10, o_15, v_8)
-	o_15 = vwrite(buf_10, o_15, #v_8)
-	for i_4 = 1, #v_8 do
-		local item_3 = v_8[i_4]
+codec.w_NodeArray = function(buf_10, o_15, v_6)
+	o_15 = vwrite(buf_10, o_15, #v_6)
+	for i_4 = 1, #v_6 do
+		local item_3 = v_6[i_4]
 		o_15 = codec.w_Node(buf_10, o_15, item_3)
 	end
 	return o_15
@@ -465,9 +457,9 @@ local viaMethod = wrapper:wrap(Flamework.createGuard((function()
 		return result_7
 	end
 end)()), {
-	serialize = function(v_9)
-		local buf_11 = buffer.create(codec.s_NodeArray(v_9))
-		codec.w_NodeArray(buf_11, 0, v_9)
+	serialize = function(v_7)
+		local buf_11 = buffer.create(codec.s_NodeArray(v_7))
+		codec.w_NodeArray(buf_11, 0, v_7)
 		return buf_11
 	end,
 	deserialize = function(buf_12)
@@ -525,25 +517,22 @@ if _viaOptional ~= nil then
 			return result_9
 		end
 	end)()), {
-		serialize = function(v_10)
+		serialize = function(v_8)
 			local size_5 = 0
 			local n_9 = 0
-			for item_4 in v_10 do
+			for item_4 in v_8 do
 				n_9 += 1
 				size_5 += codec.s_Node(item_4)
 			end
 			size_5 += vsize(n_9)
 			local buf_13 = buffer.create(size_5)
 			local o_19 = 0
-			-- ▼ ReadonlySet.size ▼
-			local _size = 0
-			for _ in v_10 do
-				_size += 1
+			local n_10 = 0
+			for _ in v_8 do
+				n_10 += 1
 			end
-			-- ▲ ReadonlySet.size ▲
-			local n_10 = _size
 			o_19 = vwrite(buf_13, o_19, n_10)
-			for item_5 in v_10 do
+			for item_5 in v_8 do
 				o_19 = codec.w_Node(buf_13, o_19, item_5)
 			end
 			return buf_13
@@ -632,25 +621,22 @@ do
 				return result_11
 			end
 		end)()), {
-			serialize = function(v_11)
+			serialize = function(v_9)
 				local size_6 = 0
 				local n_11 = 0
-				for key_4, entry_6 in v_11 do
+				for key_4, entry_6 in v_9 do
 					n_11 += 1
 					size_6 += 1 + codec.s_Node(entry_6)
 				end
 				size_6 += vsize(n_11)
 				local buf_15 = buffer.create(size_6)
 				local o_23 = 0
-				-- ▼ ReadonlyMap.size ▼
-				local _size = 0
-				for _ in v_11 do
-					_size += 1
+				local n_12 = 0
+				for _ in v_9 do
+					n_12 += 1
 				end
-				-- ▲ ReadonlyMap.size ▲
-				local n_12 = _size
 				o_23 = vwrite(buf_15, o_23, n_12)
-				for key_5, entry_7 in v_11 do
+				for key_5, entry_7 in v_9 do
 					buffer.writeu8(buf_15, o_23, key_5)
 					o_23 = codec.w_Node(buf_15, o_23 + 1, entry_7)
 				end

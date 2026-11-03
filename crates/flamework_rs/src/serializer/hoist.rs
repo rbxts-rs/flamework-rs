@@ -1,28 +1,28 @@
 //! What lands at the top of the file: hoisted types' functions, the file's table, guards, literal and enum
 //! tables, the varint and check helpers; the globals the code names; the serializer's version option.
 //!
-//! Everything but the hoisted types' functions (whose bodies [`super::codegen`] builds) is built as Luau
-//! ([`super::luau`]), its locals placeholders of the generator's ids ([`ir::luau_id`]) that the lowering names in
-//! render order; what the IR code reads of it (an alias, a slot, `codec.<field>`) is handed back as IR around that
-//! Luau ([`E::Luau`]).
+//! Everything is built as Luau ([`super::luau`]), its locals placeholders of the file's [`crate::luau_names::Names`]
+//! ([`Id`]), named when a hook hands its output out.
 
 use std::rc::Rc;
 
-use rbxts_luau::{AssignmentOperator, BinaryOperator, Expr, ReturnStatement, Stmt, create};
+use rbxts_luau::{AssignmentOperator, BinaryOperator, Expr, Stmt, create};
 use rbxts_plugin::ts::{Kind as SyntaxKind, Node, P, Symbol, Type};
 use rbxts_plugin::{Cx, PResult, PluginDiagnostic};
 use tsrs_ast::SymbolFlags;
 use tsrs_checker::TypeFlags;
 
 use super::classify::datatype;
-use super::codegen::{Ctx, Place};
-use super::ir::{self, Body, E, Id, Param, S, Ty, luau_id};
+use super::codegen::{Ctx, Place, function};
 use super::lit::Lit;
 use super::luau::{self, Part};
 use super::typeinfo;
-use super::{GResult, Gen, Hoisted, Kind, Shape, Slot, Varint};
+use super::{GResult, Gen, Hoisted, Id, Kind, Shape, Slot, Varint};
 
 const VARINT_MAX_BYTES: u32 = 5;
+/// The types Luau's `type()` tells; any other is `typeof()`'s.
+const PRIMITIVE_LUAU_TYPES: [&str; 10] =
+    ["nil", "boolean", "string", "number", "table", "userdata", "function", "thread", "vector", "buffer"];
 pub(crate) const MALFORMED: &str = "malformed payload";
 
 /// `GLOBAL_VALUES`: how a hidden global is reached (`alias`), or refused.
@@ -53,16 +53,42 @@ impl Role {
 }
 
 impl Gen<'_, '_, '_> {
-    /// `uid(hint)`: a generated identifier, with the type its declaration gives it.
-    pub(crate) fn uid(&mut self, hint: &str, ty: Ty) -> Id {
-        self.g.ids.new_id(hint, ty)
+    /// `uid(hint)`: a generated local, named after `hint` when its code is handed out.
+    pub(crate) fn uid(&mut self, hint: &str) -> Id {
+        Id(self.g.names.fresh_index(hint) as u32)
     }
 
-    /// `parameter(hint)`: an identifier declared as a parameter of a generated function.
-    pub(crate) fn parameter(&mut self, hint: &str, ty: Ty) -> Id {
-        let id = self.uid(hint, ty);
-        self.g.parameters.insert(id);
+    /// A call site's argument, read by the packing before it is compiled: a placeholder the site replaces with the
+    /// argument's Luau (`crate::networking::calls`), with the value of a literal argument, which checks fold.
+    pub(crate) fn slot(&mut self, literal: Option<Lit>) -> Id {
+        let id = self.uid("arg");
+        if let Some(literal) = literal {
+            self.g.slot_literals.insert(id, literal);
+        }
         id
+    }
+
+    /// The literal a value is (`isLiteral`, with its value): `nil`, a boolean or a number, or a call site's literal
+    /// argument ([`Self::slot`]).
+    pub(crate) fn literal(&self, value: &Expr) -> Option<Lit> {
+        match crate::luau_names::placeholder_index(value) {
+            Some(index) => self.g.slot_literals.get(&Id(index as u32)).cloned(),
+            None => Lit::of(value),
+        }
+    }
+
+    /// A value code can read again and index as it is (`isIdentifier`): a name ([`luau::is_name`]), but not a call
+    /// site's literal argument, whose Luau, a literal, is bound to a local first wherever a name is not enough.
+    pub(crate) fn is_name(&self, value: &Expr) -> bool {
+        luau::is_name(value) && self.literal(value).is_none()
+    }
+
+    /// [`Self::literal`]'s number.
+    pub(crate) fn literal_number(&self, value: &Expr) -> Option<f64> {
+        match self.literal(value)? {
+            Lit::Num(n) => Some(n),
+            _ => None,
+        }
     }
 
     /// `atFileLevel(build)`.
@@ -131,26 +157,25 @@ impl Gen<'_, '_, '_> {
             self.refuse_hidden(name, module_level, false);
             return None;
         }
-        let alias = self.uid(name, Ty::Unknown);
-        self.g.declarations.push(S::Luau(luau::local(&luau_id(alias), Some(create::id(name)))));
+        let alias = self.uid(name);
+        self.g.declarations.push(luau::local(&alias.e(), Some(create::id(name))));
         self.g.global_aliases.insert(name.to_owned(), alias);
         Some(alias)
     }
 
-    /// `globalRef(name)`: the global, or the module-level alias of a hidden `buffer`, `math` or `error`.
-    pub(crate) fn global_ref(&mut self, name: &str) -> E {
+    /// `globalRef(name)`: the global, or the module-level alias of a hidden `buffer`, `math` or `error` (`typeOf` is
+    /// Luau's `typeof`).
+    pub(crate) fn global_ref(&mut self, name: &str) -> Expr {
         match self.global_alias(name) {
-            Some(alias) => ir::id(alias),
-            None => ir::global(name),
+            Some(alias) => alias.e(),
+            None => create::id(if name == "typeOf" { "typeof" } else { name }),
         }
     }
 
-    /// [`Self::global_ref`] as Luau (`typeOf` is Luau's `typeof`).
-    fn global_luau(&mut self, name: &str) -> Expr {
-        match self.global_alias(name) {
-            Some(alias) => luau_id(alias),
-            None => create::id(if name == "typeOf" { "typeof" } else { name }),
-        }
+    /// Refuses a declaration hiding `name` where the TS generator's code named the global `name` (the Luau itself
+    /// may not).
+    pub(crate) fn uses_global(&mut self, name: &str) {
+        self.global_alias(name);
     }
 
     /// `checkGlobalsIn(node)` for the globals a literal names: an enum item's `Enum` (refused when a declaration hides
@@ -161,65 +186,63 @@ impl Gen<'_, '_, '_> {
         }
     }
 
-    pub(crate) fn buffer_call(&mut self, method: &str, args: Vec<E>) -> E {
+    /// `buffer.<method>(args)`.
+    pub(crate) fn buffer_call(&mut self, method: &str, args: Vec<Expr>) -> Expr {
         let buffer = self.global_ref("buffer");
-        ir::call(ir::prop(buffer, method), args)
-    }
-
-    pub(crate) fn math_call(&mut self, method: &str, args: Vec<E>) -> E {
-        let math = self.global_ref("math");
-        ir::call(ir::prop(math, method), args)
-    }
-
-    pub(crate) fn range(&mut self, from: E, to: E) -> E {
-        let range = self.global_ref("$range");
-        ir::call(range, vec![from, to])
-    }
-
-    pub(crate) fn tuple(&mut self, values: Vec<E>) -> E {
-        let tuple = self.global_ref("$tuple");
-        ir::call(tuple, values)
-    }
-
-    /// `typeIs(v, name)`.
-    pub(crate) fn type_of_is(&mut self, value: E, name: &str) -> E {
-        let type_is = self.global_ref("typeIs");
-        ir::call(type_is, vec![value, ir::string(name)])
-    }
-
-    /// `new Name(args)`.
-    pub(crate) fn construct(&mut self, name: &str, args: Vec<E>) -> E {
-        self.global_ref(name);
-        ir::new(name, args)
-    }
-
-    /// `buffer.<method>(args)` as Luau.
-    fn buffer_luau(&mut self, method: &str, args: Vec<Expr>) -> Expr {
-        let buffer = self.global_luau("buffer");
         luau::call(luau::prop(buffer, method), args)
     }
 
-    /// `error("…")` as Luau, for the file-level helpers (where a hidden `error` is refused, never aliased).
-    fn raise_luau(&mut self, message: &str) -> Stmt {
-        let error = self.global_luau("error");
-        Stmt::Call(luau::call(error, vec![luau::str(message)]))
+    /// `math.<method>(args)`.
+    pub(crate) fn math_call(&mut self, method: &str, args: Vec<Expr>) -> Expr {
+        let math = self.global_ref("math");
+        luau::call(luau::prop(math, method), args)
+    }
+
+    /// `for index = from, to do body end` (the TS generator's `for (const index of $range(from, to))`).
+    pub(crate) fn for_range(&mut self, index: Id, from: Expr, to: Expr, body: Vec<Stmt>) -> Stmt {
+        self.uses_global("$range");
+        luau::for_range(&index.e(), from, to, body)
+    }
+
+    /// `return a, b` (the TS generator's `return $tuple(a, b)`).
+    pub(crate) fn tuple(&mut self, values: Vec<Expr>) -> Stmt {
+        self.uses_global("$tuple");
+        luau::returns(values)
+    }
+
+    /// `typeIs(v, name)`: `type(v) == name` for Luau's primitive types, `typeof(v) == name` otherwise.
+    pub(crate) fn type_of_is(&mut self, value: Expr, name: &str) -> Expr {
+        self.uses_global("typeIs");
+        let function = if PRIMITIVE_LUAU_TYPES.contains(&name) { "type" } else { "typeof" };
+        luau::bin(luau::call(create::id(function), vec![value]), BinaryOperator::Eq, luau::str(name))
+    }
+
+    /// `new Name(args)`: an empty table for an `Array` (`table.create(n)` with a length), a `Set` or a `Map`, else
+    /// `Name.new(args)`.
+    pub(crate) fn construct(&mut self, name: &str, args: Vec<Expr>) -> Expr {
+        let class = self.global_ref(name);
+        match name {
+            "Array" if !args.is_empty() => luau::call(luau::prop(create::id("table"), "create"), args),
+            "Array" | "Set" | "Map" => create::map(Vec::<(Expr, Expr)>::new()),
+            _ => luau::call(luau::prop(class, "new"), args),
+        }
     }
 
     /// `error("…")`.
-    pub(crate) fn raise(&mut self, message: &str) -> S {
-        self.raise_with(ir::string(message))
+    pub(crate) fn raise(&mut self, message: &str) -> Stmt {
+        self.raise_with(luau::str(message))
     }
 
     /// `raiseWith(message)`: `error(message)`, or `assert(false, message)` where a `catch (error)` hides `error`.
-    pub(crate) fn raise_with(&mut self, message: E) -> S {
+    pub(crate) fn raise_with(&mut self, message: Expr) -> Stmt {
         if self.g.file_level == 0
             && self.hiding_declaration("error", SymbolFlags::Value).is_some()
             && self.hiding_declaration("assert", SymbolFlags::Value).is_none()
         {
-            return ir::stmt(ir::call(ir::global("assert"), vec![ir::bool(false), message]));
+            return Stmt::Call(luau::call(create::id("assert"), vec![create::bool(false), message]));
         }
         let error = self.global_ref("error");
-        ir::stmt(ir::call(error, vec![message]))
+        Stmt::Call(luau::call(error, vec![message]))
     }
 
     // --- the file's table ------------------------------------------------------------------------------------
@@ -229,8 +252,8 @@ impl Gen<'_, '_, '_> {
         if let Some(table) = self.g.function_table {
             return table;
         }
-        let table = self.uid("codec", Ty::Function);
-        self.g.declarations.push(S::Luau(luau::local(&luau_id(table), Some(create::map(Vec::<(Expr, Expr)>::new())))));
+        let table = self.uid("codec");
+        self.g.declarations.push(luau::local(&table.e(), Some(create::map(Vec::<(Expr, Expr)>::new()))));
         self.g.function_table = Some(table);
         table
     }
@@ -238,26 +261,20 @@ impl Gen<'_, '_, '_> {
     /// `codec.field`.
     fn codec_field(&mut self, field: &str) -> Expr {
         let table = self.hoisted_table();
-        luau::prop(luau_id(table), field)
+        luau::prop(table.e(), field)
     }
 
-    /// `define(field, value)`: `codec.field = value` (a function [`super::codegen`] builds), recorded for the
-    /// self-check.
-    fn define(&mut self, field: &str, value: E) -> S {
-        ir::assign(E::Luau(self.codec_field(field)), value)
-    }
-
-    /// [`Self::define`] of a value built as Luau.
-    fn define_luau(&mut self, field: &str, value: Expr) -> Stmt {
+    /// `define(field, value)`: `codec.field = value`, recorded for the self-check.
+    fn define(&mut self, field: &str, value: Expr) -> Stmt {
         luau::assign(self.codec_field(field), value)
     }
 
     fn push_table(&mut self, statement: Stmt, field: Option<String>) {
-        self.g.tables.push(S::Luau(statement));
+        self.g.tables.push(statement);
         self.g.table_defines.push(field);
     }
 
-    fn push_definition(&mut self, statement: S, field: String) {
+    fn push_definition(&mut self, statement: Stmt, field: String) {
         self.g.definitions.push(statement);
         self.g.definition_defines.push(Some(field));
     }
@@ -270,7 +287,7 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `takeHoisted()`: what was hoisted since the last call, in an order that keeps every reference in scope.
-    pub(crate) fn take_hoisted(&mut self) -> Vec<S> {
+    pub(crate) fn take_hoisted(&mut self) -> Vec<Stmt> {
         let [d, t, f] = self.g.emitted;
         let mut statements = Vec::new();
         statements.extend(self.g.declarations[d..].iter().cloned());
@@ -351,15 +368,15 @@ impl Gen<'_, '_, '_> {
         let display = self.display_name(ty);
         let named = format!("the type '{}'", self.type_text(ty));
 
-        let value = self.parameter("v", Ty::Unknown);
-        let size_where = if info.size_checks { Some(self.uid("where", Ty::String)) } else { None };
+        let value = self.uid("v");
+        let size_where = if info.size_checks { Some(self.uid("where")) } else { None };
         let size_params: Vec<Id> = std::iter::once(value).chain(size_where).collect();
         let size_body = self.fitted(
             &mut |gn| {
                 let body = super::codegen::out();
                 let place = Place { path: Some(String::new()), owner: Some(display.clone()), where_: size_where, ..Place::default() };
-                let size = gn.emit_size(&kind_shape, ir::id(value), &body, &place)?;
-                body.borrow_mut().push(S::Return(Some(size)));
+                let size = gn.emit_size(&kind_shape, value.e(), &body, &place)?;
+                body.borrow_mut().push(create::return_stmt(size));
                 Ok(super::codegen::take(&body))
             },
             &size_params,
@@ -367,13 +384,13 @@ impl Gen<'_, '_, '_> {
             None,
             0,
         )?;
-        let definition = self.define(&format!("s_{}", info.name), ir::arrow(params(&size_params), Body::Block(size_body)));
+        let definition = self.define(&format!("s_{}", info.name), function(&size_params, size_body));
         self.push_definition(definition, format!("s_{}", info.name));
 
-        let buf = self.uid("buf", Ty::Buffer);
-        let o = self.uid("o", Ty::Number);
-        let blobs = if layout.blobs { Some(self.uid("blobs", Ty::Blobs)) } else { None };
-        let where_ = if info.checks { Some(self.uid("where", Ty::String)) } else { None };
+        let buf = self.uid("buf");
+        let o = self.uid("o");
+        let blobs = if layout.blobs { Some(self.uid("blobs")) } else { None };
+        let where_ = if info.checks { Some(self.uid("where")) } else { None };
 
         let write_params: Vec<Id> = [buf, o, value].into_iter().chain(blobs).chain(where_).collect();
         let write_body = self.fitted(
@@ -385,9 +402,9 @@ impl Gen<'_, '_, '_> {
                     owner: Some(display.clone()),
                     ..Place::default()
                 });
-                gn.emit_write(&kind_shape, ir::id(value), &ctx)?;
+                gn.emit_write(&kind_shape, value.e(), &ctx)?;
                 gn.sync(&ctx);
-                body.borrow_mut().push(S::Return(Some(ir::id(o))));
+                body.borrow_mut().push(create::return_stmt(o.e()));
                 Ok(super::codegen::take(&body))
             },
             &write_params,
@@ -395,7 +412,7 @@ impl Gen<'_, '_, '_> {
             None,
             0,
         )?;
-        let definition = self.define(&format!("w_{}", info.name), ir::arrow(params(&write_params), Body::Block(write_body)));
+        let definition = self.define(&format!("w_{}", info.name), function(&write_params, write_body));
         self.push_definition(definition, format!("w_{}", info.name));
 
         let read_params: Vec<Id> = [buf, o].into_iter().chain(blobs).collect();
@@ -404,14 +421,14 @@ impl Gen<'_, '_, '_> {
                 let body = super::codegen::out();
                 let ctx = Ctx::new(buf, blobs, Some(o), 0, body.clone(), Place::default());
                 let result = gn.emit_read(&kind_shape, &ctx)?;
-                let bound = if result.is_identifier() || result.is_literal() {
+                let bound = if luau::is_name(&result) || luau::is_literal(&result) {
                     result
                 } else {
-                    gn.bind(&body, result, "value", None)
+                    gn.bind(&body, result, "value")
                 };
                 gn.sync(&ctx);
-                let tuple = gn.tuple(vec![bound, ir::id(o)]);
-                body.borrow_mut().push(S::Return(Some(tuple)));
+                let tuple = gn.tuple(vec![bound, o.e()]);
+                body.borrow_mut().push(tuple);
                 Ok(super::codegen::take(&body))
             },
             &read_params,
@@ -419,18 +436,16 @@ impl Gen<'_, '_, '_> {
             None,
             0,
         )?;
-        let definition = self.define(&format!("r_{}", info.name), ir::arrow(params(&read_params), Body::Block(read_body)));
+        let definition = self.define(&format!("r_{}", info.name), function(&read_params, read_body));
         self.push_definition(definition, format!("r_{}", info.name));
         Ok(())
     }
 
     /// `callHoisted(info, role, args)`.
-    pub(crate) fn call_hoisted(&mut self, info: &Hoisted, role: Role, args: Vec<E>) -> E {
+    pub(crate) fn call_hoisted(&mut self, info: &Hoisted, role: Role, args: Vec<Expr>) -> Expr {
         let field = format!("{}_{}", role.prefix(), info.name);
         self.note_call(&field, &info.owner.clone());
-        let callee = ir::cast(E::Luau(self.codec_field(&field)), if role == Role::R { Ty::Tuple } else { Ty::Function });
-        let call = ir::call(callee, args);
-        if role == Role::R { ir::cast(call, Ty::Tuple) } else { call }
+        luau::call(self.codec_field(&field), args)
     }
 
     /// `generatedName(type, structure)`.
@@ -489,13 +504,13 @@ impl Gen<'_, '_, '_> {
     // --- slots -------------------------------------------------------------------------------------------------
 
     /// `fileSlots(hints)`.
-    fn file_slots(&mut self, hints: &[(&str, Ty)]) -> Vec<Slot> {
+    fn file_slots(&mut self, hints: &[&str]) -> Vec<Slot> {
         if self.g.claim_locals(hints.len() as u32) {
-            return hints.iter().map(|(hint, ty)| Slot::Local(self.uid(hint, *ty))).collect();
+            return hints.iter().map(|hint| Slot::Local(self.uid(hint))).collect();
         }
         hints
             .iter()
-            .map(|(hint, _)| {
+            .map(|hint| {
                 let count = self.g.table_fields.get(*hint).copied().unwrap_or(0);
                 self.g.table_fields.insert((*hint).to_owned(), count + 1);
                 Slot::Field(if count == 0 { (*hint).to_owned() } else { format!("{hint}_{count}") })
@@ -503,25 +518,25 @@ impl Gen<'_, '_, '_> {
             .collect()
     }
 
-    /// `readSlot(slot, type)`.
-    fn read_slot(&mut self, slot: &Slot, ty: Ty) -> E {
+    /// `readSlot(slot)`.
+    fn read_slot(&mut self, slot: &Slot) -> Expr {
         match slot {
-            Slot::Local(id) => ir::id(*id),
-            Slot::Field(field) => ir::cast(E::Luau(self.codec_field(field)), ty),
+            Slot::Local(id) => id.e(),
+            Slot::Field(field) => self.codec_field(field),
         }
     }
 
     /// `declareSlot(slot, value)`.
     fn declare_slot(&mut self, slot: &Slot, value: Expr) -> Stmt {
         match slot {
-            Slot::Local(id) => luau::local(&luau_id(*id), Some(value)),
+            Slot::Local(id) => luau::local(&id.e(), Some(value)),
             Slot::Field(field) => luau::assign(self.codec_field(field), value),
         }
     }
 
     /// `guardFor(type)`: the member's `t` guard (F3's `buildGuardFromType`, [`crate::guards::guard_for`]), kept in a
     /// slot. Its errors are reported at the site being built.
-    pub(crate) fn guard_for(&mut self, ty: P<Type>) -> GResult<E> {
+    pub(crate) fn guard_for(&mut self, ty: P<Type>) -> GResult<Expr> {
         #[cfg(feature = "wire-harvest")]
         if self.g.companion {
             return super::wire::guard(self, ty);
@@ -529,7 +544,7 @@ impl Gen<'_, '_, '_> {
         let slot = match self.g.guards.get(&ty) {
             Some(slot) => slot.clone(),
             None => {
-                let slot = self.file_slots(&[("guard", Ty::Function)]).remove(0);
+                let slot = self.file_slots(&["guard"]).remove(0);
                 let expression = self.at_file_level(|gn| -> GResult<Expr> {
                     let node = gn.g.diagnostic_node;
                     let (mut guard, names) =
@@ -538,8 +553,8 @@ impl Gen<'_, '_, '_> {
                     for name in crate::guards::names::ts_globals_in(&guard) {
                         gn.global_alias(name);
                     }
-                    // the guard's locals become the generator's, named where the guard is lowered
-                    names.rebase(&mut guard, |base| gn.uid(base, Ty::Unknown).0 as usize);
+                    // the guard's locals become the generator's, named with the code that holds the guard
+                    names.rebase(&mut guard, |base| gn.uid(base).0 as usize);
                     Ok(guard)
                 })?;
                 let statement = self.declare_slot(&slot, expression);
@@ -548,25 +563,25 @@ impl Gen<'_, '_, '_> {
                 slot
             }
         };
-        Ok(self.read_slot(&slot, Ty::Function))
+        Ok(self.read_slot(&slot))
     }
 
     /// `enumTableFor(name)`: `Enum.<name>` items by `Value`, built once.
-    pub(crate) fn enum_table_for(&mut self, name: &str) -> E {
+    pub(crate) fn enum_table_for(&mut self, name: &str) -> Expr {
         let slot = match self.g.enum_tables.get(name) {
             Some(slot) => slot.clone(),
             None => {
                 let hint = format!("enum_{name}");
-                let slot = self.file_slots(&[(&hint, Ty::EnumTable)]).remove(0);
+                let slot = self.file_slots(&[&hint]).remove(0);
                 let id = match &slot {
                     Slot::Local(id) => *id,
-                    Slot::Field(_) => self.uid(&hint, Ty::EnumTable),
+                    Slot::Field(_) => self.uid(&hint),
                 };
-                let item = self.uid("item", Ty::EnumItem);
+                let item = self.uid("item");
                 self.at_file_level(|gn| {
-                    let group = luau::prop(gn.global_luau("Enum"), name);
+                    let group = luau::prop(gn.global_ref("Enum"), name);
                     let items = luau::method(group, "GetEnumItems", Vec::new());
-                    let (table, item) = (luau_id(id), luau_id(item));
+                    let (table, item) = (id.e(), item.e());
                     let by_value = luau::assign(luau::index(table.clone(), luau::prop(item.clone(), "Value")), item.clone());
                     let mut build = vec![
                         luau::local(&table, Some(create::map(Vec::<(Expr, Expr)>::new()))),
@@ -585,17 +600,17 @@ impl Gen<'_, '_, '_> {
                 slot
             }
         };
-        self.read_slot(&slot, Ty::EnumTable)
+        self.read_slot(&slot)
     }
 
     /// `literalTablesFor(kind)`: the values as a list (decode) and as a lookup to their index (encode).
-    pub(crate) fn literal_tables_for(&mut self, kind: &Rc<Kind>) -> (E, E) {
+    pub(crate) fn literal_tables_for(&mut self, kind: &Rc<Kind>) -> (Expr, Expr) {
         let key = super::kind_key(kind);
         let (list, index) = match self.g.literal_tables.get(&key) {
             Some(entry) => entry.clone(),
             None => {
                 let Kind::Literals(values) = &**kind else { panic!("literal tables of a literal group") };
-                let slots = self.file_slots(&[("literals", Ty::Blobs), ("literalIndex", Ty::IndexMap)]);
+                let slots = self.file_slots(&["literals", "literalIndex"]);
                 let (list, index) = (slots[0].clone(), slots[1].clone());
                 self.at_file_level(|gn| {
                     for v in values {
@@ -615,8 +630,8 @@ impl Gen<'_, '_, '_> {
                 (list, index)
             }
         };
-        let list = self.read_slot(&list, Ty::Blobs);
-        let index = self.read_slot(&index, Ty::IndexMap);
+        let list = self.read_slot(&list);
+        let index = self.read_slot(&index);
         (list, index)
     }
 
@@ -628,9 +643,9 @@ impl Gen<'_, '_, '_> {
             return varint;
         }
         let helpers = Varint {
-            size: self.uid("vsize", Ty::Function),
-            write: self.uid("vwrite", Ty::Function),
-            read: self.uid("vread", Ty::Function),
+            size: self.uid("vsize"),
+            write: self.uid("vwrite"),
+            read: self.uid("vread"),
         };
         self.at_file_level(|gn| gn.build_varint_helpers(helpers));
         self.g.varint = Some(helpers);
@@ -643,22 +658,22 @@ impl Gen<'_, '_, '_> {
         let one = || luau::num(1.0);
         let byte_size = || luau::num(128.0);
 
-        let n = luau_id(self.uid("n", Ty::Number));
+        let n = self.uid("n").e();
         let mut size = luau::num(f64::from(VARINT_MAX_BYTES));
         for bytes in (1..VARINT_MAX_BYTES).rev() {
             size = luau::if_expr(below(n.clone(), 128f64.powi(bytes as i32)), luau::num(f64::from(bytes)), size);
         }
         let vsize = luau::function(&[n], vec![create::return_stmt(size)]);
-        self.push_table(luau::local(&luau_id(varint.size), Some(vsize)), None);
+        self.push_table(luau::local(&varint.size.e(), Some(vsize)), None);
 
-        let buf = luau_id(self.uid("buf", Ty::Buffer));
-        let o = luau_id(self.uid("o", Ty::Number));
-        let n = luau_id(self.uid("n", Ty::Number));
+        let buf = self.uid("buf").e();
+        let o = self.uid("o").e();
+        let n = self.uid("n").e();
         let low_bits = luau::bin(luau::bin(n.clone(), Mod, byte_size()), Add, byte_size());
-        let write_byte = self.buffer_luau("writeu8", vec![buf.clone(), o.clone(), low_bits]);
-        let math = self.global_luau("math");
+        let write_byte = self.buffer_call("writeu8", vec![buf.clone(), o.clone(), low_bits]);
+        let math = self.global_ref("math");
         let floor = luau::call(luau::prop(math, "floor"), vec![luau::bin(n.clone(), Div, byte_size())]);
-        let last = self.buffer_luau("writeu8", vec![buf.clone(), o.clone(), n.clone()]);
+        let last = self.buffer_call("writeu8", vec![buf.clone(), o.clone(), n.clone()]);
         let vwrite = luau::function(&[buf, o.clone(), n.clone()], vec![
             luau::while_(luau::bin(n.clone(), Ge, byte_size()), vec![
                 Stmt::Call(write_byte),
@@ -668,18 +683,18 @@ impl Gen<'_, '_, '_> {
             Stmt::Call(last),
             create::return_stmt(luau::add(o, 1.0)),
         ]);
-        self.push_table(luau::local(&luau_id(varint.write), Some(vwrite)), None);
+        self.push_table(luau::local(&varint.write.e(), Some(vwrite)), None);
 
-        let buf = luau_id(self.uid("buf", Ty::Buffer));
-        let o = luau_id(self.uid("o", Ty::Number));
-        let n = luau_id(self.uid("n", Ty::Number));
-        let byte = luau_id(self.uid("b", Ty::Number));
-        let scale = luau_id(self.uid("scale", Ty::Number));
-        let read_byte = self.buffer_luau("readu8", vec![buf.clone(), o.clone()]);
+        let buf = self.uid("buf").e();
+        let o = self.uid("o").e();
+        let n = self.uid("n").e();
+        let byte = self.uid("b").e();
+        let scale = self.uid("scale").e();
+        let read_byte = self.buffer_call("readu8", vec![buf.clone(), o.clone()]);
         // the TS generator's `$tuple(n, o)`: refused where a declaration hides `$tuple`
         self.global_alias("$tuple");
-        let raise = self.raise_luau(MALFORMED);
-        let both = Stmt::Return(ReturnStatement { expressions: vec![n.clone(), o.clone()] });
+        let raise = self.raise(MALFORMED);
+        let both = luau::returns(vec![n.clone(), o.clone()]);
         let last_scale = luau::num(128f64.powi(VARINT_MAX_BYTES as i32 - 1));
         let vread = luau::function(&[buf, o.clone()], vec![
             luau::local(&n, Some(luau::num(0.0))),
@@ -693,19 +708,19 @@ impl Gen<'_, '_, '_> {
                 luau::if_chain(vec![(luau::bin(scale, Gt, last_scale), vec![raise])], Vec::new()),
             ]),
         ]);
-        self.push_table(luau::local(&luau_id(varint.read), Some(vread)), None);
+        self.push_table(luau::local(&varint.read.e(), Some(vread)), None);
     }
 
     // --- check helpers -----------------------------------------------------------------------------------------
 
     /// `checkHelper()`: `codec.checkWidth`, built once.
-    pub(crate) fn check_helper(&mut self) -> E {
+    pub(crate) fn check_helper(&mut self) -> Expr {
         if !self.g.check_function {
             self.at_file_level(|gn| gn.build_check_helper());
             self.g.check_function = true;
         }
         self.note_call("checkWidth", "a width check");
-        ir::cast(E::Luau(self.codec_field("checkWidth")), Ty::Function)
+        self.codec_field("checkWidth")
     }
 
     fn realm_test(&mut self, body: &mut Vec<Stmt>) {
@@ -719,8 +734,7 @@ impl Gen<'_, '_, '_> {
 
     fn build_check_helper(&mut self) {
         let [width, value, where_, unit, message] =
-            [("width", Ty::String), ("value", Ty::Number), ("where", Ty::String), ("unit", Ty::String), ("message", Ty::String)]
-                .map(|(hint, ty)| luau_id(self.uid(hint, ty)));
+            ["width", "value", "where", "unit", "message"].map(|hint| self.uid(hint).e());
         // `unit = ""`
         let unset = luau::bin(unit.clone(), BinaryOperator::Eq, create::nil());
         let mut body = vec![luau::if_chain(vec![(unset, vec![luau::assign(unit.clone(), luau::str(""))])], Vec::new())];
@@ -736,41 +750,33 @@ impl Gen<'_, '_, '_> {
         ]);
         body.push(luau::local(&message, Some(text)));
         if self.g.checks.mode == "assert" {
-            let error = self.global_luau("error");
+            let error = self.global_ref("error");
             body.push(Stmt::Call(luau::call(error, vec![message, luau::num(2.0)])));
         } else {
-            let warn = self.global_luau("warn");
+            let warn = self.global_ref("warn");
             body.push(Stmt::Call(luau::call(warn, vec![message])));
             body.push(create::return_stmt(create::bool(true)));
         }
-        let definition = self.define_luau("checkWidth", luau::function(&[width, value, where_, unit], body));
+        let definition = self.define("checkWidth", luau::function(&[width, value, where_, unit], body));
         self.push_table(definition, Some("checkWidth".into()));
     }
 
     /// `typeCheckHelper()`: `codec.checkType`, built once.
-    pub(crate) fn type_check_helper(&mut self) -> E {
+    pub(crate) fn type_check_helper(&mut self) -> Expr {
         if !self.g.type_check_function {
             self.at_file_level(|gn| gn.build_type_check_helper());
             self.g.type_check_function = true;
         }
         self.note_call("checkType", "a type check");
-        ir::cast(E::Luau(self.codec_field("checkType")), Ty::Function)
+        self.codec_field("checkType")
     }
 
     fn build_type_check_helper(&mut self) {
-        let [expected, value, where_, show, got, message] = [
-            ("expected", Ty::String),
-            ("value", Ty::Unknown),
-            ("where", Ty::String),
-            ("show", Ty::Boolean),
-            ("got", Ty::String),
-            ("message", Ty::String),
-        ]
-        .map(|(hint, ty)| luau_id(self.uid(hint, ty)));
+        let [expected, value, where_, show, got, message] = ["expected", "value", "where", "show", "got", "message"].map(|hint| self.uid(hint).e());
         let mut body = Vec::new();
         self.realm_test(&mut body);
         let is = |name: &str| luau::bin(got.clone(), BinaryOperator::Eq, luau::str(name));
-        let type_of = self.global_luau("typeOf");
+        let type_of = self.global_ref("typeOf");
         body.push(luau::local(&got, Some(luau::call(type_of, vec![value.clone()]))));
         let quoted = luau::interp(vec![Part::Text("\"".into()), Part::Expr(value.clone()), Part::Text("\"".into())]);
         let plain = luau::interp(vec![Part::Expr(value.clone())]);
@@ -790,14 +796,14 @@ impl Gen<'_, '_, '_> {
         ]);
         body.push(luau::local(&message, Some(text)));
         if self.g.checks.mode == "warn" {
-            let warn = self.global_luau("warn");
+            let warn = self.global_ref("warn");
             let boolean = luau::bin(expected.clone(), BinaryOperator::Eq, luau::str("boolean"));
             let warns = vec![Stmt::Call(luau::call(warn, vec![message.clone()])), create::return_stmt(create::bool(true))];
             body.push(luau::if_chain(vec![(boolean, warns)], Vec::new()));
         }
-        let error = self.global_luau("error");
+        let error = self.global_ref("error");
         body.push(Stmt::Call(luau::call(error, vec![message, luau::num(2.0)])));
-        let definition = self.define_luau("checkType", luau::function(&[expected, value, where_, show], body));
+        let definition = self.define("checkType", luau::function(&[expected, value, where_, show], body));
         self.push_table(definition, Some("checkType".into()));
     }
 
@@ -806,8 +812,8 @@ impl Gen<'_, '_, '_> {
         if let Some(zeros) = self.g.zeros {
             return zeros;
         }
-        let zeros = self.uid("zeros", Ty::Number);
-        self.push_table(luau::local(&luau_id(zeros), Some(luau::num(0.0))), None);
+        let zeros = self.uid("zeros");
+        self.push_table(luau::local(&zeros.e(), Some(luau::num(0.0))), None);
         self.g.zeros = Some(zeros);
         zeros
     }
@@ -845,9 +851,6 @@ fn is_plain_name(text: &str) -> bool {
     rest.is_empty() || (rest.starts_with('<') && rest.ends_with('>'))
 }
 
-fn params(ids: &[Id]) -> Vec<Param> {
-    ids.iter().map(|&id| ir::param(id)).collect()
-}
 
 // --- the serializer's options --------------------------------------------------------------------------------------
 

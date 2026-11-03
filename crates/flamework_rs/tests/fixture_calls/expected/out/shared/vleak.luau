@@ -244,13 +244,10 @@ end)()), {
 		size_1 += vsize(n_4)
 		local buf_5 = buffer.create(size_1)
 		local o_6 = 0
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
+		local n_5 = 0
 		for _ in v_3 do
-			_size += 1
+			n_5 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_5 = _size
 		o_6 = vwrite(buf_5, o_6, n_5)
 		for key_1, entry_1 in v_3 do
 			local length_1 = #key_1

@@ -34,7 +34,7 @@ local vread = function(buf_1, o_1)
 	end
 end
 codec.s_ExtPick = function(v)
-	local length = #(v.alpha)
+	local length = #v.alpha
 	return vsize(length) + length + 2
 end
 codec.w_ExtPick = function(buf_2, o_2, v)
@@ -279,7 +279,7 @@ local keyed = Flamework.createSerializer({
 	end,
 })
 codec.s_Homomorphic = function(v_15)
-	local length_6 = #(v_15.alpha)
+	local length_6 = #v_15.alpha
 	return vsize(length_6) + length_6 + 1
 end
 codec.w_Homomorphic = function(buf_13, o_10, v_15)
@@ -331,7 +331,7 @@ local homomorphic = Flamework.createSerializer({
 	end,
 })
 codec.s_ExtGenericDeep = function(v_17)
-	local length_9 = #(v_17.alpha)
+	local length_9 = #v_17.alpha
 	return vsize(length_9) + length_9 + 5
 end
 codec.w_ExtGenericDeep = function(buf_16, o_13, v_17)

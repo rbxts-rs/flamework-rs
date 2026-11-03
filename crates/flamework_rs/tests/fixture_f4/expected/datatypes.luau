@@ -207,14 +207,12 @@ for _, item_1 in Enum.KeyCode:GetEnumItems() do
 end
 local keyCode = Flamework.createSerializer({
 	serialize = function(v_12)
-		local v_13 = v_12
-		local buf_24 = buffer.create(if v_13 ~= nil then 3 else 1)
+		local buf_24 = buffer.create(if v_12 ~= nil then 3 else 1)
 		local o = 0
-		local v_14 = v_12
-		buffer.writeu8(buf_24, o, if v_14 ~= nil then 1 else 0)
+		buffer.writeu8(buf_24, o, if v_12 ~= nil then 1 else 0)
 		o += 1
-		if v_14 ~= nil then
-			buffer.writeu16(buf_24, o, v_14.Value)
+		if v_12 ~= nil then
+			buffer.writeu16(buf_24, o, v_12.Value)
 			o += 2
 		end
 		return buf_24
@@ -240,10 +238,9 @@ local literalIndex = {
 	[Enum.Material.Wood] = 1,
 }
 local someMaterials = Flamework.createSerializer({
-	serialize = function(v_15)
+	serialize = function(v_13)
 		local buf_26 = buffer.create(1)
-		local v_16 = v_15
-		local index = literalIndex[v_16]
+		local index = literalIndex[v_13]
 		if index == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -262,7 +259,7 @@ local someMaterials = Flamework.createSerializer({
 	end,
 })
 local oneMaterial = Flamework.createSerializer({
-	serialize = function(v_17)
+	serialize = function(v_14)
 		local buf_28 = buffer.create(0)
 		return buf_28
 	end,
@@ -303,11 +300,11 @@ local vread = function(buf_31, o_3)
 	end
 end
 local colors = Flamework.createSerializer({
-	serialize = function(v_18)
-		local n_3 = #v_18
+	serialize = function(v_15)
+		local n_3 = #v_15
 		local size = vsize(n_3)
 		for i = 1, n_3 do
-			local item_2 = v_18[i]
+			local item_2 = v_15[i]
 			if item_2 == nil then
 				error(`[Flamework] the array has no value at value[{i - 1}]`)
 			end
@@ -321,9 +318,9 @@ local colors = Flamework.createSerializer({
 		end
 		local buf_32 = buffer.create(size)
 		local o_4 = 0
-		o_4 = vwrite(buf_32, o_4, #v_18)
-		for i_1 = 1, #v_18 do
-			local item_3 = v_18[i_1]
+		o_4 = vwrite(buf_32, o_4, #v_15)
+		for i_1 = 1, #v_15 do
+			local item_3 = v_15[i_1]
 			if typeof(item_3) == "Color3" then
 				buffer.writeu8(buf_32, o_4, 0)
 				buffer.writef32(buf_32, o_4 + 1, item_3.R)
@@ -370,10 +367,10 @@ local colors = Flamework.createSerializer({
 	end,
 })
 local placements = Flamework.createSerializer({
-	serialize = function(v_19)
+	serialize = function(v_16)
 		local size_2 = 0
 		local n_4 = 0
-		for key, entry in v_19 do
+		for key, entry in v_16 do
 			n_4 += 1
 			size_2 += 52
 		end
@@ -381,15 +378,12 @@ local placements = Flamework.createSerializer({
 		local buf_34 = buffer.create(size_2)
 		local blobs = {}
 		local o_7 = 0
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
-		for _ in v_19 do
-			_size += 1
+		local n_5 = 0
+		for _ in v_16 do
+			n_5 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_5 = _size
 		o_7 = vwrite(buf_34, o_7, n_5)
-		for key_1, entry_1 in v_19 do
+		for key_1, entry_1 in v_16 do
 			if key_1 ~= nil then
 				table.insert(blobs, key_1)
 				buffer.writeu32(buf_34, o_7, #blobs)

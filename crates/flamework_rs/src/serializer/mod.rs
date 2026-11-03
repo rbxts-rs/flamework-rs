@@ -1,11 +1,8 @@
 //! The serializer generator (`util/functions/buildSerializerFromType.ts`, 2.0.0-beta.0), ported node for node.
 //!
-//! The TS generator built TypeScript that roblox-ts compiled; here it builds the same TypeScript as [`ir`] and
-//! [`lower`] compiles it the way roblox-ts did, so the Luau is the TS5 pipeline's but for the generated locals' names
-//! and, within a class, the order of the hoisted helpers (README, Differences; see `lower` for what the round
-//! trip through the printer leaves in the output). The wire format, every order on
-//! it, the layout text and its hash are the TS generator's: see the TS file's header, which this port keeps as the
-//! reference.
+//! The TS generator built TypeScript that roblox-ts compiled; here it builds Luau directly ([`luau`]'s builders), the
+//! code of its own (README, Differences). The wire format, every order on it, the layout text and its hash, the checks
+//! and their messages are the TS generator's: see the TS file's header, which this port keeps as the reference.
 //!
 //! **Entry points** (one generator per file and checker, reset by `begin_file`):
 //! - [`build_serializer`]: `Flamework.createSerializer<T>()`'s `{ [version,] serialize, deserialize }` (the
@@ -17,19 +14,17 @@
 //! - [`packing_key`]: a list's wire key, for networking's union-of-members check;
 //! - [`check_output`]: the end-of-file self-check (`checkSerializerOutput`).
 //!
-//! Each builds its site at its hook and hands the hoisted statements to `insert_before_root_statement` itself. A
-//! generated local is named when it is first lowered, with the compiler's approval (`Cx::is_usable_local_name`),
-//! so the names follow build order.
+//! Each builds its site at its hook and hands the hoisted statements to `insert_before_root_statement` itself. The
+//! generated locals are placeholders of the file's [`Names`], named in render order when a hook hands its output out,
+//! with the compiler's approval (`Cx::is_usable_local_name`); a name once given is kept for the file.
 
 mod checks;
 mod classify;
 pub(crate) mod codegen;
 mod hoist;
-pub mod ir;
 mod layout;
 pub(crate) mod limits;
 pub(crate) mod lit;
-pub mod lower;
 pub(crate) mod luau;
 mod order;
 pub mod typeinfo;
@@ -40,12 +35,13 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use rbxts_plugin::ts::{Kind as SyntaxKind, Node, P, SourceFile, Symbol, Type};
-use rbxts_plugin::{Cx, LuauExpr, LuauStmt, PResult, PluginDiagnostic};
+use rbxts_luau::{Expr, Stmt};
+use rbxts_plugin::{Cx, LuauExpr, PResult, PluginDiagnostic};
 
 use crate::networking::calls::{BuiltCall, CallShape};
 use crate::plugin::FwInstance;
 use crate::setup::FwShared;
-use ir::{E, Id, Ids, S};
+use crate::luau_names::Names;
 use lit::Lit;
 pub use typeinfo::TableKey;
 
@@ -307,6 +303,17 @@ pub struct Hoisted {
     pub size_checks: bool,
 }
 
+/// A generated local: a placeholder of the file's [`Names`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Id(pub u32);
+
+impl Id {
+    /// The local, as an expression (its placeholder, named when its code is handed out).
+    pub(crate) fn e(self) -> Expr {
+        crate::luau_names::placeholder(self.0 as usize)
+    }
+}
+
 /// Where a guard or table is kept.
 #[derive(Debug, Clone)]
 pub enum Slot {
@@ -346,8 +353,10 @@ pub struct EncodingSite {
 /// One file's generator (the TS closure's state). Per checker and per file: `begin_file` starts a new one.
 pub struct Generator {
     pub file: P<SourceFile>,
-    pub(crate) ids: Ids,
-    pub(crate) names: HashMap<Id, String>,
+    /// The file's generated locals, and the names given so far.
+    pub(crate) names: Names,
+    /// The literal values of call sites' literal arguments ([`Gen::slot`]).
+    pub(crate) slot_literals: HashMap<Id, Lit>,
     pub(crate) diagnostic_node: P<Node>,
     pub(crate) kinds: HashMap<P<Type>, Rc<Kind>>,
     /// Every kind made, kept alive so that their identities are never reused.
@@ -356,9 +365,9 @@ pub struct Generator {
     pub(crate) visiting: HashSet<ShapeKey>,
     pub(crate) provisional: u32,
     pub(crate) trail: Vec<P<Type>>,
-    pub(crate) declarations: Vec<S>,
-    pub(crate) tables: Vec<S>,
-    pub(crate) definitions: Vec<S>,
+    pub(crate) declarations: Vec<Stmt>,
+    pub(crate) tables: Vec<Stmt>,
+    pub(crate) definitions: Vec<Stmt>,
     /// The table field each statement of `tables` / `definitions` defines (`definitionOf`).
     pub(crate) table_defines: Vec<Option<String>>,
     pub(crate) definition_defines: Vec<Option<String>>,
@@ -391,7 +400,6 @@ pub struct Generator {
     pub(crate) check_function: bool,
     pub(crate) type_check_function: bool,
     pub(crate) checkable_types: Option<Option<P<Type>>>,
-    pub(crate) parameters: HashSet<Id>,
     pub(crate) file_level: u32,
     pub(crate) compact: bool,
     pub(crate) hidden_here: HashMap<String, Option<P<Symbol>>>,
@@ -421,8 +429,8 @@ impl Generator {
     pub fn new(file: P<SourceFile>, checks: Checks) -> Generator {
         Generator {
             file,
-            ids: Ids::default(),
-            names: HashMap::new(),
+            names: Names::default(),
+            slot_literals: HashMap::new(),
             diagnostic_node: file.as_node(),
             kinds: HashMap::new(),
             keep: Vec::new(),
@@ -463,7 +471,6 @@ impl Generator {
             check_function: false,
             type_check_function: false,
             checkable_types: None,
-            parameters: HashSet::new(),
             file_level: 0,
             compact: false,
             hidden_here: HashMap::new(),
@@ -521,26 +528,20 @@ pub struct FileSerializer {
 
 // --- entry points -------------------------------------------------------------------------------------------------
 
-/// Lowers a hook's output: `top` goes before the current root statement, `inline` and `expressions` where the hook's
-/// value is. Each generated local is named when it is first lowered ([`lower::Lowerer`]).
-fn lower_output(
-    fw: &FwInstance,
-    cx: &mut Cx<'_>,
-    top: &[S],
-    inline: &[S],
-    expressions: &[&E],
-) -> (Vec<LuauStmt>, Vec<LuauStmt>, Vec<LuauExpr>) {
-    let (top, inline, values) = with_lowerer(fw, cx, |lowerer| {
-        let top = lowerer.statements(top);
-        let mut inline_all = lowerer.statements(inline);
-        let mut prereqs = Vec::new();
-        let values = expressions.iter().map(|e| lowerer.expr(e, &mut prereqs)).collect();
-        inline_all.extend(prereqs);
-        (top, inline_all, values)
-    });
+/// Names the placeholders in a hook's output, in render order (`statements`, then `expr`), with the compiler's
+/// approval; a placeholder named before keeps its name.
+pub(crate) fn name_output(fw: &FwInstance, cx: &mut Cx<'_>, statements: &mut [Stmt], expr: Option<&mut Expr>) {
+    let mut state = fw.serializer.borrow_mut();
+    let generator = state.generator.as_mut().expect("a generator");
+    generator.names.assign(cx, statements, expr);
+}
+
+/// Names a hook's hoisted statements and its value, and places the statements before the current root statement.
+fn hand_out(fw: &FwInstance, cx: &mut Cx<'_>, mut top: Vec<Stmt>, value: Option<&mut Expr>) {
+    name_output(fw, cx, &mut top, value);
     #[cfg(feature = "wire-harvest")]
     wire::hoisted(fw, &top);
-    (top, inline, values)
+    cx.insert_before_root_statement(top);
 }
 
 /// Runs a build of the generator and returns the hoisted statements with its result.
@@ -549,7 +550,7 @@ pub(crate) fn run<T>(
     cx: &mut Cx<'_>,
     node: P<Node>,
     f: impl FnOnce(&mut Gen<'_, '_, '_>) -> GResult<T>,
-) -> GResult<(T, Vec<S>)> {
+) -> GResult<(T, Vec<Stmt>)> {
     let mut state = fw.serializer.borrow_mut();
     let state = &mut *state;
     if state.generator.is_none() {
@@ -580,17 +581,16 @@ pub fn build_serializer(
     version: Option<u32>,
 ) -> PResult<LuauExpr> {
     let written = written_type_argument(node);
-    let (object, hoisted) = run(fw, cx, node, |gn| {
+    let (mut object, hoisted) = run(fw, cx, node, |gn| {
         let value = gn.unwrap_promise(ty);
         let versioned = version.map(|version| (version, gn.serializer_name(written, value)));
         let shape = gn.spell(written, value)?;
         gn.build_serializer(shape, versioned)
     })?;
-    let (top, _, mut values) = lower_output(fw, cx, &hoisted, &[], &[&object]);
-    cx.insert_before_root_statement(top);
+    hand_out(fw, cx, hoisted, Some(&mut object));
     #[cfg(feature = "wire-harvest")]
-    wire::serializer(fw, cx, node, ty, &values[0]);
-    Ok(values.remove(0))
+    wire::serializer(fw, cx, node, ty, &object);
+    Ok(object)
 }
 
 /// `union`'s members in the serializer's order (`orderAlternatives`): the written order of `written` (the union as the
@@ -628,7 +628,7 @@ fn written_type_argument(node: P<Node>) -> Option<P<Node>> {
 
 /// `buildDecoderFromType` / `buildResultDecoderFromType`: the decoder for an argument list (`ty` its tuple), or with
 /// `result` for a function type's result; `None` when it carries nothing.
-fn decoder(gn: &mut Gen<'_, '_, '_>, node: P<Node>, ty: P<Type>, result: bool) -> GResult<Option<E>> {
+fn decoder(gn: &mut Gen<'_, '_, '_>, node: P<Node>, ty: P<Type>, result: bool) -> GResult<Option<Expr>> {
     let list = if result { gn.result_of(ty, node)? } else { gn.list_of(ty, None)? };
     gn.build_decoder(list)
 }
@@ -636,43 +636,26 @@ fn decoder(gn: &mut Gen<'_, '_, '_>, node: P<Node>, ty: P<Type>, result: bool) -
 /// The `network-decoder` intrinsic (`network-result-decoder` with `result`): the decoder, or `nil` when the list
 /// carries nothing.
 pub fn build_decoder(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<Type>, result: bool) -> PResult<LuauExpr> {
-    let (decoder, hoisted) = run(fw, cx, node, |gn| decoder(gn, node, ty, result))?;
-    let expressions: Vec<&E> = decoder.iter().collect();
-    let (top, _, mut values) = lower_output(fw, cx, &hoisted, &[], &expressions);
-    cx.insert_before_root_statement(top);
+    let (mut decoder, hoisted) = run(fw, cx, node, |gn| decoder(gn, node, ty, result))?;
+    hand_out(fw, cx, hoisted, decoder.as_mut());
     #[cfg(feature = "wire-harvest")]
-    if let Some(decoder) = values.first() {
+    if let Some(decoder) = &decoder {
         wire::decoder(fw, cx, node, ty, result, decoder);
     }
-    Ok(if values.is_empty() { rbxts_luau::create::nil() } else { values.remove(0) })
+    Ok(decoder.unwrap_or_else(rbxts_luau::create::nil))
 }
 
 /// A networking call site's code ([`crate::networking::calls`]), built at its hook; what it hoisted is placed.
 pub(crate) fn call_site(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, shape: &CallShape) -> PResult<BuiltCall> {
     let (call, hoisted) = run(fw, cx, node, |gn| crate::networking::calls::build(gn, node, shape))?;
-    let (top, ..) = lower_output(fw, cx, &hoisted, &[], &[]);
-    cx.insert_before_root_statement(top);
+    hand_out(fw, cx, hoisted, None);
     Ok(call)
-}
-
-/// The name of a generated local, given now if it has none yet.
-pub(crate) fn local_name(fw: &FwInstance, cx: &mut Cx<'_>, id: Id) -> String {
-    with_lowerer(fw, cx, |lowerer| lowerer.name(id))
-}
-
-/// Runs `f` with the file's lowerer, which names each generated local when it first lowers it.
-pub(crate) fn with_lowerer<T>(fw: &FwInstance, cx: &mut Cx<'_>, f: impl FnOnce(&mut lower::Lowerer<'_>) -> T) -> T {
-    let mut state = fw.serializer.borrow_mut();
-    let generator = state.generator.as_mut().expect("a generator");
-    let mut lowerer = lower::Lowerer { ids: &generator.ids, names: &mut generator.names, cx };
-    f(&mut lowerer)
 }
 
 /// `packingKey`: a list's wire key (a function type's result's with `result`).
 pub fn packing_key(fw: &FwInstance, cx: &mut Cx<'_>, node: P<Node>, ty: P<Type>, result: bool) -> PResult<String> {
     let (key, hoisted) = run(fw, cx, node, |gn| gn.packing_key(node, ty, result))?;
-    let (top, _, _) = lower_output(fw, cx, &hoisted, &[], &[]);
-    cx.insert_before_root_statement(top);
+    hand_out(fw, cx, hoisted, None);
     Ok(key)
 }
 

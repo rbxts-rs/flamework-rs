@@ -81,25 +81,24 @@ local guard_1 = t.map(t.string, t.number)
 local guard_2 = t.array(t.number)
 local s = Flamework.createSerializer({
 	serialize = function(v_1)
-		local v_2 = v_1
 		local size = 1
-		if guard_2(v_2) then
-			local n_3 = #v_2
+		if guard_2(v_1) then
+			local n_3 = #v_1
 			size += vsize(n_3) + n_3 * 1
-		elseif guard_1(v_2) then
+		elseif guard_1(v_1) then
 			local size_1 = 0
 			local n_4 = 0
-			for key, entry in v_2 do
+			for key, entry in v_1 do
 				n_4 += 1
 				local length = #key
 				size_1 += vsize(length) + length + 1
 			end
 			size_1 += vsize(n_4)
 			size += size_1
-		elseif type(v_2) == "table" then
+		elseif type(v_1) == "table" then
 			local size_2 = 0
 			local n_5 = 0
-			for item in v_2 do
+			for item in v_1 do
 				n_5 += 1
 				local length_1 = #item
 				size_2 += vsize(length_1) + length_1
@@ -109,29 +108,25 @@ local s = Flamework.createSerializer({
 		end
 		local buf_2 = buffer.create(size)
 		local o_2 = 0
-		local v_3 = v_1
-		if guard_2(v_3) then
+		if guard_2(v_1) then
 			buffer.writeu8(buf_2, o_2, 0)
-			o_2 = vwrite(buf_2, o_2 + 1, #v_3)
-			for i = 1, #v_3 do
-				local item_1 = v_3[i]
+			o_2 = vwrite(buf_2, o_2 + 1, #v_1)
+			for i = 1, #v_1 do
+				local item_1 = v_1[i]
 				if item_1 == nil then
 					error(`[Flamework] the array has no value at value[{i - 1}]`)
 				end
 				buffer.writeu8(buf_2, o_2, item_1)
 				o_2 += 1
 			end
-		elseif guard_1(v_3) then
+		elseif guard_1(v_1) then
 			buffer.writeu8(buf_2, o_2, 1)
-			-- ▼ ReadonlyMap.size ▼
-			local _size = 0
-			for _ in v_3 do
-				_size += 1
+			local n_6 = 0
+			for _ in v_1 do
+				n_6 += 1
 			end
-			-- ▲ ReadonlyMap.size ▲
-			local n_6 = _size
 			o_2 = vwrite(buf_2, o_2 + 1, n_6)
-			for key_1, entry_1 in v_3 do
+			for key_1, entry_1 in v_1 do
 				local length_2 = #key_1
 				o_2 = vwrite(buf_2, o_2, length_2)
 				buffer.writestring(buf_2, o_2, key_1)
@@ -139,17 +134,14 @@ local s = Flamework.createSerializer({
 				buffer.writeu8(buf_2, o_2, entry_1)
 				o_2 += 1
 			end
-		elseif type(v_3) == "table" then
+		elseif type(v_1) == "table" then
 			buffer.writeu8(buf_2, o_2, 2)
-			-- ▼ ReadonlySet.size ▼
-			local _size = 0
-			for _ in v_3 do
-				_size += 1
+			local n_7 = 0
+			for _ in v_1 do
+				n_7 += 1
 			end
-			-- ▲ ReadonlySet.size ▲
-			local n_7 = _size
 			o_2 = vwrite(buf_2, o_2 + 1, n_7)
-			for item_2 in v_3 do
+			for item_2 in v_1 do
 				local length_3 = #item_2
 				o_2 = vwrite(buf_2, o_2, length_3)
 				buffer.writestring(buf_2, o_2, item_2)

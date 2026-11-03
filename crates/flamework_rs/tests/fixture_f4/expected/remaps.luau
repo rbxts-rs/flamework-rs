@@ -78,8 +78,8 @@ local vread = function(buf_3, o_1)
 	end
 end
 codec.s_RemapNum = function(v_1)
-	local length = #(v_1.b)
-	local length_1 = #(v_1.a)
+	local length = #v_1.b
+	local length_1 = #v_1.a
 	return vsize(length) + length + (vsize(length_1) + length_1)
 end
 codec.w_RemapNum = function(buf_4, o_2, v_1)
@@ -467,7 +467,7 @@ local directions = Flamework.createSerializer({
 	end,
 })
 codec.s_Homomorphic = function(v_13)
-	local length_6 = #(v_13.get_alpha)
+	local length_6 = #v_13.get_alpha
 	return vsize(length_6) + length_6 + 2
 end
 codec.w_Homomorphic = function(buf_27, o_6, v_13)

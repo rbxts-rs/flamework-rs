@@ -76,8 +76,8 @@ local stored = versionedOf({
 }, {
 	version = 2,
 	serialize = function(v_1)
-		local length = #(v_1.name)
-		local buf_4 = buffer.create(vsize(length) + length + 1 + 5)
+		local length = #v_1.name
+		local buf_4 = buffer.create(vsize(length) + length + 6)
 		buffer.writeu8(buf_4, 0, 2)
 		buffer.writeu32(buf_4, 1, 83185237)
 		local o_2 = 5
@@ -142,8 +142,7 @@ local both = pairOf({
 	second = {
 		serialize = function(v_3)
 			local buf_8 = buffer.create(1)
-			local v_4 = v_3
-			local index = literalIndex[v_4]
+			local index = literalIndex[v_3]
 			if index == nil then
 				error("value is not one of the literals its type allows")
 			end
@@ -163,10 +162,10 @@ local both = pairOf({
 	},
 })
 local core = Flamework.createSerializer({
-	serialize = function(v_5)
+	serialize = function(v_4)
 		local buf_10 = buffer.create(10)
-		buffer.writef64(buf_10, 0, v_5.x)
-		buffer.writeu16(buf_10, 8, v_5.y)
+		buffer.writef64(buf_10, 0, v_4.x)
+		buffer.writeu16(buf_10, 8, v_4.y)
 		return buf_10
 	end,
 	deserialize = function(buf_11)
@@ -183,10 +182,10 @@ local core = Flamework.createSerializer({
 local function nested()
 	-- A serializer inside a function: its helpers go ahead of the function's statement.
 	return serializerOf({
-		serialize = function(v_6)
+		serialize = function(v_5)
 			local size = 0
 			local n_3 = 0
-			for key, entry in v_6 do
+			for key, entry in v_5 do
 				n_3 += 1
 				local length_3 = #key
 				size += vsize(length_3) + length_3 + 10
@@ -194,15 +193,12 @@ local function nested()
 			size += vsize(n_3)
 			local buf_12 = buffer.create(size)
 			local o_5 = 0
-			-- ▼ ReadonlyMap.size ▼
-			local _size = 0
-			for _ in v_6 do
-				_size += 1
+			local n_4 = 0
+			for _ in v_5 do
+				n_4 += 1
 			end
-			-- ▲ ReadonlyMap.size ▲
-			local n_4 = _size
 			o_5 = vwrite(buf_12, o_5, n_4)
-			for key_1, entry_1 in v_6 do
+			for key_1, entry_1 in v_5 do
 				local length_4 = #key_1
 				o_5 = vwrite(buf_12, o_5, length_4)
 				buffer.writestring(buf_12, o_5, key_1)

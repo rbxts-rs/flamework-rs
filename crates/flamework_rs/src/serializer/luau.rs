@@ -5,15 +5,13 @@
 //! ([`crate::luau_names::Names::fresh`]), declared here through [`declared`], so every declaration goes through one
 //! place.
 //!
-//! Spellings follow the IR lowering they replace ([`super::lower`]): numbers as JavaScript prints them (`1e999` for an
-//! infinity), strings and template text as roblox-ts spelled a TS transformer's (`synthesized_string`, `template_text`),
-//! which TypeScript 7.1 spells the same way.
+//! Spellings: numbers as JavaScript prints them (`1e999` for an infinity), strings and template text as roblox-ts
+//! spelled a TS transformer's (`synthesized_string`, `template_text`), which TypeScript 7.1 spells the same way.
 
-// The builders are used by the direct emission: the hoisted helpers (round B1) and the emitters (B2); until B2 only
-// their tests use some of them.
-#![cfg_attr(not(test), allow(dead_code))]
-
-use rbxts_luau::{AssignmentOperator, BinaryOperator, ElseBody, Expr, InterpolatedStringPart, Stmt, UnaryOperator, create};
+use rbxts_luau::{
+    AssignmentOperator, BinaryOperator, ElseBody, Expr, InterpolatedStringPart, ReturnStatement, Stmt, UnaryOperator,
+    create,
+};
 
 use crate::luau_names::declared;
 
@@ -93,9 +91,24 @@ pub(crate) enum Part {
     Expr(Expr),
 }
 
-/// `` `text{e}text` ``: empty text parts are dropped, text is spelled as a template's ([`template_text`]).
+/// `` `text{e}text` ``: adjacent text parts are joined and empty ones dropped, text is spelled as a template's
+/// ([`template_text`]); a plain string ([`str`]) when no part is an expression.
 pub(crate) fn interp(parts: Vec<Part>) -> Expr {
-    let parts = parts
+    let mut joined: Vec<Part> = Vec::new();
+    for part in parts {
+        match (part, joined.last_mut()) {
+            (Part::Text(text), Some(Part::Text(last))) => last.push_str(&text),
+            (part, _) => joined.push(part),
+        }
+    }
+    if let [] | [Part::Text(_)] = joined.as_slice() {
+        let text = match joined.pop() {
+            Some(Part::Text(text)) => text,
+            _ => String::new(),
+        };
+        return str(&text);
+    }
+    let parts = joined
         .into_iter()
         .filter_map(|part| match part {
             Part::Text(text) if text.is_empty() => None,
@@ -162,6 +175,21 @@ pub(crate) fn do_(body: Vec<Stmt>) -> Stmt {
 /// `function(params) body end`.
 pub(crate) fn function(params: &[Expr], body: Vec<Stmt>) -> Expr {
     create::function(params.iter().map(declared).collect(), false, body)
+}
+
+/// `return a, b, …`.
+pub(crate) fn returns(values: Vec<Expr>) -> Stmt {
+    Stmt::Return(ReturnStatement { expressions: values })
+}
+
+/// A name (a local, a placeholder, a global): reading it again reads the same value, so it is never bound to a local.
+pub(crate) fn is_name(e: &Expr) -> bool {
+    matches!(e, Expr::Identifier(_) | Expr::TemporaryIdentifier(_))
+}
+
+/// A literal: `nil`, a boolean, a string or a number (`-7` included).
+pub(crate) fn is_literal(e: &Expr) -> bool {
+    matches!(e, Expr::Nil | Expr::True | Expr::False | Expr::String(_)) || literal_number(e).is_some()
 }
 
 /// A number literal's value (`7`, `-7`), as `getLiteralNumberValue` reads it.

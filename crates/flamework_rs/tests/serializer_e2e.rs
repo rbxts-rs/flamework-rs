@@ -8,13 +8,12 @@
 //! serializer's root statement than what the serializer hoisted).
 //!
 //! `tests/fixture_f4/expected` holds rbxtsc-fw's output for every file, each compared whole (`UPDATE_EXPECTED=1`
-//! writes it). It is the TS5 pipeline's output (roblox-ts master with the published 2.0.0-beta.0 transformer) but for
-//! the generated locals' names (checked with `tools/normalize.cjs`) and, where TypeScript 7.1's property order differs
-//! from TS5's, field orders and layout hashes (`spreads.luau`: spreads of mapped types and of rests, a generic
-//! interface's instantiated bases; `mapped.luau`: `ExtGenericDeep`), and which functions are built one field at a
-//! time (`limits.luau`: flamework-rs decides on Luau's exact counts, `serializer::limits`, where TS5 estimated, so its
-//! `s_Wide` is built plainly). `unions.luau` has union members told apart by
-//! F3's guards, named with the serializer's code (`crate::serializer::ir::Guard`).
+//! writes it). The serializers' Luau is flamework-rs's own (built directly, not the TS5 pipeline's text); their wire
+//! format is the TS5 pipeline's (roblox-ts master with the published 2.0.0-beta.0 transformer) but where TypeScript
+//! 7.1's property order differs from TS5's, field orders and layout hashes (`spreads.luau`: spreads of mapped types
+//! and of rests, a generic interface's instantiated bases; `mapped.luau`: `ExtGenericDeep`). Which functions are built
+//! one field at a time is decided on Luau's exact counts (`limits.luau`, `serializer::limits`). `unions.luau` has
+//! union members told apart by F3's guards, named with the serializer's code.
 //!
 //! The project is copied to a temporary directory with a `node_modules` as an install has it (`support::project`);
 //! without the monorepo and the `@rbxts` packages the tests are skipped, saying so.

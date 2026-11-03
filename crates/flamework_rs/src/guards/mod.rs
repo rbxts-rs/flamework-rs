@@ -87,7 +87,7 @@ pub fn guard_for_in_context(
 
 /// [`guard_for`] with its locals left unnamed: the guard holds placeholders, and `names` gives each its base name
 /// ([`crate::luau_names::Names::assign_with`]). For a guard that lands inside other generated code (the
-/// serializer's), named when that code is lowered.
+/// serializer's), named with that code.
 pub(crate) fn guard_for_unnamed(
     cx: &mut Cx<'_>,
     config: GuardConfig<'_>,

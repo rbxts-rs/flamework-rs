@@ -2,7 +2,7 @@
 //! function. `Gen::fitted` builds a function plainly, and again one field at a time (compact) when the plain form does
 //! not fit with [`MARGIN`] to spare.
 //!
-//! - **Locals** are counted exactly on the lowered Luau ([`Function::locals`]): parameters, the locals of every
+//! - **Locals** are counted exactly on the generated Luau ([`Function::locals`]): parameters, the locals of every
 //!   enclosing block and the loop variables, nested functions apart. Luau folds constant locals at optimisation level
 //!   1+ with debug level 1, which only makes the count high, the safe side; generated code binds no constants.
 //! - **Registers** are Luau's own answer: the function is compiled ([`Function::probe`]) by the compiler the load
@@ -17,17 +17,15 @@
 //!   registers", "Out of registers") are told apart; any other refusal is an internal error. A cheap bound
 //!   ([`Function::surely_fits`]) skips the compile for nearly every function.
 //!
-//! The function is measured as lowered by a scratch namer ([`Scratch`]) that asks the compiler for no names: call-site
-//! arguments render as globals (`__fwarg<n>`, never `nil`, so Luau cannot fold the code reading them).
+//! The probe names each placeholder after its index (`__fwl<n>`), asking the compiler for no names; a call site's
+//! arguments, placeholders never declared, are globals there (never `nil`, so Luau cannot fold the code reading them).
 
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use rbxts_luau::{AnyIdentifier, ElseBody, Expr, InterpolatedStringPart, Stmt, TableField, create};
 use rbxts_luau_check::{CompileError, ROBLOX_LEVELS, Severity};
 
-use super::ir::{ExtValue, Id, Ids, S};
-use super::lower::{LowerCx, Lowerer};
+use super::Id;
 
 /// Luau's most locals in one function (`kMaxLocalCount`).
 pub(crate) const LUAU_MAX_LOCALS: u32 = 200;
@@ -64,14 +62,19 @@ impl Fit {
 
 /// A generated function as Luau, for [`Function::probe`].
 pub(crate) struct Function {
-    /// What the file hoisted ahead of its functions (declarations, then tables), lowered with the same names (empty
-    /// until a probe needs them).
+    /// What the file hoisted ahead of its functions (declarations, then tables; empty until a probe needs them).
     pub prelude: Rc<Vec<Stmt>>,
     pub parameters: Vec<AnyIdentifier>,
     pub body: Vec<Stmt>,
 }
 
 impl Function {
+    /// The function of `parameters` with `body`.
+    pub fn new(parameters: &[Id], body: Vec<Stmt>) -> Function {
+        let parameters = parameters.iter().map(|p| crate::luau_names::declared(&p.e())).collect();
+        Function { prelude: Rc::new(Vec::new()), parameters, body }
+    }
+
     /// Its counts: the most locals live at once (the parameters, the enclosing blocks' locals and the loop
     /// variables), and a bound on the registers (the pre-count): at each statement, its live locals, the hidden
     /// registers of its enclosing loops, and twice its expression nodes plus 16 (calls, table constructors, Luau's
@@ -102,6 +105,7 @@ impl Function {
         let mut chunk: Vec<Stmt> = self.prelude.as_ref().clone();
         let probe = create::function(parameters, false, self.body.clone());
         chunk.push(create::local(create::any_id("__fwprobe"), Some(probe)));
+        crate::luau_names::name_placeholders(&mut chunk, None, |index| format!("__fwl{index}"));
         rbxts_luau::render_ast(&chunk)
     }
 
@@ -325,62 +329,10 @@ fn nodes(expr: &Expr) -> u32 {
     }
 }
 
-// --- the scratch lowering --------------------------------------------------------------------------------------
-
-/// The lowering's context for measuring: names nobody approves (`__fwl<n>`), call-site arguments as globals
-/// (`__fwarg<n>`).
-#[derive(Default)]
-pub(crate) struct Scratch {
-    temps: rbxts_luau::TempIds,
-    next: u32,
-}
-
-impl Scratch {
-    fn next(&mut self) -> u32 {
-        self.next += 1;
-        self.next
-    }
-}
-
-impl LowerCx for Scratch {
-    fn temp_id(&mut self, hint: &str) -> rbxts_luau::TemporaryIdentifier {
-        self.temps.temp_id(hint)
-    }
-
-    fn local_name(&mut self, _hint: &str) -> String {
-        format!("__fwl{}", self.next())
-    }
-
-    fn ext(&mut self, _value: &ExtValue) -> Expr {
-        create::id(format!("__fwarg{}", self.next()))
-    }
-}
-
-/// A file's generated code lowered for measuring: one namer, so that the prelude and every build of a function
-/// name each identifier alike.
-#[derive(Default)]
-pub(crate) struct Measuring {
-    names: HashMap<Id, String>,
-    cx: Scratch,
-}
-
-impl Measuring {
-    pub fn lower(&mut self, ids: &Ids, statements: &[S]) -> Vec<Stmt> {
-        Lowerer { ids, names: &mut self.names, cx: &mut self.cx }.statements(statements)
-    }
-
-    pub fn function(&mut self, ids: &Ids, parameters: &[Id], body: &[S]) -> Function {
-        let mut lowerer = Lowerer { ids, names: &mut self.names, cx: &mut self.cx };
-        let parameters = parameters.iter().map(|&p| create::any_id(lowerer.name(p))).collect();
-        let body = lowerer.statements(body);
-        Function { prelude: Rc::new(Vec::new()), parameters, body }
-    }
-}
-
 /// `holdsLocals(statements)`: whether the statements declare a local in their own block (a `do` block keeps it from
-/// the code after them), roblox-ts's temporaries included.
-pub(crate) fn holds_locals(ids: &Ids, statements: &[S]) -> bool {
-    Measuring::default().lower(ids, statements).iter().any(|s| matches!(s, Stmt::VariableDeclaration(_)))
+/// the code after them).
+pub(crate) fn holds_locals(statements: &[Stmt]) -> bool {
+    statements.iter().any(|s| matches!(s, Stmt::VariableDeclaration(_)))
 }
 
 // --- the decisions, recorded for the limit tests ---------------------------------------------------------------

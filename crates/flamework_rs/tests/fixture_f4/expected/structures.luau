@@ -84,7 +84,7 @@ codec.s_Entity = function(v_1)
 		size += vsize(length) + length
 	end
 	local v_2 = v_1.maybe
-	return #(v_1.name) + 1 + size + (if v_2 ~= nil then 9 else 1) + 23
+	return #v_1.name + 1 + size + (if v_2 ~= nil then 9 else 1) + 23
 end
 codec.w_Entity = function(buf_4, o_2, v_1, blobs)
 	buffer.writeu16(buf_4, o_2, v_1.id)
@@ -195,7 +195,7 @@ local entity = Flamework.createSerializer({
 	end,
 })
 codec.s_Derived = function(v_6)
-	local length_5 = #(v_6.shared)
+	local length_5 = #v_6.shared
 	return vsize(length_5) + length_5 + 9
 end
 codec.w_Derived = function(buf_7, o_6, v_6)
@@ -238,7 +238,7 @@ local derived = Flamework.createSerializer({
 	end,
 })
 codec.s_Keys = function(v_8)
-	local length_8 = #(v_8["two words"])
+	local length_8 = #v_8["two words"]
 	return vsize(length_8) + length_8 + 17
 end
 codec.w_Keys = function(buf_10, o_9, v_8)
@@ -559,9 +559,9 @@ local record = Flamework.createSerializer({
 	end,
 })
 codec.s_Record = function(v_30)
-	local length_11 = #(v_30[0])
-	local length_12 = #(v_30[5])
-	local length_13 = #(v_30[10])
+	local length_11 = #v_30[0]
+	local length_12 = #v_30[5]
+	local length_13 = #v_30[10]
 	return vsize(length_11) + length_11 + (vsize(length_12) + length_12) + (vsize(length_13) + length_13)
 end
 codec.w_Record = function(buf_27, o_25, v_30)
@@ -614,7 +614,7 @@ local levelRecord = Flamework.createSerializer({
 	end,
 })
 codec.s_Pick = function(v_32)
-	return #(v_32.name) + 1 + 2
+	return #v_32.name + 3
 end
 codec.w_Pick = function(buf_30, o_30, v_32)
 	buffer.writeu16(buf_30, o_30, v_32.id)
@@ -682,8 +682,7 @@ local literalIndex_1 = {
 local level = Flamework.createSerializer({
 	serialize = function(v_35)
 		local buf_35 = buffer.create(1)
-		local v_36 = v_35
-		local index_1 = literalIndex_1[v_36]
+		local index_1 = literalIndex_1[v_35]
 		if index_1 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -707,10 +706,9 @@ local literalIndex_2 = {
 	beta = 1,
 }
 local named = Flamework.createSerializer({
-	serialize = function(v_37)
+	serialize = function(v_36)
 		local buf_37 = buffer.create(1)
-		local v_38 = v_37
-		local index_2 = literalIndex_2[v_38]
+		local index_2 = literalIndex_2[v_36]
 		if index_2 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -734,10 +732,9 @@ local literalIndex_3 = {
 	[10] = 1,
 }
 local levels = Flamework.createSerializer({
-	serialize = function(v_39)
+	serialize = function(v_37)
 		local buf_39 = buffer.create(1)
-		local v_40 = v_39
-		local index_3 = literalIndex_3[v_40]
+		local index_3 = literalIndex_3[v_37]
 		if index_3 == nil then
 			error("value is not one of the literals its type allows")
 		end
@@ -757,13 +754,13 @@ local levels = Flamework.createSerializer({
 })
 -- Collections.
 local numbers = Flamework.createSerializer({
-	serialize = function(v_41)
-		local n_6 = #v_41
+	serialize = function(v_38)
+		local n_6 = #v_38
 		local buf_41 = buffer.create(vsize(n_6) + n_6 * 8)
 		local o_32 = 0
-		o_32 = vwrite(buf_41, o_32, #v_41)
-		for i_9 = 1, #v_41 do
-			local item_6 = v_41[i_9]
+		o_32 = vwrite(buf_41, o_32, #v_38)
+		for i_9 = 1, #v_38 do
+			local item_6 = v_38[i_9]
 			if item_6 == nil then
 				error(`[Flamework] the array has no value at value[{i_9 - 1}]`)
 			end
@@ -790,11 +787,11 @@ local numbers = Flamework.createSerializer({
 		return array_7
 	end,
 })
-codec.s_stringArray = function(v_42)
-	local n_7 = #v_42
+codec.s_stringArray = function(v_39)
+	local n_7 = #v_39
 	local size_6 = vsize(n_7)
 	for i_11 = 1, n_7 do
-		local item_7 = v_42[i_11]
+		local item_7 = v_39[i_11]
 		if item_7 == nil then
 			error(`[Flamework] the array has no value at (string[])[{i_11 - 1}]`)
 		end
@@ -803,10 +800,10 @@ codec.s_stringArray = function(v_42)
 	end
 	return size_6
 end
-codec.w_stringArray = function(buf_43, o_35, v_42)
-	o_35 = vwrite(buf_43, o_35, #v_42)
-	for i_12 = 1, #v_42 do
-		local item_8 = v_42[i_12]
+codec.w_stringArray = function(buf_43, o_35, v_39)
+	o_35 = vwrite(buf_43, o_35, #v_39)
+	for i_12 = 1, #v_39 do
+		local item_8 = v_39[i_12]
 		local length_23 = #item_8
 		o_35 = vwrite(buf_43, o_35, length_23)
 		buffer.writestring(buf_43, o_35, item_8)
@@ -830,9 +827,9 @@ codec.r_stringArray = function(buf_43, o_35)
 	return array_8, o_35
 end
 local texts = Flamework.createSerializer({
-	serialize = function(v_43)
-		local buf_44 = buffer.create(codec.s_stringArray(v_43))
-		codec.w_stringArray(buf_44, 0, v_43)
+	serialize = function(v_40)
+		local buf_44 = buffer.create(codec.s_stringArray(v_40))
+		codec.w_stringArray(buf_44, 0, v_40)
 		return buf_44
 	end,
 	deserialize = function(buf_45)
@@ -844,11 +841,11 @@ local texts = Flamework.createSerializer({
 	end,
 })
 local readonlyTexts = Flamework.createSerializer({
-	serialize = function(v_44)
-		local n_8 = #v_44
+	serialize = function(v_41)
+		local n_8 = #v_41
 		local size_7 = vsize(n_8)
 		for i_14 = 1, n_8 do
-			local item_9 = v_44[i_14]
+			local item_9 = v_41[i_14]
 			if item_9 == nil then
 				error(`[Flamework] the array has no value at value[{i_14 - 1}]`)
 			end
@@ -857,9 +854,9 @@ local readonlyTexts = Flamework.createSerializer({
 		end
 		local buf_46 = buffer.create(size_7)
 		local o_39 = 0
-		o_39 = vwrite(buf_46, o_39, #v_44)
-		for i_15 = 1, #v_44 do
-			local item_10 = v_44[i_15]
+		o_39 = vwrite(buf_46, o_39, #v_41)
+		for i_15 = 1, #v_41 do
+			local item_10 = v_41[i_15]
 			local length_26 = #item_10
 			o_39 = vwrite(buf_46, o_39, length_26)
 			buffer.writestring(buf_46, o_39, item_10)
@@ -887,14 +884,14 @@ local readonlyTexts = Flamework.createSerializer({
 		return array_9
 	end,
 })
-codec.s_numberArray = function(v_45)
-	local n_9 = #v_45
+codec.s_numberArray = function(v_42)
+	local n_9 = #v_42
 	return vsize(n_9) + n_9 * 8
 end
-codec.w_numberArray = function(buf_48, o_43, v_45)
-	o_43 = vwrite(buf_48, o_43, #v_45)
-	for i_17 = 1, #v_45 do
-		local item_11 = v_45[i_17]
+codec.w_numberArray = function(buf_48, o_43, v_42)
+	o_43 = vwrite(buf_48, o_43, #v_42)
+	for i_17 = 1, #v_42 do
+		local item_11 = v_42[i_17]
 		if item_11 == nil then
 			error(`[Flamework] the array has no value at (number[])[{i_17 - 1}]`)
 		end
@@ -917,11 +914,11 @@ codec.r_numberArray = function(buf_48, o_43)
 	return array_10, o_43
 end
 local grid = Flamework.createSerializer({
-	serialize = function(v_46)
-		local n_10 = #v_46
+	serialize = function(v_43)
+		local n_10 = #v_43
 		local size_8 = vsize(n_10)
 		for i_19 = 1, n_10 do
-			local item_12 = v_46[i_19]
+			local item_12 = v_43[i_19]
 			if item_12 == nil then
 				error(`[Flamework] the array has no value at value[{i_19 - 1}]`)
 			end
@@ -929,9 +926,9 @@ local grid = Flamework.createSerializer({
 		end
 		local buf_49 = buffer.create(size_8)
 		local o_45 = 0
-		o_45 = vwrite(buf_49, o_45, #v_46)
-		for i_20 = 1, #v_46 do
-			local item_13 = v_46[i_20]
+		o_45 = vwrite(buf_49, o_45, #v_43)
+		for i_20 = 1, #v_43 do
+			local item_13 = v_43[i_20]
 			o_45 = codec.w_numberArray(buf_49, o_45, item_13)
 		end
 		return buf_49
@@ -956,10 +953,10 @@ local grid = Flamework.createSerializer({
 	end,
 })
 local set = Flamework.createSerializer({
-	serialize = function(v_47)
+	serialize = function(v_44)
 		local size_9 = 0
 		local n_11 = 0
-		for item_14 in v_47 do
+		for item_14 in v_44 do
 			n_11 += 1
 			local length_28 = #item_14
 			size_9 += vsize(length_28) + length_28
@@ -967,15 +964,12 @@ local set = Flamework.createSerializer({
 		size_9 += vsize(n_11)
 		local buf_51 = buffer.create(size_9)
 		local o_49 = 0
-		-- ▼ ReadonlySet.size ▼
-		local _size = 0
-		for _ in v_47 do
-			_size += 1
+		local n_12 = 0
+		for _ in v_44 do
+			n_12 += 1
 		end
-		-- ▲ ReadonlySet.size ▲
-		local n_12 = _size
 		o_49 = vwrite(buf_51, o_49, n_12)
-		for item_15 in v_47 do
+		for item_15 in v_44 do
 			local length_29 = #item_15
 			o_49 = vwrite(buf_51, o_49, length_29)
 			buffer.writestring(buf_51, o_49, item_15)
@@ -1004,25 +998,22 @@ local set = Flamework.createSerializer({
 	end,
 })
 local fixedSet = Flamework.createSerializer({
-	serialize = function(v_48)
+	serialize = function(v_45)
 		local size_10 = 0
 		local n_13 = 0
-		for item_16 in v_48 do
+		for item_16 in v_45 do
 			n_13 += 1
 			size_10 += 1
 		end
 		size_10 += vsize(n_13)
 		local buf_53 = buffer.create(size_10)
 		local o_53 = 0
-		-- ▼ ReadonlySet.size ▼
-		local _size = 0
-		for _ in v_48 do
-			_size += 1
+		local n_14 = 0
+		for _ in v_45 do
+			n_14 += 1
 		end
-		-- ▲ ReadonlySet.size ▲
-		local n_14 = _size
 		o_53 = vwrite(buf_53, o_53, n_14)
-		for item_17 in v_48 do
+		for item_17 in v_45 do
 			buffer.writeu8(buf_53, o_53, item_17)
 			o_53 += 1
 		end
@@ -1047,10 +1038,10 @@ local fixedSet = Flamework.createSerializer({
 	end,
 })
 local map = Flamework.createSerializer({
-	serialize = function(v_49)
+	serialize = function(v_46)
 		local size_11 = 0
 		local n_15 = 0
-		for key_1, entry in v_49 do
+		for key_1, entry in v_46 do
 			n_15 += 1
 			local length_31 = #key_1
 			size_11 += vsize(length_31) + length_31 + 8
@@ -1058,15 +1049,12 @@ local map = Flamework.createSerializer({
 		size_11 += vsize(n_15)
 		local buf_55 = buffer.create(size_11)
 		local o_56 = 0
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
-		for _ in v_49 do
-			_size += 1
+		local n_16 = 0
+		for _ in v_46 do
+			n_16 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_16 = _size
 		o_56 = vwrite(buf_55, o_56, n_16)
-		for key_2, entry_1 in v_49 do
+		for key_2, entry_1 in v_46 do
 			local length_32 = #key_2
 			o_56 = vwrite(buf_55, o_56, length_32)
 			buffer.writestring(buf_55, o_56, key_2)
@@ -1099,25 +1087,22 @@ local map = Flamework.createSerializer({
 	end,
 })
 local fixedMap = Flamework.createSerializer({
-	serialize = function(v_50)
+	serialize = function(v_47)
 		local size_12 = 0
 		local n_17 = 0
-		for key_3, entry_3 in v_50 do
+		for key_3, entry_3 in v_47 do
 			n_17 += 1
 			size_12 += 13
 		end
 		size_12 += vsize(n_17)
 		local buf_57 = buffer.create(size_12)
 		local o_60 = 0
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
-		for _ in v_50 do
-			_size += 1
+		local n_18 = 0
+		for _ in v_47 do
+			n_18 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_18 = _size
 		o_60 = vwrite(buf_57, o_60, n_18)
-		for key_4, entry_4 in v_50 do
+		for key_4, entry_4 in v_47 do
 			buffer.writeu8(buf_57, o_60, key_4)
 			buffer.writef32(buf_57, o_60 + 1, entry_4.X)
 			buffer.writef32(buf_57, o_60 + 5, entry_4.Y)
@@ -1147,10 +1132,10 @@ local fixedMap = Flamework.createSerializer({
 	end,
 })
 local readonlyMap = Flamework.createSerializer({
-	serialize = function(v_51)
+	serialize = function(v_48)
 		local size_13 = 0
 		local n_19 = 0
-		for key_6, entry_6 in v_51 do
+		for key_6, entry_6 in v_48 do
 			n_19 += 1
 			local length_34 = #key_6
 			local size_14 = 0
@@ -1165,26 +1150,20 @@ local readonlyMap = Flamework.createSerializer({
 		size_13 += vsize(n_19)
 		local buf_59 = buffer.create(size_13)
 		local o_63 = 0
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
-		for _ in v_51 do
-			_size += 1
+		local n_21 = 0
+		for _ in v_48 do
+			n_21 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_21 = _size
 		o_63 = vwrite(buf_59, o_63, n_21)
-		for key_7, entry_7 in v_51 do
+		for key_7, entry_7 in v_48 do
 			local length_35 = #key_7
 			o_63 = vwrite(buf_59, o_63, length_35)
 			buffer.writestring(buf_59, o_63, key_7)
 			o_63 += length_35
-			-- ▼ ReadonlySet.size ▼
-			local _size_1 = 0
+			local n_22 = 0
 			for _ in entry_7 do
-				_size_1 += 1
+				n_22 += 1
 			end
-			-- ▲ ReadonlySet.size ▲
-			local n_22 = _size_1
 			o_63 = vwrite(buf_59, o_63, n_22)
 			for item_19 in entry_7 do
 				buffer.writef64(buf_59, o_63, item_19)
@@ -1201,7 +1180,7 @@ local readonlyMap = Flamework.createSerializer({
 			error("malformed payload")
 		end
 		local map_3 = {}
-		for _6 = 1, count_12 do
+		for _5 = 1, count_12 do
 			local length_36, o_66 = vread(buf_60, o_64)
 			local text_19 = buffer.readstring(buf_60, o_66, length_36)
 			o_64 = o_66 + length_36
@@ -1211,7 +1190,7 @@ local readonlyMap = Flamework.createSerializer({
 				error("malformed payload")
 			end
 			local set_3 = {}
-			for _5 = 1, count_13 do
+			for _6 = 1, count_13 do
 				set_3[buffer.readf64(buf_60, o_64)] = true
 				o_64 += 8
 			end
@@ -1223,10 +1202,10 @@ local readonlyMap = Flamework.createSerializer({
 		return map_3
 	end,
 })
-codec.s_Set_string = function(v_52)
+codec.s_Set_string = function(v_49)
 	local size_15 = 0
 	local n_23 = 0
-	for item_20 in v_52 do
+	for item_20 in v_49 do
 		n_23 += 1
 		local length_37 = #item_20
 		size_15 += vsize(length_37) + length_37
@@ -1234,16 +1213,13 @@ codec.s_Set_string = function(v_52)
 	size_15 += vsize(n_23)
 	return size_15
 end
-codec.w_Set_string = function(buf_61, o_68, v_52)
-	-- ▼ ReadonlySet.size ▼
-	local _size = 0
-	for _ in v_52 do
-		_size += 1
+codec.w_Set_string = function(buf_61, o_68, v_49)
+	local n_24 = 0
+	for _ in v_49 do
+		n_24 += 1
 	end
-	-- ▲ ReadonlySet.size ▲
-	local n_24 = _size
 	o_68 = vwrite(buf_61, o_68, n_24)
-	for item_21 in v_52 do
+	for item_21 in v_49 do
 		local length_38 = #item_21
 		o_68 = vwrite(buf_61, o_68, length_38)
 		buffer.writestring(buf_61, o_68, item_21)
@@ -1267,10 +1243,10 @@ codec.r_Set_string = function(buf_61, o_68)
 	return set_4, o_68
 end
 local nested = Flamework.createSerializer({
-	serialize = function(v_53)
+	serialize = function(v_50)
 		local size_16 = 0
 		local n_25 = 0
-		for key_8, entry_8 in v_53 do
+		for key_8, entry_8 in v_50 do
 			n_25 += 1
 			local n_26 = #entry_8
 			local size_17 = vsize(n_26)
@@ -1287,15 +1263,12 @@ local nested = Flamework.createSerializer({
 		local buf_62 = buffer.create(size_16)
 		local blobs_3 = {}
 		local o_71 = 0
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
-		for _ in v_53 do
-			_size += 1
+		local n_27 = 0
+		for _ in v_50 do
+			n_27 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_27 = _size
 		o_71 = vwrite(buf_62, o_71, n_27)
-		for key_9, entry_9 in v_53 do
+		for key_9, entry_9 in v_50 do
 			if key_9 ~= nil then
 				table.insert(blobs_3, key_9)
 				buffer.writeu32(buf_62, o_71, #blobs_3)
@@ -1340,10 +1313,10 @@ local nested = Flamework.createSerializer({
 	end,
 })
 local indexed = Flamework.createSerializer({
-	serialize = function(v_54)
+	serialize = function(v_51)
 		local size_18 = 0
 		local n_28 = 0
-		for key_11, entry_10 in v_54 do
+		for key_11, entry_10 in v_51 do
 			n_28 += 1
 			local length_40 = #key_11
 			size_18 += vsize(length_40) + length_40 + 16
@@ -1351,15 +1324,12 @@ local indexed = Flamework.createSerializer({
 		size_18 += vsize(n_28)
 		local buf_64 = buffer.create(size_18)
 		local o_76 = 0
-		-- ▼ ReadonlyMap.size ▼
-		local _size = 0
-		for _ in v_54 do
-			_size += 1
+		local n_29 = 0
+		for _ in v_51 do
+			n_29 += 1
 		end
-		-- ▲ ReadonlyMap.size ▲
-		local n_29 = _size
 		o_76 = vwrite(buf_64, o_76, n_29)
-		for key_12, entry_11 in v_54 do
+		for key_12, entry_11 in v_51 do
 			local length_41 = #key_12
 			o_76 = vwrite(buf_64, o_76, length_41)
 			buffer.writestring(buf_64, o_76, key_12)
@@ -1399,11 +1369,11 @@ local indexed = Flamework.createSerializer({
 })
 local zeros = 0
 local markers = Flamework.createSerializer({
-	serialize = function(v_55)
-		local n_30 = #v_55
+	serialize = function(v_52)
+		local n_30 = #v_52
 		local size_19 = vsize(n_30)
 		for i_25 = 1, n_30 do
-			local item_24 = v_55[i_25]
+			local item_24 = v_52[i_25]
 			if item_24 == nil then
 				error(`[Flamework] the array has no value at value[{i_25 - 1}]`)
 			end
@@ -1412,9 +1382,9 @@ local markers = Flamework.createSerializer({
 		end
 		local buf_66 = buffer.create(size_19)
 		local o_80 = 0
-		o_80 = vwrite(buf_66, o_80, #v_55)
-		for i_26 = 1, #v_55 do
-			local item_25 = v_55[i_26]
+		o_80 = vwrite(buf_66, o_80, #v_52)
+		for i_26 = 1, #v_52 do
+			local item_25 = v_52[i_26]
 			o_80 = vwrite(buf_66, o_80, #item_25)
 			for i_27 = 1, #item_25 do
 				local item_26 = item_25[i_27]
@@ -1434,7 +1404,7 @@ local markers = Flamework.createSerializer({
 			error("malformed payload")
 		end
 		local array_13 = table.create(count_18)
-		for i_29 = 1, count_18 do
+		for i_28 = 1, count_18 do
 			local count_19, o_83 = vread(buf_67, o_81)
 			o_81 = o_83
 			zeros += count_19
@@ -1442,12 +1412,12 @@ local markers = Flamework.createSerializer({
 				error("malformed payload")
 			end
 			local array_14 = table.create(count_19)
-			for i_28 = 1, count_19 do
-				array_14[i_28] = {
+			for i_29 = 1, count_19 do
+				array_14[i_29] = {
 					type = "marker",
 				}
 			end
-			array_13[i_29] = array_14
+			array_13[i_28] = array_14
 		end
 		if o_81 ~= buffer.len(buf_67) then
 			error("malformed payload")
@@ -1457,12 +1427,12 @@ local markers = Flamework.createSerializer({
 })
 -- Tuples.
 local pair = Flamework.createSerializer({
-	serialize = function(v_56)
-		local length_43 = #(v_56[2])
+	serialize = function(v_53)
+		local length_43 = #v_53[2]
 		local buf_68 = buffer.create(vsize(length_43) + length_43 + 8)
 		local o_84 = 0
-		buffer.writef64(buf_68, o_84, v_56[1])
-		local text_22 = v_56[2]
+		buffer.writef64(buf_68, o_84, v_53[1])
+		local text_22 = v_53[2]
 		local length_44 = #text_22
 		o_84 = vwrite(buf_68, o_84 + 8, length_44)
 		buffer.writestring(buf_68, o_84, text_22)
@@ -1483,30 +1453,30 @@ local pair = Flamework.createSerializer({
 	end,
 })
 local optionalTuple = Flamework.createSerializer({
-	serialize = function(v_57)
-		local v_58 = v_57[2]
+	serialize = function(v_54)
+		local v_55 = v_54[2]
 		local size_20 = 1
-		if v_58 ~= nil then
-			local length_46 = #v_58
+		if v_55 ~= nil then
+			local length_46 = #v_55
 			size_20 += vsize(length_46) + length_46
 		end
-		local count_20 = math.max(#v_57 - 2, 0)
+		local count_20 = math.max(#v_54 - 2, 0)
 		local buf_70 = buffer.create(size_20 + (vsize(count_20) + count_20 * 1) + 8)
 		local o_87 = 0
-		buffer.writef64(buf_70, o_87, v_57[1])
-		local v_59 = v_57[2]
-		buffer.writeu8(buf_70, o_87 + 8, if v_59 ~= nil then 1 else 0)
+		buffer.writef64(buf_70, o_87, v_54[1])
+		local v_56 = v_54[2]
+		buffer.writeu8(buf_70, o_87 + 8, if v_56 ~= nil then 1 else 0)
 		o_87 += 9
-		if v_59 ~= nil then
-			local length_47 = #v_59
+		if v_56 ~= nil then
+			local length_47 = #v_56
 			o_87 = vwrite(buf_70, o_87, length_47)
-			buffer.writestring(buf_70, o_87, v_59)
+			buffer.writestring(buf_70, o_87, v_56)
 			o_87 += length_47
 		end
-		local count_21 = math.max(#v_57 - 2, 0)
+		local count_21 = math.max(#v_54 - 2, 0)
 		o_87 = vwrite(buf_70, o_87, count_21)
 		for i_30 = 3, count_21 + 2 do
-			local item_27 = v_57[i_30]
+			local item_27 = v_54[i_30]
 			if item_27 == nil then
 				error(`[Flamework] the tuple has no value at value[{i_30 - 1}]`)
 			end
@@ -1544,11 +1514,11 @@ local optionalTuple = Flamework.createSerializer({
 	end,
 })
 local restFirst = Flamework.createSerializer({
-	serialize = function(v_60)
-		local count_23 = math.max(#v_60 - 1, 0)
+	serialize = function(v_57)
+		local count_23 = math.max(#v_57 - 1, 0)
 		local size_21 = vsize(count_23) + 1
 		for i_32 = 1, count_23 do
-			local item_28 = v_60[i_32]
+			local item_28 = v_57[i_32]
 			if item_28 == nil then
 				error(`[Flamework] the tuple has no value at value[{i_32 - 1}]`)
 			end
@@ -1557,16 +1527,16 @@ local restFirst = Flamework.createSerializer({
 		end
 		local buf_72 = buffer.create(size_21)
 		local o_91 = 0
-		local count_24 = math.max(#v_60 - 1, 0)
+		local count_24 = math.max(#v_57 - 1, 0)
 		o_91 = vwrite(buf_72, o_91, count_24)
 		for i_33 = 1, count_24 do
-			local text_25 = v_60[i_33]
+			local text_25 = v_57[i_33]
 			local length_50 = #text_25
 			o_91 = vwrite(buf_72, o_91, length_50)
 			buffer.writestring(buf_72, o_91, text_25)
 			o_91 += length_50
 		end
-		buffer.writeu8(buf_72, o_91, if v_60[count_24 + 1] then 1 else 0)
+		buffer.writeu8(buf_72, o_91, if v_57[count_24 + 1] then 1 else 0)
 		return buf_72
 	end,
 	deserialize = function(buf_73)
@@ -1593,11 +1563,11 @@ local restFirst = Flamework.createSerializer({
 	end,
 })
 local restMiddle = Flamework.createSerializer({
-	serialize = function(v_61)
-		local count_26 = math.max(#v_61 - 2, 0)
+	serialize = function(v_58)
+		local count_26 = math.max(#v_58 - 2, 0)
 		local size_22 = vsize(count_26) + 9
 		for i_35 = 2, count_26 + 1 do
-			local item_29 = v_61[i_35]
+			local item_29 = v_58[i_35]
 			if item_29 == nil then
 				error(`[Flamework] the tuple has no value at value[{i_35 - 1}]`)
 			end
@@ -1606,17 +1576,17 @@ local restMiddle = Flamework.createSerializer({
 		end
 		local buf_74 = buffer.create(size_22)
 		local o_95 = 0
-		buffer.writef64(buf_74, o_95, v_61[1])
-		local count_27 = math.max(#v_61 - 2, 0)
+		buffer.writef64(buf_74, o_95, v_58[1])
+		local count_27 = math.max(#v_58 - 2, 0)
 		o_95 = vwrite(buf_74, o_95 + 8, count_27)
 		for i_36 = 2, count_27 + 1 do
-			local text_27 = v_61[i_36]
+			local text_27 = v_58[i_36]
 			local length_53 = #text_27
 			o_95 = vwrite(buf_74, o_95, length_53)
 			buffer.writestring(buf_74, o_95, text_27)
 			o_95 += length_53
 		end
-		buffer.writeu8(buf_74, o_95, if v_61[count_27 + 2] then 1 else 0)
+		buffer.writeu8(buf_74, o_95, if v_58[count_27 + 2] then 1 else 0)
 		return buf_74
 	end,
 	deserialize = function(buf_75)
@@ -1644,19 +1614,19 @@ local restMiddle = Flamework.createSerializer({
 	end,
 })
 local labelled = Flamework.createSerializer({
-	serialize = function(v_62)
-		local v_63 = v_62[2]
-		local buf_76 = buffer.create((if v_63 ~= nil then 2 else 1) + 12)
+	serialize = function(v_59)
+		local v_60 = v_59[2]
+		local buf_76 = buffer.create((if v_60 ~= nil then 2 else 1) + 12)
 		local o_99 = 0
-		local vector3 = v_62[1]
+		local vector3 = v_59[1]
 		buffer.writef32(buf_76, o_99, vector3.X)
 		buffer.writef32(buf_76, o_99 + 4, vector3.Y)
 		buffer.writef32(buf_76, o_99 + 8, vector3.Z)
-		local v_64 = v_62[2]
-		buffer.writeu8(buf_76, o_99 + 12, if v_64 ~= nil then 1 else 0)
+		local v_61 = v_59[2]
+		buffer.writeu8(buf_76, o_99 + 12, if v_61 ~= nil then 1 else 0)
 		o_99 += 13
-		if v_64 ~= nil then
-			buffer.writeu8(buf_76, o_99, v_64)
+		if v_61 ~= nil then
+			buffer.writeu8(buf_76, o_99, v_61)
 			o_99 += 1
 		end
 		return buf_76
@@ -1680,10 +1650,10 @@ local labelled = Flamework.createSerializer({
 })
 -- Promises unwrap.
 local promised = Flamework.createSerializer({
-	serialize = function(v_65)
+	serialize = function(v_62)
 		local buf_78 = buffer.create(16)
-		buffer.writef64(buf_78, 0, v_65.x)
-		buffer.writef64(buf_78, 8, v_65.y)
+		buffer.writef64(buf_78, 0, v_62.x)
+		buffer.writef64(buf_78, 8, v_62.y)
 		return buf_78
 	end,
 	deserialize = function(buf_79)
@@ -1702,12 +1672,12 @@ local versioned = Flamework.createSerializer({
 	version = 3,
 }, {
 	version = 3,
-	serialize = function(v_66)
-		local buf_80 = buffer.create(codec.s_Entity(v_66) + 5)
+	serialize = function(v_63)
+		local buf_80 = buffer.create(codec.s_Entity(v_63) + 5)
 		buffer.writeu8(buf_80, 0, 3)
 		buffer.writeu32(buf_80, 1, 2388057634)
 		local blobs_5 = {}
-		codec.w_Entity(buf_80, 5, v_66, blobs_5)
+		codec.w_Entity(buf_80, 5, v_63, blobs_5)
 		return buf_80, blobs_5
 	end,
 	deserialize = function(buf_81, blobs_6)
@@ -1731,11 +1701,11 @@ local versionedNumber = Flamework.createSerializer({
 	version = 0,
 }, {
 	version = 0,
-	serialize = function(v_67)
+	serialize = function(v_64)
 		local buf_82 = buffer.create(13)
 		buffer.writeu8(buf_82, 0, 0)
 		buffer.writeu32(buf_82, 1, 2209142783)
-		buffer.writef64(buf_82, 5, v_67)
+		buffer.writef64(buf_82, 5, v_64)
 		return buf_82
 	end,
 	deserialize = function(buf_83)
@@ -1760,14 +1730,14 @@ local versionedConst = Flamework.createSerializer({
 	version = VERSION,
 }, {
 	version = 7,
-	serialize = function(v_68)
-		local length_55 = #(v_68[2])
-		local buf_84 = buffer.create(vsize(length_55) + length_55 + 8 + 5)
+	serialize = function(v_65)
+		local length_55 = #v_65[2]
+		local buf_84 = buffer.create(vsize(length_55) + length_55 + 13)
 		buffer.writeu8(buf_84, 0, 7)
 		buffer.writeu32(buf_84, 1, 3163455859)
 		local o_102 = 5
-		buffer.writef64(buf_84, o_102, v_68[1])
-		local text_29 = v_68[2]
+		buffer.writef64(buf_84, o_102, v_65[1])
+		local text_29 = v_65[2]
 		local length_56 = #text_29
 		o_102 = vwrite(buf_84, o_102 + 8, length_56)
 		buffer.writestring(buf_84, o_102, text_29)

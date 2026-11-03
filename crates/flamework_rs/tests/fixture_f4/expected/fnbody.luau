@@ -167,14 +167,13 @@ local function make()
 	end)())
 	local s = Flamework.createSerializer({
 		serialize = function(v_3)
-			local v_4 = v_3
 			local size_1 = 1
-			if guard(v_4) then
-				size_1 += codec.s_Node(v_4)
-			elseif type(v_4) == "table" then
+			if guard(v_3) then
+				size_1 += codec.s_Node(v_3)
+			elseif type(v_3) == "table" then
 				local size_2 = 0
 				local n_4 = 0
-				for key, entry in v_4 do
+				for key, entry in v_3 do
 					n_4 += 1
 					local length = #key
 					size_2 += vsize(length) + length + 1
@@ -184,21 +183,17 @@ local function make()
 			end
 			local buf_3 = buffer.create(size_1)
 			local o_5 = 0
-			local v_5 = v_3
-			if guard(v_5) then
+			if guard(v_3) then
 				buffer.writeu8(buf_3, o_5, 0)
-				o_5 = codec.w_Node(buf_3, o_5 + 1, v_5)
-			elseif type(v_5) == "table" then
+				o_5 = codec.w_Node(buf_3, o_5 + 1, v_3)
+			elseif type(v_3) == "table" then
 				buffer.writeu8(buf_3, o_5, 1)
-				-- ▼ ReadonlyMap.size ▼
-				local _size = 0
-				for _ in v_5 do
-					_size += 1
+				local n_5 = 0
+				for _ in v_3 do
+					n_5 += 1
 				end
-				-- ▲ ReadonlyMap.size ▲
-				local n_5 = _size
 				o_5 = vwrite(buf_3, o_5 + 1, n_5)
-				for key_1, entry_1 in v_5 do
+				for key_1, entry_1 in v_3 do
 					local length_1 = #key_1
 					o_5 = vwrite(buf_3, o_5, length_1)
 					buffer.writestring(buf_3, o_5, key_1)

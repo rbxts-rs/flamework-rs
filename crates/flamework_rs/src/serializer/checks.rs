@@ -4,9 +4,12 @@ use std::rc::Rc;
 
 use rbxts_plugin::ts::{P, Type};
 
+use rbxts_luau::BinaryOperator::{self, And, Div, Eq, Ge, Gt, Le, Lt, Mod};
+use rbxts_luau::{Expr, Stmt, create};
+
 use super::codegen::{Ctx, Out, Place, push};
-use super::ir::{self, E, Op, S, Ty};
 use super::lit::Lit;
+use super::luau;
 use super::order::{literal_key, print_literal};
 use super::typeinfo::TableKey;
 use super::{Evaluation, Fit, GResult, Gen, Kind, LengthWidth, Shape, Width, kind_key};
@@ -923,7 +926,7 @@ impl Gen<'_, '_, '_> {
     }
 
     /// `typeTest(kind, value)`.
-    fn type_test(&mut self, kind: &Kind, value: E) -> E {
+    fn type_test(&mut self, kind: &Kind, value: Expr) -> Expr {
         match kind {
             Kind::Number { .. } | Kind::Varint { .. } => self.type_of_is(value, "number"),
             Kind::String { .. } => self.type_of_is(value, "string"),
@@ -934,75 +937,74 @@ impl Gen<'_, '_, '_> {
             Kind::Enum(name) => self.enum_test(name, value),
             Kind::Constant(constant) => {
                 self.check_globals_in(constant);
-                ir::binary(ir::cast(value, Ty::Unknown), Op::Eq, constant.to_ir())
+                luau::bin(value, Eq, constant.to_luau())
             }
             Kind::Blob { typeof_name } => self.type_of_is(value, typeof_name.as_deref().unwrap_or("")),
             _ => self.type_of_is(value, "table"),
         }
     }
 
-    /// `enumTest(name, value)`.
-    pub(crate) fn enum_test(&mut self, name: &str, value: E) -> E {
+    /// `enumTest(name, value)`: `typeof(v) == "EnumItem" and v.EnumType == Enum.<name>`.
+    pub(crate) fn enum_test(&mut self, name: &str, value: Expr) -> Expr {
         let is_item = self.type_of_is(value.clone(), "EnumItem");
         let enum_global = self.global_ref("Enum");
-        ir::binary(
-            is_item,
-            Op::And,
-            ir::binary(ir::prop(ir::cast(value, Ty::EnumItem), "EnumType"), Op::Eq, ir::prop(enum_global, name)),
-        )
+        luau::bin(is_item, And, luau::bin(luau::prop(value, "EnumType"), Eq, luau::prop(enum_global, name)))
     }
 
-    /// `failed(test)`.
-    pub(crate) fn failed(test: E) -> E {
-        if let E::Binary(left, Op::Eq, right) = test {
-            return ir::binary(*left, Op::Ne, *right);
+    /// `failed(test)`: `a ~= b` for `a == b`, else `not (test)`.
+    pub(crate) fn failed(test: Expr) -> Expr {
+        match test {
+            Expr::Binary(binary) if binary.operator == Eq => {
+                let binary = *binary;
+                luau::bin(binary.left, BinaryOperator::Ne, binary.right)
+            }
+            other => luau::not(other),
         }
-        ir::not(ir::paren(test))
     }
 
-    /// `callTypeCheck(kind, value, place)`.
-    pub(crate) fn call_type_check(&mut self, kind: &Rc<Kind>, value: E, place: &Place) -> GResult<E> {
+    /// `callTypeCheck(kind, value, place)`: `codec.checkType(expected, value, where[, true])`.
+    pub(crate) fn call_type_check(&mut self, kind: &Rc<Kind>, value: Expr, place: &Place) -> GResult<Expr> {
         let expectation = self.type_expectation(kind)?.expect("a kind with a test");
         let where_ = self.where_of(place);
-        let mut args = vec![ir::string(&expectation.expected), value, where_];
+        let mut args = vec![luau::str(&expectation.expected), value, where_];
         if expectation.show {
-            args.push(ir::bool(true));
+            args.push(create::bool(true));
         }
         let helper = self.type_check_helper();
-        Ok(ir::call(helper, args))
+        Ok(luau::call(helper, args))
     }
 
-    /// `typeCheckStatement(kind, value, place)`.
-    pub(crate) fn type_check_statement(&mut self, kind: &Rc<Kind>, value: E, place: &Place) -> GResult<S> {
+    /// `typeCheckStatement(kind, value, place)`: `if <failed test> then <checkType> end`.
+    pub(crate) fn type_check_statement(&mut self, kind: &Rc<Kind>, value: Expr, place: &Place) -> GResult<Stmt> {
         let test = self.type_test(kind, value.clone());
         let call = self.call_type_check(kind, value, place)?;
-        Ok(ir::if_stmt(Self::failed(test), vec![ir::stmt(call)], None))
+        Ok(luau::if_chain(vec![(Self::failed(test), vec![Stmt::Call(call)])], Vec::new()))
     }
 
     /// `emitTypeCheck(kind, value, out, place)`.
-    pub(crate) fn emit_type_check(&mut self, kind: &Rc<Kind>, value: E, out: &Out, place: &Place) -> GResult<()> {
-        if let Some(literal) = Lit::of(&value)
+    pub(crate) fn emit_type_check(&mut self, kind: &Rc<Kind>, value: Expr, out: &Out, place: &Place) -> GResult<()> {
+        if let Some(literal) = self.literal(&value)
             && let Some(ty) = literal.type_name()
         {
             if !literal_passes(kind, &literal, ty) {
                 let call = self.call_type_check(kind, value, place)?;
-                push(out, ir::stmt(call));
+                push(out, Stmt::Call(call));
             }
             return Ok(());
         }
-        if matches!(&**kind, Kind::Constant(_)) || (value.is_identifier() && !self.is_parameter_reference(&value)) {
+        if matches!(&**kind, Kind::Constant(_)) || self.is_name(&value) {
             let statement = self.type_check_statement(kind, value, place)?;
             push(out, statement);
             return Ok(());
         }
-        let v = self.uid("v", self.type_of_value(&value));
-        let statement = self.type_check_statement(kind, ir::id(v), place)?;
-        push(out, S::Block(vec![S::Const(ir::Bind::One(v), value), statement]));
+        let v = self.uid("v");
+        let statement = self.type_check_statement(kind, v.e(), place)?;
+        push(out, luau::do_(vec![luau::local(&v.e(), Some(value)), statement]));
         Ok(())
     }
 
     /// `tablePrecheck(union, value, out, place)`.
-    pub(crate) fn table_precheck(&mut self, union: &Rc<Kind>, value: E, out: &Out, place: &Place) -> GResult<()> {
+    pub(crate) fn table_precheck(&mut self, union: &Rc<Kind>, value: Expr, out: &Out, place: &Place) -> GResult<()> {
         let Kind::Union { alternatives, .. } = &**union else { unreachable!() };
         let mut kinds = Vec::new();
         for a in alternatives {
@@ -1024,94 +1026,100 @@ impl Gen<'_, '_, '_> {
         }
         let test = self.type_of_is(value.clone(), "table");
         let call = self.call_type_check(union, value, place)?;
-        push(out, ir::if_stmt(Self::failed(test), vec![ir::stmt(call)], None));
+        push(out, luau::if_chain(vec![(Self::failed(test), vec![Stmt::Call(call)])], Vec::new()));
         Ok(())
     }
 
-    /// `fitsRange(n, range)`.
-    pub(crate) fn fits_range(&mut self, n: E, (minimum, maximum, whole): (f64, f64, bool)) -> E {
+    /// `fitsRange(n, range)`: `n >= min and n <= max and n % 1 == 0`, or for a float width
+    /// `not (math.abs(n) > max and math.abs(n) < math.huge)`.
+    pub(crate) fn fits_range(&mut self, n: Expr, (minimum, maximum, whole): (f64, f64, bool)) -> Expr {
         if !whole {
-            let magnitude = |gn: &mut Self| gn.math_call("abs", vec![n.clone()]);
-            let a = magnitude(self);
-            let b = magnitude(self);
-            let huge = ir::prop(self.global_ref("math"), "huge");
-            return ir::not(ir::paren(ir::binary(
-                ir::binary(a, Op::Gt, ir::num(maximum)),
-                Op::And,
-                ir::binary(b, Op::Lt, huge),
-            )));
+            return luau::not(self.outside_float(n, maximum));
         }
-        let bound = |value: f64| if value < 0.0 { ir::neg(ir::E::Num(-value)) } else { ir::E::Num(value) };
-        ir::binary(
-            ir::binary(ir::binary(n.clone(), Op::Ge, bound(minimum)), Op::And, ir::binary(n.clone(), Op::Le, bound(maximum))),
-            Op::And,
-            ir::binary(ir::binary(n, Op::Mod, ir::num(1.0)), Op::Eq, ir::num(0.0)),
+        luau::bin(
+            luau::bin(luau::bin(n.clone(), Ge, luau::num(minimum)), And, luau::bin(n.clone(), Le, luau::num(maximum))),
+            And,
+            luau::bin(luau::bin(n, Mod, luau::num(1.0)), Eq, luau::num(0.0)),
         )
+    }
+
+    /// `math.abs(n) > max and math.abs(n) < math.huge`.
+    fn outside_float(&mut self, n: Expr, maximum: f64) -> Expr {
+        let a = self.math_call("abs", vec![n.clone()]);
+        let b = self.math_call("abs", vec![n]);
+        let huge = luau::prop(self.global_ref("math"), "huge");
+        luau::bin(luau::bin(a, Gt, luau::num(maximum)), And, luau::bin(b, Lt, huge))
     }
 
     /// `failsRange(n, range)`.
-    pub(crate) fn fails_range(&mut self, n: E, range: (f64, f64, bool)) -> E {
-        let fits = self.fits_range(n, range);
-        if let E::Not(inner) = &fits
-            && let E::Paren(inside) = &**inner
-        {
-            return (**inside).clone();
+    pub(crate) fn fails_range(&mut self, n: Expr, range: (f64, f64, bool)) -> Expr {
+        if !range.2 {
+            return self.outside_float(n, range.1);
         }
-        ir::not(ir::paren(fits))
+        luau::not(self.fits_range(n, range))
     }
 
     /// `isWhole(n)`: `n < 2^35 and 1 / n > 0 and n % 1 == 0`.
-    pub(crate) fn is_whole(n: E) -> E {
-        ir::binary(
-            ir::binary(
-                ir::binary(n.clone(), Op::Lt, ir::num(VARINT_LIMIT)),
-                Op::And,
-                ir::binary(ir::binary(ir::num(1.0), Op::Div, n.clone()), Op::Gt, ir::num(0.0)),
+    pub(crate) fn is_whole(n: Expr) -> Expr {
+        luau::bin(
+            luau::bin(
+                luau::bin(n.clone(), Lt, luau::num(VARINT_LIMIT)),
+                And,
+                luau::bin(luau::bin(luau::num(1.0), Div, n.clone()), Gt, luau::num(0.0)),
             ),
-            Op::And,
-            ir::binary(ir::binary(n, Op::Mod, ir::num(1.0)), Op::Eq, ir::num(0.0)),
+            And,
+            luau::bin(luau::bin(n, Mod, luau::num(1.0)), Eq, luau::num(0.0)),
         )
     }
 
-    /// `callCheck(width, value, ctx, unit)`.
-    pub(crate) fn call_check(&mut self, width: &str, value: E, ctx: &Ctx, unit: Option<&str>) -> E {
+    /// `callCheck(width, value, ctx, unit)`: `codec.checkWidth(width, value, where[, unit])`.
+    pub(crate) fn call_check(&mut self, width: &str, value: Expr, ctx: &Ctx, unit: Option<&str>) -> Expr {
         let where_ = self.where_of(&ctx.place);
-        let mut args = vec![ir::string(width), value, where_];
+        let mut args = vec![luau::str(width), value, where_];
         if let Some(unit) = unit {
-            args.push(ir::string(unit));
+            args.push(luau::str(unit));
         }
         let helper = self.check_helper();
-        ir::call(helper, args)
+        luau::call(helper, args)
     }
 
-    /// `whereOf(place)`.
-    pub(crate) fn where_of(&self, place: &Place) -> E {
+    /// `whereOf(place)` as text known when building, or `Err` with the code that builds it when the code runs (a
+    /// hoisted function's `where` parameter, and its path).
+    pub(crate) fn where_text(&self, place: &Place) -> Result<String, Expr> {
         if let Some(w) = place.where_ {
-            return match place.path.as_deref() {
-                Some(path) if !path.is_empty() => ir::binary(ir::id(w), Op::Add, ir::string(path)),
-                _ => ir::id(w),
-            };
+            return Err(match place.path.as_deref() {
+                Some(path) if !path.is_empty() => luau::bin(w.e(), BinaryOperator::Concat, luau::str(path)),
+                _ => w.e(),
+            });
         }
         let path = match place.path.as_deref() {
             None | Some("") => "value",
             Some(p) => p,
         };
-        ir::string(&match &place.site {
+        Ok(match &place.site {
             Some(site) => format!("'{site}' {path}"),
             None => path.to_owned(),
         })
     }
 
+    /// `whereOf(place)`.
+    pub(crate) fn where_of(&self, place: &Place) -> Expr {
+        match self.where_text(place) {
+            Ok(text) => luau::str(&text),
+            Err(e) => e,
+        }
+    }
+
     /// `passedWhere(place)`.
-    pub(crate) fn passed_where(&self, place: &Place) -> E {
+    pub(crate) fn passed_where(&self, place: &Place) -> Expr {
         if let Some(owner) = &place.owner {
-            return ir::string(&format!("{owner}{}", place.path.as_deref().unwrap_or("")));
+            return luau::str(&format!("{owner}{}", place.path.as_deref().unwrap_or("")));
         }
         self.where_of(place)
     }
 
     /// `discriminate(union, index, value)`.
-    pub(crate) fn discriminate(&mut self, union: &Rc<Kind>, index: usize, value: E) -> GResult<E> {
+    pub(crate) fn discriminate(&mut self, union: &Rc<Kind>, index: usize, value: Expr) -> GResult<Expr> {
         if self.evaluation(union)?.table_only == Some(index) {
             return Ok(self.type_of_is(value, "table"));
         }
@@ -1121,13 +1129,13 @@ impl Gen<'_, '_, '_> {
         if matches!(&*kind, Kind::Object { .. })
             && let Some((_, key, constant)) = self.object_key(union, &kind)?
         {
-            let field = super::typeinfo::key_access(ir::cast(value.clone(), Ty::Record), &key);
+            let field = super::typeinfo::key_access(value.clone(), &key);
             let test = match constant {
                 Some(c) => {
                     self.check_globals_in(&c);
-                    ir::binary(field, Op::Eq, c.to_ir())
+                    luau::bin(field, Eq, c.to_luau())
                 }
-                None => ir::binary(field, Op::Ne, ir::nil()),
+                None => luau::bin(field, BinaryOperator::Ne, create::nil()),
             };
             let mut tables = true;
             for other in alternatives {
@@ -1136,15 +1144,15 @@ impl Gen<'_, '_, '_> {
                     break;
                 }
             }
-            return Ok(if tables { test } else { ir::binary(self.type_of_is(value, "table"), Op::And, test) });
+            return Ok(if tables { test } else { luau::bin(self.type_of_is(value, "table"), And, test) });
         }
         Ok(match &*kind {
             Kind::Number { .. } | Kind::Varint { .. } => match number_range(&kind) {
                 None => self.type_of_is(value, "number"),
                 Some(range) => {
                     let is_number = self.type_of_is(value.clone(), "number");
-                    let fits = self.fits_range(ir::cast(value, Ty::Number), range);
-                    ir::binary(is_number, Op::And, fits)
+                    let fits = self.fits_range(value, range);
+                    luau::bin(is_number, And, fits)
                 }
             },
             Kind::String { .. } => self.type_of_is(value, "string"),
@@ -1155,62 +1163,24 @@ impl Gen<'_, '_, '_> {
             Kind::Enum(name) => self.enum_test(name, value),
             Kind::Literals(_) => {
                 let (_, index) = self.literal_tables_for(&kind);
-                ir::binary(ir::macro_call(index, "get", vec![ir::cast(value, Ty::Defined)]), Op::Ne, ir::nil())
+                luau::bin(luau::index(index, value), BinaryOperator::Ne, create::nil())
             }
             Kind::Constant(c) => {
                 self.check_globals_in(c);
-                ir::binary(value, Op::Eq, c.to_ir())
+                luau::bin(value, Eq, c.to_luau())
             }
-            Kind::Nothing => ir::binary(value, Op::Eq, ir::nil()),
+            Kind::Nothing => luau::bin(value, Eq, create::nil()),
             Kind::Blob { typeof_name } => match typeof_name {
                 Some(name) => self.type_of_is(value, name),
-                None => ir::bool(true),
+                None => create::bool(true),
             },
             _ => {
                 let Some(ty) = alternative.ty else { panic!("Flamework: cannot discriminate a synthetic {}", kind.name()) };
                 let guard = self.guard_for(ty)?;
-                ir::call(guard, vec![value])
+                luau::call(guard, vec![value])
             }
         })
     }
-
-    /// Whether a value is a parameter, which roblox-ts copies before a macro reads it (`isParameterReference`).
-    pub(crate) fn is_parameter_reference(&self, value: &E) -> bool {
-        match value {
-            E::Id(id) => self.g.parameters.contains(id),
-            E::Ext(value) => value.parameter,
-            _ => false,
-        }
-    }
-
-    /// The type a declaration initialized with `value` gets.
-    pub(crate) fn type_of_value(&self, value: &E) -> Ty {
-        match value {
-            E::Id(id) => self.g.ids.ty(*id),
-            E::Ext(ext) if ext.literal.is_some() => self.type_of_value(&ext.as_literal().expect("a literal")),
-            E::As(_, ty) => *ty,
-            E::Paren(inner) => self.type_of_value(inner),
-            E::Str(_) | E::Template(..) => Ty::String,
-            E::Num(_) | E::Neg(_) => Ty::Number,
-            E::Bool(_) | E::Not(_) => Ty::Boolean,
-            E::New(class, _) => match class.as_str() {
-                "Array" => Ty::Array,
-                "Map" => Ty::Map,
-                "Set" => Ty::Set,
-                "CFrame" => Ty::CFrame,
-                _ => Ty::Datatype,
-            },
-            E::Binary(_, Op::Eq | Op::Ne | Op::Lt | Op::Le | Op::Gt | Op::Ge | Op::And, _) => Ty::Boolean,
-            E::Binary(..) => Ty::Number,
-            E::Call(_, _, super::ir::CallKind::Macro) => Ty::Number,
-            _ => Ty::Unknown,
-        }
-    }
-}
-
-/// `literalType(expression)`: a literal value's type name.
-pub(crate) fn literal_type(e: &E) -> Option<&'static str> {
-    Lit::of(e)?.type_name()
 }
 
 /// `literalPasses(kind, value, type)`.
