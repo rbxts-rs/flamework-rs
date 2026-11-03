@@ -504,7 +504,7 @@ impl Gen<'_, '_, '_> {
         let place = Place { path: Some(path.to_owned()), ..Place::default() };
         let (buf, blobs) = self.encode_into(shape, layout, value.e(), &body, &place, header)?;
         let result = match blobs {
-            Some(b) => self.tuple(vec![buf.e(), b.e()]),
+            Some(b) => luau::returns(vec![buf.e(), b.e()]),
             None => create::return_stmt(buf.e()),
         };
         push(&body, result);
@@ -1852,8 +1852,7 @@ impl Gen<'_, '_, '_> {
             Kind::Map(key_shape, value_shape) => {
                 let min = self.layout_of(key_shape)?.min + self.layout_of(value_shape)?.min;
                 let count = self.read_count(ctx, min);
-                let created = self.construct("Map", vec![]);
-                let map = self.bind(&ctx.out, created, "map");
+                let map = self.bind(&ctx.out, create::map(Vec::<(Expr, Expr)>::new()), "map");
                 let loop_id = self.uid("_");
                 let (key_shape, value_shape) = (key_shape.clone(), value_shape.clone());
                 let map_in = map.clone();

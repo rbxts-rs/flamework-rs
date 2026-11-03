@@ -241,3 +241,40 @@ fn a_guard_s_hidden_global_is_refused() {
         "{errors:#?}"
     );
 }
+
+/// File-level declarations named after globals the TS generator's code named but the Luau never does (`Map`, `typeOf`)
+/// build beside serializers that read a map and check types, where the TS transformer refused them; the serializers
+/// keep reading the global map type and Luau's `typeof`. (`$tuple` cannot be declared: roblox-ts refuses the name.)
+#[test]
+fn declarations_named_map_or_typeof_build() {
+    let Some(project) = Project::new(FIXTURE, "shadows") else { return };
+    std::fs::remove_dir_all(project.root.join("src")).unwrap();
+    project.write(
+        "flamework.config.json",
+        "{ \"transformer\": { \"hashPrefix\": \"$t\" }, \"serialization\": { \"checks\": { \"types\": true } } }\n",
+    );
+    project.write(
+        "src/shadows.ts",
+        "import { Flamework } from \"@flamework-experimental/core\";\n\
+         class Map {\n\
+         \tconstructor(public readonly name: string) {}\n\
+         }\n\
+         function typeOf(value: unknown) {\n\
+         \treturn `${value}`;\n\
+         }\n\
+         interface Stock {\n\
+         \tname: string;\n\
+         \tcounts: ReadonlyMap<string, number>;\n\
+         }\n\
+         export const shop = new Map(typeOf(2));\n\
+         export const stock = Flamework.createSerializer<Stock>();\n\
+         export const stocks = Flamework.createSerializer<ReadonlyMap<string, Stock>>();\n",
+    );
+    let report = project.build_with(Flamework::new());
+    assert_clean(&report);
+    let out = luau(&report, "shadows.luau");
+    let expected = ["local Map\n", "local function typeOf(", "local got = typeof(value_1)", "local map_2 = {}", "return value_2, o_2"];
+    for text in expected {
+        assert!(out.contains(text), "no `{text}` in:\n{out}");
+    }
+}

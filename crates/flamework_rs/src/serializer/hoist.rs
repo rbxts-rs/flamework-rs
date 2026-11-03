@@ -29,7 +29,7 @@ pub(crate) const MALFORMED: &str = "malformed payload";
 fn global_policy(name: &str) -> Option<bool> {
     match name {
         "buffer" | "error" | "math" => Some(true),
-        "typeIs" | "$range" | "$tuple" | "Array" | "Map" | "Set" | "Enum" | "CFrame" | "warn" | "Promise" => Some(false),
+        "typeIs" | "$range" | "Array" | "Set" | "Enum" | "CFrame" | "warn" | "Promise" => Some(false),
         _ => None,
     }
 }
@@ -163,12 +163,11 @@ impl Gen<'_, '_, '_> {
         Some(alias)
     }
 
-    /// `globalRef(name)`: the global, or the module-level alias of a hidden `buffer`, `math` or `error` (`typeOf` is
-    /// Luau's `typeof`).
+    /// `globalRef(name)`: the global, or the module-level alias of a hidden `buffer`, `math` or `error`.
     pub(crate) fn global_ref(&mut self, name: &str) -> Expr {
         match self.global_alias(name) {
             Some(alias) => alias.e(),
-            None => create::id(if name == "typeOf" { "typeof" } else { name }),
+            None => create::id(name),
         }
     }
 
@@ -204,12 +203,6 @@ impl Gen<'_, '_, '_> {
         luau::for_range(&index.e(), from, to, body)
     }
 
-    /// `return a, b` (the TS generator's `return $tuple(a, b)`).
-    pub(crate) fn tuple(&mut self, values: Vec<Expr>) -> Stmt {
-        self.uses_global("$tuple");
-        luau::returns(values)
-    }
-
     /// `typeIs(v, name)`: `type(v) == name` for Luau's primitive types, `typeof(v) == name` otherwise.
     pub(crate) fn type_of_is(&mut self, value: Expr, name: &str) -> Expr {
         self.uses_global("typeIs");
@@ -217,13 +210,13 @@ impl Gen<'_, '_, '_> {
         luau::bin(luau::call(create::id(function), vec![value]), BinaryOperator::Eq, luau::str(name))
     }
 
-    /// `new Name(args)`: an empty table for an `Array` (`table.create(n)` with a length), a `Set` or a `Map`, else
+    /// `new Name(args)`: an empty table for an `Array` (`table.create(n)` with a length) or a `Set`, else
     /// `Name.new(args)`.
     pub(crate) fn construct(&mut self, name: &str, args: Vec<Expr>) -> Expr {
         let class = self.global_ref(name);
         match name {
             "Array" if !args.is_empty() => luau::call(luau::prop(create::id("table"), "create"), args),
-            "Array" | "Set" | "Map" => create::map(Vec::<(Expr, Expr)>::new()),
+            "Array" | "Set" => create::map(Vec::<(Expr, Expr)>::new()),
             _ => luau::call(luau::prop(class, "new"), args),
         }
     }
@@ -427,8 +420,7 @@ impl Gen<'_, '_, '_> {
                     gn.bind(&body, result, "value")
                 };
                 gn.sync(&ctx);
-                let tuple = gn.tuple(vec![bound, o.e()]);
-                body.borrow_mut().push(tuple);
+                body.borrow_mut().push(luau::returns(vec![bound, o.e()]));
                 Ok(super::codegen::take(&body))
             },
             &read_params,
@@ -616,8 +608,6 @@ impl Gen<'_, '_, '_> {
                     for v in values {
                         gn.check_globals_in(v);
                     }
-                    // the TS generator's `new Map(…)`: refused where a declaration hides `Map`
-                    gn.global_alias("Map");
                     let list_value = create::array(values.iter().map(Lit::to_luau).collect());
                     let pairs: Vec<(Expr, Expr)> =
                         values.iter().enumerate().map(|(i, v)| (v.to_luau(), luau::num(i as f64))).collect();
@@ -691,8 +681,6 @@ impl Gen<'_, '_, '_> {
         let byte = self.uid("b").e();
         let scale = self.uid("scale").e();
         let read_byte = self.buffer_call("readu8", vec![buf.clone(), o.clone()]);
-        // the TS generator's `$tuple(n, o)`: refused where a declaration hides `$tuple`
-        self.global_alias("$tuple");
         let raise = self.raise(MALFORMED);
         let both = luau::returns(vec![n.clone(), o.clone()]);
         let last_scale = luau::num(128f64.powi(VARINT_MAX_BYTES as i32 - 1));
@@ -776,7 +764,7 @@ impl Gen<'_, '_, '_> {
         let mut body = Vec::new();
         self.realm_test(&mut body);
         let is = |name: &str| luau::bin(got.clone(), BinaryOperator::Eq, luau::str(name));
-        let type_of = self.global_ref("typeOf");
+        let type_of = create::id("typeof");
         body.push(luau::local(&got, Some(luau::call(type_of, vec![value.clone()]))));
         let quoted = luau::interp(vec![Part::Text("\"".into()), Part::Expr(value.clone()), Part::Text("\"".into())]);
         let plain = luau::interp(vec![Part::Expr(value.clone())]);

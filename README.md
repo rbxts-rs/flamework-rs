@@ -246,6 +246,9 @@ On purpose:
   transformer's output fails its own type check there (TS2532). As outside a chain (and as the TS transformer), the
   members after the last `?.` (`.alpha` above) are read after the arguments when the target is plain reads (one with
   a call or a computed key in it is bound before them).
+- **A file-level declaration named `Map` or `typeOf`** (`class Map`, `function typeOf`) in a file with a serializer:
+  it builds. The TS transformer refuses it, because the TypeScript it generated named those globals (`new Map()`,
+  `typeOf(value)`); flamework-rs's Luau never does (a map is read into `{}`, a type check calls Luau's `typeof`).
 - **Obfuscated keys through an optional chain** (`maybe?.alpha.fire(x)` with `transformer.obfuscation`): the member
   name is obfuscated as outside a chain. The TS transformer leaves it as written there, so its send reaches no remote.
 - **`middleware` written as a shorthand property, a method or an accessor** (`createServer({ middleware })`): a build
