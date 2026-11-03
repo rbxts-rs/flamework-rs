@@ -12,7 +12,7 @@ use rbxts_luau::{
 };
 use rbxts_plugin::Cx;
 
-use super::ir::{AssignOp, Bind, Body, CallKind, E, Else, Id, Ids, Key, Op, S, Ty};
+use super::ir::{AssignOp, Bind, Body, CallKind, E, Else, ExtValue, Guard, Id, Ids, Key, Op, S, Ty};
 use super::luau;
 
 /// What the lowering asks the compiler for.
@@ -22,6 +22,15 @@ pub trait LowerCx {
     /// A generated local's name: `hint`, else the first of `hint_1`, `hint_2`, … (`hint1`, … when the hint ends in
     /// `_`) that the compiler approves (`Cx::is_usable_local_name`, which keeps it from every other name of the file).
     fn local_name(&mut self, hint: &str) -> String;
+    /// A call site's argument ([`E::Ext`]): its Luau, as filled in.
+    fn ext(&mut self, value: &ExtValue) -> Expr {
+        value.value.borrow().clone()
+    }
+    /// An F3 guard ([`E::Guard`]), its locals named the first time it is lowered.
+    fn guard(&mut self, guard: &Guard) -> Expr {
+        guard.name(|base| self.local_name(base));
+        guard.named()
+    }
 }
 
 impl LowerCx for Cx<'_> {
@@ -247,11 +256,8 @@ impl Lowerer<'_> {
         match e {
             E::Id(id) => create::id(self.name(*id)),
             E::Global(name) => create::id(name.as_str()),
-            E::Ext(value) => value.value.borrow().clone(),
-            E::Guard(guard) => {
-                guard.name(|base| self.cx.local_name(base));
-                guard.named()
-            }
+            E::Ext(value) => self.cx.ext(value),
+            E::Guard(guard) => self.cx.guard(guard),
             E::Num(value) => luau::num(*value),
             E::Str(text) => luau::str(text),
             E::Bool(value) => create::bool(*value),

@@ -1,0 +1,54 @@
+{
+	"compilerOptions": {
+		"allowSyntheticDefaultImports": true,
+		"jsx": "react",
+		"jsxFactory": "Roact.createElement",
+		"jsxFragmentFactory": "Roact.Fragment",
+		"experimentalDecorators": true,
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"noLib": true,
+		"resolveJsonModule": true,
+		"strict": true,
+		"target": "ESNext",
+		"stripInternal": true,
+		"moduleDetection": "force",
+		"incremental": false,
+		"declaration": false,
+		"typeRoots": [
+			"./node_modules/@rbxts",
+			"./node_modules/@flamework-experimental"
+		],
+		"paths": {
+			"@rbxts/t": [
+				"./node_modules/@rbxts/t"
+			],
+			"@flamework-experimental/core": [
+				"./node_modules/@flamework-experimental/core"
+			],
+			"@flamework-experimental/components": [
+				"./node_modules/@flamework-experimental/components"
+			],
+			"@flamework-experimental/networking": [
+				"./node_modules/@flamework-experimental/networking"
+			],
+			"@flamework-experimental/testing": [
+				"./node_modules/@flamework-experimental/testing"
+			]
+		},
+		"rootDir": "src",
+		"outDir": "out",
+		"plugins": [
+			{
+				"transform": "@flamework-experimental/transformer"
+			}
+		],
+		"types": [
+			"types",
+			"compiler-types"
+		]
+	},
+	"include": [
+		"src"
+	]
+}

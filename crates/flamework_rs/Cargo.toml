@@ -22,6 +22,8 @@ wire-harvest = []
 dragonbox_ecma.workspace = true
 rbxts_plugin.workspace = true
 rbxts_luau.workspace = true
+# Luau's own compiler (the load check's), for the serializer's exact limit probes (`serializer::limits`).
+rbxts_luau_check.workspace = true
 rbxts_project.workspace = true
 tsrs_core.workspace = true
 tsrs_ast.workspace = true

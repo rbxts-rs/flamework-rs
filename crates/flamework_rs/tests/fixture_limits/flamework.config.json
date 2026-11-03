@@ -1,0 +1,4 @@
+{
+	"transformer": { "hashPrefix": "$t" },
+	"networking": { "serialization": true }
+}

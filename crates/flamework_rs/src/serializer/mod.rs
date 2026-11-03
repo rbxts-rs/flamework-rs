@@ -27,11 +27,11 @@ pub(crate) mod codegen;
 mod hoist;
 pub mod ir;
 mod layout;
+pub(crate) mod limits;
 pub(crate) mod lit;
 pub mod lower;
 pub(crate) mod luau;
 mod order;
-mod pressure;
 pub mod typeinfo;
 #[cfg(feature = "wire-harvest")]
 pub(crate) mod wire;

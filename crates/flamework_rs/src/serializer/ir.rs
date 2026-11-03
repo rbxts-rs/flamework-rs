@@ -188,6 +188,13 @@ impl Guard {
         *self.named.borrow_mut() = Some(guard);
     }
 
+    /// The guard with its locals named by `unique`, in render order, without keeping the names (for measuring).
+    pub(crate) fn render_with(&self, unique: impl FnMut(&str) -> String) -> rbxts_plugin::LuauExpr {
+        let mut guard = self.unnamed.clone();
+        self.names.assign_with(&mut [], Some(&mut guard), unique);
+        guard
+    }
+
     /// The named guard ([`Guard::name`] first).
     pub(crate) fn named(&self) -> rbxts_plugin::LuauExpr {
         self.named.borrow().clone().expect("a guard is named before it is lowered")

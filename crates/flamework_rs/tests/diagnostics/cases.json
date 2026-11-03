@@ -93,27 +93,27 @@
 				[
 					"lluListsOver.ts",
 					"error",
-					"built one field at a time or not, past Luau's limit of 200 locals / 255 registers"
+					"built one field at a time or not. Split the type into smaller named types"
 				],
 				[
 					"lluStringListsOver.ts",
 					"error",
-					"built one field at a time or not, past Luau's limit of 200 locals / 255 registers"
+					"built one field at a time or not. Split the type into smaller named types"
 				],
 				[
 					"lluMapsOver.ts",
 					"error",
-					"built one field at a time or not, past Luau's limit of 200 locals / 255 registers"
+					"built one field at a time or not. Split the type into smaller named types"
 				],
 				[
 					"lluSetsOver.ts",
 					"error",
-					"built one field at a time or not, past Luau's limit of 200 locals / 255 registers"
+					"built one field at a time or not. Split the type into smaller named types"
 				],
 				[
 					"lluSetsOver.ts",
 					"error",
-					"needs about 114 locals and 262 registers"
+					"needs more than 255 registers in one function (Luau: \"Out of registers"
 				],
 				[
 					"lluSetsOver.ts",
@@ -123,12 +123,12 @@
 				[
 					"lluPastLimit.ts",
 					"error",
-					"needs about 201 locals and 204 registers"
+					"needs 201 locals in one function (Luau allows 200)"
 				],
 				[
 					"lluPastRegisterLimit.ts",
 					"error",
-					"needs about 171 locals and 256 registers"
+					"needs more than 255 registers in one function (Luau: \"Out of registers"
 				]
 			],
 			"not_line": [

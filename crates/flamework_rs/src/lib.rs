@@ -117,6 +117,9 @@ pub use macro_type::{
     TupleElement,
 };
 pub use plugin::{Flamework, FwFilePart, FwInstance, FwShared, FwState};
+/// The serializer's limit decisions, recorded for `tests/limits.rs`. Not part of the crate's API.
+#[doc(hidden)]
+pub use serializer::limits::record as limits_record;
 
 /// The Flamework version this transformer is, and writes into `flamework.build`. Every
 /// `@flamework-experimental` package is released at one version.

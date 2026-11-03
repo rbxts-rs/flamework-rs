@@ -33,448 +33,117 @@ local vread = function(buf_1, o_1)
 	end
 end
 codec.s_Wide = function(v)
-	local size = 0
-	do
-		local length = #(v.f0)
-		size += vsize(length) + length
-	end
-	do
-		local length_1 = #(v.f1)
-		size += vsize(length_1) + length_1
-	end
-	do
-		local length_2 = #(v.f2)
-		size += vsize(length_2) + length_2
-	end
-	do
-		local length_3 = #(v.f3)
-		size += vsize(length_3) + length_3
-	end
-	do
-		local length_4 = #(v.f4)
-		size += vsize(length_4) + length_4
-	end
-	do
-		local length_5 = #(v.f5)
-		size += vsize(length_5) + length_5
-	end
-	do
-		local length_6 = #(v.f6)
-		size += vsize(length_6) + length_6
-	end
-	do
-		local length_7 = #(v.f7)
-		size += vsize(length_7) + length_7
-	end
-	do
-		local length_8 = #(v.f8)
-		size += vsize(length_8) + length_8
-	end
-	do
-		local length_9 = #(v.f9)
-		size += vsize(length_9) + length_9
-	end
-	do
-		local length_10 = #(v.f10)
-		size += vsize(length_10) + length_10
-	end
-	do
-		local length_11 = #(v.f11)
-		size += vsize(length_11) + length_11
-	end
-	do
-		local length_12 = #(v.f12)
-		size += vsize(length_12) + length_12
-	end
-	do
-		local length_13 = #(v.f13)
-		size += vsize(length_13) + length_13
-	end
-	do
-		local length_14 = #(v.f14)
-		size += vsize(length_14) + length_14
-	end
-	do
-		local length_15 = #(v.f15)
-		size += vsize(length_15) + length_15
-	end
-	do
-		local length_16 = #(v.f16)
-		size += vsize(length_16) + length_16
-	end
-	do
-		local length_17 = #(v.f17)
-		size += vsize(length_17) + length_17
-	end
-	do
-		local length_18 = #(v.f18)
-		size += vsize(length_18) + length_18
-	end
-	do
-		local length_19 = #(v.f19)
-		size += vsize(length_19) + length_19
-	end
-	do
-		local length_20 = #(v.f20)
-		size += vsize(length_20) + length_20
-	end
-	do
-		local length_21 = #(v.f21)
-		size += vsize(length_21) + length_21
-	end
-	do
-		local length_22 = #(v.f22)
-		size += vsize(length_22) + length_22
-	end
-	do
-		local length_23 = #(v.f23)
-		size += vsize(length_23) + length_23
-	end
-	do
-		local length_24 = #(v.f24)
-		size += vsize(length_24) + length_24
-	end
-	do
-		local length_25 = #(v.f25)
-		size += vsize(length_25) + length_25
-	end
-	do
-		local length_26 = #(v.f26)
-		size += vsize(length_26) + length_26
-	end
-	do
-		local length_27 = #(v.f27)
-		size += vsize(length_27) + length_27
-	end
-	do
-		local length_28 = #(v.f28)
-		size += vsize(length_28) + length_28
-	end
-	do
-		local length_29 = #(v.f29)
-		size += vsize(length_29) + length_29
-	end
-	do
-		local length_30 = #(v.f30)
-		size += vsize(length_30) + length_30
-	end
-	do
-		local length_31 = #(v.f31)
-		size += vsize(length_31) + length_31
-	end
-	do
-		local length_32 = #(v.f32)
-		size += vsize(length_32) + length_32
-	end
-	do
-		local length_33 = #(v.f33)
-		size += vsize(length_33) + length_33
-	end
-	do
-		local length_34 = #(v.f34)
-		size += vsize(length_34) + length_34
-	end
-	do
-		local length_35 = #(v.f35)
-		size += vsize(length_35) + length_35
-	end
-	do
-		local length_36 = #(v.f36)
-		size += vsize(length_36) + length_36
-	end
-	do
-		local length_37 = #(v.f37)
-		size += vsize(length_37) + length_37
-	end
-	do
-		local length_38 = #(v.f38)
-		size += vsize(length_38) + length_38
-	end
-	do
-		local length_39 = #(v.f39)
-		size += vsize(length_39) + length_39
-	end
-	do
-		local length_40 = #(v.f40)
-		size += vsize(length_40) + length_40
-	end
-	do
-		local length_41 = #(v.f41)
-		size += vsize(length_41) + length_41
-	end
-	do
-		local length_42 = #(v.f42)
-		size += vsize(length_42) + length_42
-	end
-	do
-		local length_43 = #(v.f43)
-		size += vsize(length_43) + length_43
-	end
-	do
-		local length_44 = #(v.f44)
-		size += vsize(length_44) + length_44
-	end
-	do
-		local length_45 = #(v.f45)
-		size += vsize(length_45) + length_45
-	end
-	do
-		local length_46 = #(v.f46)
-		size += vsize(length_46) + length_46
-	end
-	do
-		local length_47 = #(v.f47)
-		size += vsize(length_47) + length_47
-	end
-	do
-		local length_48 = #(v.f48)
-		size += vsize(length_48) + length_48
-	end
-	do
-		local length_49 = #(v.f49)
-		size += vsize(length_49) + length_49
-	end
-	do
-		local length_50 = #(v.f50)
-		size += vsize(length_50) + length_50
-	end
-	do
-		local length_51 = #(v.f51)
-		size += vsize(length_51) + length_51
-	end
-	do
-		local length_52 = #(v.f52)
-		size += vsize(length_52) + length_52
-	end
-	do
-		local length_53 = #(v.f53)
-		size += vsize(length_53) + length_53
-	end
-	do
-		local length_54 = #(v.f54)
-		size += vsize(length_54) + length_54
-	end
-	do
-		local length_55 = #(v.f55)
-		size += vsize(length_55) + length_55
-	end
-	do
-		local length_56 = #(v.f56)
-		size += vsize(length_56) + length_56
-	end
-	do
-		local length_57 = #(v.f57)
-		size += vsize(length_57) + length_57
-	end
-	do
-		local length_58 = #(v.f58)
-		size += vsize(length_58) + length_58
-	end
-	do
-		local length_59 = #(v.f59)
-		size += vsize(length_59) + length_59
-	end
-	do
-		local length_60 = #(v.f60)
-		size += vsize(length_60) + length_60
-	end
-	do
-		local length_61 = #(v.f61)
-		size += vsize(length_61) + length_61
-	end
-	do
-		local length_62 = #(v.f62)
-		size += vsize(length_62) + length_62
-	end
-	do
-		local length_63 = #(v.f63)
-		size += vsize(length_63) + length_63
-	end
-	do
-		local length_64 = #(v.f64)
-		size += vsize(length_64) + length_64
-	end
-	do
-		local length_65 = #(v.f65)
-		size += vsize(length_65) + length_65
-	end
-	do
-		local length_66 = #(v.f66)
-		size += vsize(length_66) + length_66
-	end
-	do
-		local length_67 = #(v.f67)
-		size += vsize(length_67) + length_67
-	end
-	do
-		local length_68 = #(v.f68)
-		size += vsize(length_68) + length_68
-	end
-	do
-		local length_69 = #(v.f69)
-		size += vsize(length_69) + length_69
-	end
-	do
-		local length_70 = #(v.f70)
-		size += vsize(length_70) + length_70
-	end
-	do
-		local length_71 = #(v.f71)
-		size += vsize(length_71) + length_71
-	end
-	do
-		local length_72 = #(v.f72)
-		size += vsize(length_72) + length_72
-	end
-	do
-		local length_73 = #(v.f73)
-		size += vsize(length_73) + length_73
-	end
-	do
-		local length_74 = #(v.f74)
-		size += vsize(length_74) + length_74
-	end
-	do
-		local length_75 = #(v.f75)
-		size += vsize(length_75) + length_75
-	end
-	do
-		local length_76 = #(v.f76)
-		size += vsize(length_76) + length_76
-	end
-	do
-		local length_77 = #(v.f77)
-		size += vsize(length_77) + length_77
-	end
-	do
-		local length_78 = #(v.f78)
-		size += vsize(length_78) + length_78
-	end
-	do
-		local length_79 = #(v.f79)
-		size += vsize(length_79) + length_79
-	end
-	do
-		local length_80 = #(v.f80)
-		size += vsize(length_80) + length_80
-	end
-	do
-		local length_81 = #(v.f81)
-		size += vsize(length_81) + length_81
-	end
-	do
-		local length_82 = #(v.f82)
-		size += vsize(length_82) + length_82
-	end
-	do
-		local length_83 = #(v.f83)
-		size += vsize(length_83) + length_83
-	end
-	do
-		local length_84 = #(v.f84)
-		size += vsize(length_84) + length_84
-	end
-	do
-		local length_85 = #(v.f85)
-		size += vsize(length_85) + length_85
-	end
-	do
-		local length_86 = #(v.f86)
-		size += vsize(length_86) + length_86
-	end
-	do
-		local length_87 = #(v.f87)
-		size += vsize(length_87) + length_87
-	end
-	do
-		local length_88 = #(v.f88)
-		size += vsize(length_88) + length_88
-	end
-	do
-		local length_89 = #(v.f89)
-		size += vsize(length_89) + length_89
-	end
-	do
-		local length_90 = #(v.f90)
-		size += vsize(length_90) + length_90
-	end
-	do
-		local length_91 = #(v.f91)
-		size += vsize(length_91) + length_91
-	end
-	do
-		local length_92 = #(v.f92)
-		size += vsize(length_92) + length_92
-	end
-	do
-		local length_93 = #(v.f93)
-		size += vsize(length_93) + length_93
-	end
-	do
-		local length_94 = #(v.f94)
-		size += vsize(length_94) + length_94
-	end
-	do
-		local length_95 = #(v.f95)
-		size += vsize(length_95) + length_95
-	end
-	do
-		local length_96 = #(v.f96)
-		size += vsize(length_96) + length_96
-	end
-	do
-		local length_97 = #(v.f97)
-		size += vsize(length_97) + length_97
-	end
-	do
-		local length_98 = #(v.f98)
-		size += vsize(length_98) + length_98
-	end
-	do
-		local length_99 = #(v.f99)
-		size += vsize(length_99) + length_99
-	end
-	do
-		local length_100 = #(v.f100)
-		size += vsize(length_100) + length_100
-	end
-	do
-		local length_101 = #(v.f101)
-		size += vsize(length_101) + length_101
-	end
-	do
-		local length_102 = #(v.f102)
-		size += vsize(length_102) + length_102
-	end
-	do
-		local length_103 = #(v.f103)
-		size += vsize(length_103) + length_103
-	end
-	do
-		local length_104 = #(v.f104)
-		size += vsize(length_104) + length_104
-	end
-	do
-		local length_105 = #(v.f105)
-		size += vsize(length_105) + length_105
-	end
-	do
-		local length_106 = #(v.f106)
-		size += vsize(length_106) + length_106
-	end
-	do
-		local length_107 = #(v.f107)
-		size += vsize(length_107) + length_107
-	end
-	do
-		local length_108 = #(v.f108)
-		size += vsize(length_108) + length_108
-	end
-	do
-		local length_109 = #(v.f109)
-		size += vsize(length_109) + length_109
-	end
-	return size
+	local length = #(v.f0)
+	local length_1 = #(v.f1)
+	local length_2 = #(v.f2)
+	local length_3 = #(v.f3)
+	local length_4 = #(v.f4)
+	local length_5 = #(v.f5)
+	local length_6 = #(v.f6)
+	local length_7 = #(v.f7)
+	local length_8 = #(v.f8)
+	local length_9 = #(v.f9)
+	local length_10 = #(v.f10)
+	local length_11 = #(v.f11)
+	local length_12 = #(v.f12)
+	local length_13 = #(v.f13)
+	local length_14 = #(v.f14)
+	local length_15 = #(v.f15)
+	local length_16 = #(v.f16)
+	local length_17 = #(v.f17)
+	local length_18 = #(v.f18)
+	local length_19 = #(v.f19)
+	local length_20 = #(v.f20)
+	local length_21 = #(v.f21)
+	local length_22 = #(v.f22)
+	local length_23 = #(v.f23)
+	local length_24 = #(v.f24)
+	local length_25 = #(v.f25)
+	local length_26 = #(v.f26)
+	local length_27 = #(v.f27)
+	local length_28 = #(v.f28)
+	local length_29 = #(v.f29)
+	local length_30 = #(v.f30)
+	local length_31 = #(v.f31)
+	local length_32 = #(v.f32)
+	local length_33 = #(v.f33)
+	local length_34 = #(v.f34)
+	local length_35 = #(v.f35)
+	local length_36 = #(v.f36)
+	local length_37 = #(v.f37)
+	local length_38 = #(v.f38)
+	local length_39 = #(v.f39)
+	local length_40 = #(v.f40)
+	local length_41 = #(v.f41)
+	local length_42 = #(v.f42)
+	local length_43 = #(v.f43)
+	local length_44 = #(v.f44)
+	local length_45 = #(v.f45)
+	local length_46 = #(v.f46)
+	local length_47 = #(v.f47)
+	local length_48 = #(v.f48)
+	local length_49 = #(v.f49)
+	local length_50 = #(v.f50)
+	local length_51 = #(v.f51)
+	local length_52 = #(v.f52)
+	local length_53 = #(v.f53)
+	local length_54 = #(v.f54)
+	local length_55 = #(v.f55)
+	local length_56 = #(v.f56)
+	local length_57 = #(v.f57)
+	local length_58 = #(v.f58)
+	local length_59 = #(v.f59)
+	local length_60 = #(v.f60)
+	local length_61 = #(v.f61)
+	local length_62 = #(v.f62)
+	local length_63 = #(v.f63)
+	local length_64 = #(v.f64)
+	local length_65 = #(v.f65)
+	local length_66 = #(v.f66)
+	local length_67 = #(v.f67)
+	local length_68 = #(v.f68)
+	local length_69 = #(v.f69)
+	local length_70 = #(v.f70)
+	local length_71 = #(v.f71)
+	local length_72 = #(v.f72)
+	local length_73 = #(v.f73)
+	local length_74 = #(v.f74)
+	local length_75 = #(v.f75)
+	local length_76 = #(v.f76)
+	local length_77 = #(v.f77)
+	local length_78 = #(v.f78)
+	local length_79 = #(v.f79)
+	local length_80 = #(v.f80)
+	local length_81 = #(v.f81)
+	local length_82 = #(v.f82)
+	local length_83 = #(v.f83)
+	local length_84 = #(v.f84)
+	local length_85 = #(v.f85)
+	local length_86 = #(v.f86)
+	local length_87 = #(v.f87)
+	local length_88 = #(v.f88)
+	local length_89 = #(v.f89)
+	local length_90 = #(v.f90)
+	local length_91 = #(v.f91)
+	local length_92 = #(v.f92)
+	local length_93 = #(v.f93)
+	local length_94 = #(v.f94)
+	local length_95 = #(v.f95)
+	local length_96 = #(v.f96)
+	local length_97 = #(v.f97)
+	local length_98 = #(v.f98)
+	local length_99 = #(v.f99)
+	local length_100 = #(v.f100)
+	local length_101 = #(v.f101)
+	local length_102 = #(v.f102)
+	local length_103 = #(v.f103)
+	local length_104 = #(v.f104)
+	local length_105 = #(v.f105)
+	local length_106 = #(v.f106)
+	local length_107 = #(v.f107)
+	local length_108 = #(v.f108)
+	local length_109 = #(v.f109)
+	return vsize(length) + length + (vsize(length_1) + length_1) + (vsize(length_2) + length_2) + (vsize(length_3) + length_3) + (vsize(length_4) + length_4) + (vsize(length_5) + length_5) + (vsize(length_6) + length_6) + (vsize(length_7) + length_7) + (vsize(length_8) + length_8) + (vsize(length_9) + length_9) + (vsize(length_10) + length_10) + (vsize(length_11) + length_11) + (vsize(length_12) + length_12) + (vsize(length_13) + length_13) + (vsize(length_14) + length_14) + (vsize(length_15) + length_15) + (vsize(length_16) + length_16) + (vsize(length_17) + length_17) + (vsize(length_18) + length_18) + (vsize(length_19) + length_19) + (vsize(length_20) + length_20) + (vsize(length_21) + length_21) + (vsize(length_22) + length_22) + (vsize(length_23) + length_23) + (vsize(length_24) + length_24) + (vsize(length_25) + length_25) + (vsize(length_26) + length_26) + (vsize(length_27) + length_27) + (vsize(length_28) + length_28) + (vsize(length_29) + length_29) + (vsize(length_30) + length_30) + (vsize(length_31) + length_31) + (vsize(length_32) + length_32) + (vsize(length_33) + length_33) + (vsize(length_34) + length_34) + (vsize(length_35) + length_35) + (vsize(length_36) + length_36) + (vsize(length_37) + length_37) + (vsize(length_38) + length_38) + (vsize(length_39) + length_39) + (vsize(length_40) + length_40) + (vsize(length_41) + length_41) + (vsize(length_42) + length_42) + (vsize(length_43) + length_43) + (vsize(length_44) + length_44) + (vsize(length_45) + length_45) + (vsize(length_46) + length_46) + (vsize(length_47) + length_47) + (vsize(length_48) + length_48) + (vsize(length_49) + length_49) + (vsize(length_50) + length_50) + (vsize(length_51) + length_51) + (vsize(length_52) + length_52) + (vsize(length_53) + length_53) + (vsize(length_54) + length_54) + (vsize(length_55) + length_55) + (vsize(length_56) + length_56) + (vsize(length_57) + length_57) + (vsize(length_58) + length_58) + (vsize(length_59) + length_59) + (vsize(length_60) + length_60) + (vsize(length_61) + length_61) + (vsize(length_62) + length_62) + (vsize(length_63) + length_63) + (vsize(length_64) + length_64) + (vsize(length_65) + length_65) + (vsize(length_66) + length_66) + (vsize(length_67) + length_67) + (vsize(length_68) + length_68) + (vsize(length_69) + length_69) + (vsize(length_70) + length_70) + (vsize(length_71) + length_71) + (vsize(length_72) + length_72) + (vsize(length_73) + length_73) + (vsize(length_74) + length_74) + (vsize(length_75) + length_75) + (vsize(length_76) + length_76) + (vsize(length_77) + length_77) + (vsize(length_78) + length_78) + (vsize(length_79) + length_79) + (vsize(length_80) + length_80) + (vsize(length_81) + length_81) + (vsize(length_82) + length_82) + (vsize(length_83) + length_83) + (vsize(length_84) + length_84) + (vsize(length_85) + length_85) + (vsize(length_86) + length_86) + (vsize(length_87) + length_87) + (vsize(length_88) + length_88) + (vsize(length_89) + length_89) + (vsize(length_90) + length_90) + (vsize(length_91) + length_91) + (vsize(length_92) + length_92) + (vsize(length_93) + length_93) + (vsize(length_94) + length_94) + (vsize(length_95) + length_95) + (vsize(length_96) + length_96) + (vsize(length_97) + length_97) + (vsize(length_98) + length_98) + (vsize(length_99) + length_99) + (vsize(length_100) + length_100) + (vsize(length_101) + length_101) + (vsize(length_102) + length_102) + (vsize(length_103) + length_103) + (vsize(length_104) + length_104) + (vsize(length_105) + length_105) + (vsize(length_106) + length_106) + (vsize(length_107) + length_107) + (vsize(length_108) + length_108) + (vsize(length_109) + length_109)
 end
 codec.w_Wide = function(buf_2, o_2, v)
 	do

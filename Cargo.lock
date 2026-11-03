@@ -159,6 +159,7 @@ dependencies = [
  "dragonbox_ecma",
  "rbxts_cli",
  "rbxts_luau",
+ "rbxts_luau_check",
  "rbxts_plugin",
  "rbxts_project",
  "rbxts_transform",

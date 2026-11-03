@@ -10,6 +10,7 @@ use super::checks::{fits_statically, literal_type, number_range};
 use super::classify::datatype;
 use super::hoist::{MALFORMED, Role};
 use super::ir::{self, Bind, Body, E, Id, Key, Op, S, Ty};
+use super::limits::{self, Choice, Measuring, holds_locals};
 use super::typeinfo::{key_access, key_name, key_segment, local_name};
 use super::{EncodingSite, GResult, Gen, Kind, LengthWidth, Layout, Shape, Width};
 
@@ -202,6 +203,28 @@ type Chosen = Rc<RefCell<Vec<(Id, Option<Id>)>>>;
 fn kept(chosen: &Chosen, rebuilt: bool) -> (Id, Option<Id>) {
     let builds = chosen.borrow();
     if rebuilt { *builds.last().expect("the rebuild ran") } else { builds[0] }
+}
+
+/// Records a `fitted` decision for the limit tests ([`limits::record`]), while they record.
+fn record(
+    what: Option<&str>,
+    outer: u32,
+    plain: &limits::Function,
+    compact: Option<&limits::Function>,
+    kept_compact: bool,
+) {
+    if !limits::record::on() {
+        return;
+    }
+    let sources = |f: &limits::Function| [f.probe_source(limits::MARGIN + outer), f.probe_source(outer)];
+    limits::record::push(limits::record::Decision {
+        what: what.map(str::to_owned),
+        outer,
+        plain: sources(plain),
+        compact: compact.map(sources),
+        kept_compact,
+        plain_locals: plain.locals(),
+    });
 }
 
 /// A call site's packing, before naming.
@@ -727,7 +750,8 @@ impl Gen<'_, '_, '_> {
 
     // --- compact functions -----------------------------------------------------------------------------------
 
-    /// `fitted(build, parameters, what, tail, outer)`: built again compactly past the thresholds.
+    /// `fitted(build, parameters, what, tail, outer)`: built plainly, and again compactly when the plain build does not
+    /// fit Luau's limits with [`limits::MARGIN`] to spare (DESIGN §3.2, [`limits`]).
     #[allow(clippy::type_complexity)]
     pub(crate) fn fitted(
         &mut self,
@@ -741,6 +765,8 @@ impl Gen<'_, '_, '_> {
     }
 
     /// [`Self::fitted`], saying which build it kept: `true` for the compact rebuild, `false` for the first build.
+    /// `outer` is the locals live around the code (a call site's), `tail` statements measured after the body, and
+    /// `what` names the value in a refusal (a call site, `None`, keeps its compact build instead).
     #[allow(clippy::type_complexity)]
     pub(crate) fn fitted_choice(
         &mut self,
@@ -753,39 +779,62 @@ impl Gen<'_, '_, '_> {
         let previous = self.g.compact;
         self.g.compact = false;
         let result = (|| {
-            let body = build(self)?;
-            let mut measure = |gn: &mut Self, body: &[S]| {
+            let mut measuring = Measuring::default();
+            let mut measure = |gn: &mut Self, measuring: &mut Measuring, body: &[S]| {
                 let mut all = body.to_vec();
                 if let Some(tail) = tail.as_mut() {
                     all.extend(tail(gn));
                 }
-                let names: Vec<String> = parameters.iter().map(|&p| gn.g.ids.hint(p).to_owned()).collect();
-                super::pressure::measure_pressure(&gn.g.ids, &all, &names, outer)
+                measuring.function(&gn.g.ids, parameters, &all)
             };
-            let plain = measure(self, &body);
-            if !plain.needs_compacting() {
+            let body = build(self)?;
+            let recording = limits::record::on();
+            let mut plain = measure(self, &mut measuring, &body);
+            if !recording && plain.surely_fits(limits::MARGIN + outer) {
+                return Ok((body, false));
+            }
+            // the file's hoisted declarations so far, so that Luau inlines the helpers as in the file
+            let declared = self.g.declarations.len();
+            plain.prelude = Rc::new(measuring.lower(&self.g.ids, &self.g.declarations));
+            let keep = limits::keeps_plain(&plain, outer).map_err(|error| self.does_not_compile(what, error))?;
+            if keep {
+                record(what, outer, &plain, None, false);
                 return Ok((body, false));
             }
             self.g.compact = true;
             let rebuilt = build(self)?;
-            let pressure = measure(self, &rebuilt);
-            let no_smaller = pressure.locals >= plain.locals && pressure.registers >= plain.registers;
-            let exceeds = |p: super::pressure::Pressure| p.exceeds_limits();
-            if !exceeds(plain) && (no_smaller || exceeds(pressure)) {
-                return Ok((body, false));
+            let mut compact = measure(self, &mut measuring, &rebuilt);
+            if self.g.declarations.len() > declared {
+                // what the rebuild hoisted
+                plain.prelude = Rc::new(measuring.lower(&self.g.ids, &self.g.declarations));
             }
-            if exceeds(pressure) {
-                let Some(what) = what else { return Ok(if no_smaller { (body, false) } else { (rebuilt, true) }) };
-                let kept = if no_smaller { plain } else { pressure };
-                return Err(self.fail(&format!(
-                    "the code for {what} needs about {} locals and {} registers in one function, built one field at a time or not, past Luau's limit of {} locals / {} registers. Split the type into smaller named types",
-                    kept.locals, kept.registers, super::pressure::LUAU_MAX_LOCALS, super::pressure::LUAU_MAX_REGISTERS
-                )));
+            compact.prelude = plain.prelude.clone();
+            let choice = limits::choose(&plain, &compact, outer).map_err(|error| self.does_not_compile(what, error))?;
+            record(what, outer, &plain, Some(&compact), choice != Choice::Plain);
+            match choice {
+                Choice::Plain => Ok((body, false)),
+                Choice::Compact => Ok((rebuilt, true)),
+                Choice::Refused(reason) => match what {
+                    Some(what) => Err(self.fail(&format!(
+                        "the code for {what} {reason}, built one field at a time or not. Split the type into smaller named types"
+                    ))),
+                    None => Ok((rebuilt, true)),
+                },
             }
-            Ok((rebuilt, true))
         })();
         self.g.compact = previous;
         result
+    }
+
+    /// A generated function Luau's compiler refuses for something other than its limits: a bug in the generator.
+    fn does_not_compile(&mut self, what: Option<&str>, error: rbxts_luau_check::CompileError) -> rbxts_plugin::Abort {
+        let what = what.unwrap_or("this call");
+        let diagnostic = rbxts_plugin::PluginDiagnostic::error(
+            self.g.diagnostic_node,
+            format!("Flamework's generated code for {what} does not compile: Luau says \"{}\".", error.message),
+        )
+        .with_hint("This is a bug in Flamework: please report it, with the file.");
+        self.cx.report(diagnostic).expect("an error")
     }
 
     /// `addSizes(out, total, parts)`.
@@ -825,7 +874,7 @@ impl Gen<'_, '_, '_> {
 
     /// `pushScoped(out, body)`.
     fn push_scoped(&self, out_list: &Out, body: Vec<S>) {
-        if super::pressure::holds_locals(&self.g.ids, &body) {
+        if holds_locals(&self.g.ids, &body) {
             push(out_list, S::Block(body));
         } else {
             out_list.borrow_mut().extend(body);
@@ -1427,7 +1476,7 @@ impl Gen<'_, '_, '_> {
         let block = ctx.with_out(out());
         self.emit_write(shape, value, &block)?;
         let statements = take(&block.out);
-        if super::pressure::holds_locals(&self.g.ids, &statements) {
+        if holds_locals(&self.g.ids, &statements) {
             push(&ctx.out, S::Block(statements));
         } else {
             ctx.out.borrow_mut().extend(statements);
