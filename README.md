@@ -17,6 +17,14 @@ transformer's, except for the items marked On purpose below, while generated tex
 property order (TypeScript 7.1's, which can reach a serializer's field order and layout) differ, see
 [Differences from the TS transformer](#differences-from-the-ts-transformer).
 
+**Performance** (0.1.1, Windows x64 desktop, medians): a clean build of a real 656-file Flamework project takes 1.29 s
+against 28.2 s for stock roblox-ts with the TS transformer, with a peak memory of 283 MiB against 1384 MiB; a watch
+rebuild after an edit to its most-imported file takes 0.72 s against 13.9 s. Every release's tables are in rbxts-rs's
+[bench/RESULTS.md](https://github.com/rbxts-rs/rbxts-rs/blob/main/bench/RESULTS.md#per-release).
+
+**Starting a new project:** [rbxts-rs/flamework-template](https://github.com/rbxts-rs/flamework-template), whose
+`compiler/` downloads the release binary.
+
 **Licence:** MIT (`LICENSE`). Parts are ports of Flamework, hashids, uuid, glob, minimatch and brace-expansion; their
 notices are in `THIRD-PARTY-NOTICES.md`.
 
